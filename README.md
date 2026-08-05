@@ -1,47 +1,39 @@
 # SmartFoodIA
 
-Base inicial oficial do projeto SmartFoodIA.
+## Versão atual
 
-## Requisitos
-
-- Docker Desktop
-- Git
+`0.0.3 — Catálogo: grupos, complementos e compatibilidade`
 
 ## Como executar
 
 1. Copie `.env.example` para `.env`.
-2. Ajuste as senhas no `.env`.
+2. Troque a senha `change-me` no `.env`.
 3. Execute:
 
 ```bash
 docker compose up --build
 ```
 
-4. Acesse:
+4. Aplique as migrations:
 
-- API: http://localhost:8000
-- Health check: http://localhost:8000/health
-- Swagger: http://localhost:8000/docs
-
-## Resposta esperada
-
-```json
-{
-  "application": "SmartFoodIA",
-  "version": "0.0.1",
-  "status": "online"
-}
+```bash
+docker compose exec api alembic upgrade head
 ```
 
-## Estado atual
+5. Acesse o Swagger em `http://localhost:8000/docs`.
 
-Esta versão contém apenas a infraestrutura inicial:
+## Recursos presentes
 
-- FastAPI
-- PostgreSQL
-- Docker Compose
-- Configuração por ambiente
-- Endpoint de saúde
-- Testes básicos
+- empresas e lojas;
+- categorias e produtos;
+- grupos de complementos;
+- complementos com código PDV;
+- ligação produto × grupo;
+- ligação grupo × complemento;
+- mínimo, máximo, repetição e quantidade padrão;
+- API inicial de consulta e cadastro;
+- validações de domínio e banco.
 
-Ainda não contém catálogo, carrinho, Olívia ou integração com Consumer.
+## Próxima etapa
+
+Importador do cardápio exportado pelo Consumer e validação idempotente de códigos PDV.

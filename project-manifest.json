@@ -1,6 +1,5 @@
 {
   "project": "SmartFoodIA",
-  "version": "0.0.1",
-  "status": "foundation",
-  "files": 24
+  "version": "0.0.3",
+  "status": "catalog-modifiers"
 }
