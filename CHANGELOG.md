@@ -1,10 +1,9 @@
 # Changelog
 
-## 0.0.1
+## Unreleased
 
-- Estrutura inicial do projeto.
-- FastAPI configurado.
-- PostgreSQL via Docker Compose.
-- Configuração por `.env`.
-- Endpoints `/`, `/health` e `/version`.
-- Testes básicos.
+- Criada a Constituição oficial do projeto.
+- Registradas as decisões aprovadas.
+- Congelado o escopo da V1.
+- Organizado o backlog pós-V1.
+- Consolidado o roadmap oficial.

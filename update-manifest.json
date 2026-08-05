@@ -1,0 +1,12 @@
+{
+  "project": "SmartFoodIA",
+  "update": "governance-and-scope",
+  "files": [
+    "docs/PROJECT_CONSTITUTION.md",
+    "docs/DECISIONS.md",
+    "docs/V1_SCOPE.md",
+    "docs/BACKLOG.md",
+    "docs/ROADMAP.md",
+    "CHANGELOG.md"
+  ]
+}

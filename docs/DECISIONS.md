@@ -1,0 +1,22 @@
+# Decisões Oficiais do SmartFoodIA
+
+- **DEC-001 — Old Burguer como cliente piloto:** aprovada.
+- **DEC-002 — Arquitetura multiempresa:** aprovada.
+- **DEC-003 — Core como fonte da verdade:** aprovada.
+- **DEC-004 — Consumer como adaptador:** aprovada.
+- **DEC-005 — OpenAI como provedor substituível:** aprovada.
+- **DEC-006 — WhatsApp como canal substituível:** aprovada.
+- **DEC-007 — Códigos PDV como referência externa:** aprovada.
+- **DEC-008 — IA sem acesso direto ao banco:** aprovada.
+- **DEC-009 — Cálculos fora da IA:** aprovada.
+- **DEC-010 — Confirmação explícita antes do pedido:** aprovada.
+- **DEC-011 — Escalonamento humano:** aprovada.
+- **DEC-012 — Aprendizado por incidentes:** aprovada.
+- **DEC-013 — Produto inexistente gera descoberta opcional:** aprovada.
+- **DEC-014 — Memória pertence ao SmartFoodIA:** aprovada.
+- **DEC-015 — GitHub como repositório oficial:** aprovada.
+- **DEC-016 — Desenvolvimento local com GitHub Desktop e VS Code:** aprovada.
+- **DEC-017 — Escopo V1 congelado:** aprovada.
+- **DEC-018 — API de parceiro do Consumer:** aprovada.
+- **DEC-019 — PostgreSQL, FastAPI, SQLAlchemy e Alembic:** aprovada.
+- **DEC-020 — Docker para ambiente de execução:** aprovada.
