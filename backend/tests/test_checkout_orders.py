@@ -98,7 +98,7 @@ def test_checkout_creates_persistent_order_and_event() -> None:
 
     assert order.subtotal == Decimal("120.00")
     assert order.total == Decimal("125.00")
-    assert order.status == "PLACED"
+    assert order.status == "READY_FOR_INTEGRATION"
     assert order.address.street == "Rua Teste"
     event = db.scalar(select(OrderEvent).where(OrderEvent.order_id == order.id))
     assert event.code == "PLC"

@@ -150,7 +150,7 @@ def test_checkout_tool_requires_explicit_confirmation() -> None:
         },
     )
     assert completed.ok is True
-    assert completed.data["status"] == "PLACED"
+    assert completed.data["status"] == "READY_FOR_INTEGRATION"
 
 
 def test_human_help_tool_returns_structured_escalation() -> None:

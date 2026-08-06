@@ -1,9 +1,8 @@
 # SmartFoodIA
 
 ## Versão atual
+`0.3.0 — Modular Consumer Partner Adapter`
 
-`0.2.1 — Visual Conversations Console`
+Esta versão concentra-se exclusivamente no fluxo WhatsApp → SmartFoodIA → Consumer e separa o Core dos ERPs por contratos neutros.
 
-Esta versão adiciona a central visual de conversas, com histórico, takeover humano, resposta pelo WhatsApp e devolução para a Olívia.
-
-Consulte `docs/CONVERSATIONS_CONSOLE.md`.
+Consulte `docs/CONSUMER_MODULAR_ADAPTER.md`.

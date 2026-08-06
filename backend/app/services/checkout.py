@@ -71,7 +71,7 @@ class CheckoutService:
             customer_id=cart.customer_id,
             cart_id=cart.id,
             display_id=display_id,
-            status="PLACED",
+            status="READY_FOR_INTEGRATION",
             service_mode=cart.service_mode,
             payment_method=payload.payment_method,
             payment_type=payload.payment_type,
