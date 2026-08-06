@@ -2,16 +2,16 @@
 
 ## Versão atual
 
-`0.1.6 — Support Operations & Approved Knowledge`
+`0.1.7 — Operational Dashboard API`
 
-Esta versão adiciona:
+Esta versão adiciona uma visão consolidada para o piloto:
 
-- fila operacional de tickets;
-- atribuição e resolução de tickets;
-- listagem de lacunas por recorrência;
-- aprovação de respostas;
-- busca de conhecimento aprovado;
-- ferramenta `search_knowledge` para a Olívia;
-- garantia de que perguntas ainda abertas não sejam usadas como verdade.
+- conversas em atendimento;
+- tickets e urgências;
+- pedidos e receita;
+- desempenho da IA;
+- saúde das filas;
+- lacunas de conhecimento;
+- alertas operacionais automáticos.
 
-Consulte `docs/SUPPORT_OPERATIONS.md`.
+Consulte `docs/OPERATIONAL_DASHBOARD.md`.

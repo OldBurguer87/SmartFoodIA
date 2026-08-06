@@ -1,16 +1,16 @@
 # Changelog
 
+## 0.1.7
+
+- Adicionada API de visão operacional por loja.
+- Adicionados indicadores de conversas e atendimento humano.
+- Adicionados indicadores de tickets e urgências.
+- Adicionados pedidos, receita e distribuição por status.
+- Adicionados eventos, erros e duração média da IA.
+- Adicionada saúde das filas de entrada e saída.
+- Adicionados alertas operacionais automáticos.
+- Adicionados testes do painel operacional.
+
 ## 0.1.6
 
-- Adicionada listagem operacional de tickets.
-- Adicionada atribuição de tickets.
-- Adicionada resolução de tickets.
-- Adicionada listagem de lacunas por número de ocorrências.
-- Adicionada busca de respostas aprovadas.
-- Adicionada ferramenta `search_knowledge`.
-- Impedido o uso de lacunas abertas como respostas.
-- Adicionados testes do fluxo de suporte e conhecimento.
-
-## 0.1.5
-
-- Adicionado atendimento humano e controle operacional de conversas.
+- Adicionada operação de tickets e base de conhecimento aprovada.

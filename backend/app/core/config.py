@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "SmartFoodIA"
-    app_version: str = "0.1.6"
+    app_version: str = "0.1.7"
     app_env: str = "development"
     app_debug: bool = True
     database_url: str = "postgresql+psycopg://smartfoodia:change-me@db:5432/smartfoodia"
