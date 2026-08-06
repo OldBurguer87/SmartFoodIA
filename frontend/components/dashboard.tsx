@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { getOperationalOverview, OperationalOverview } from "@/lib/api";
 import { LogoMark, RefreshIcon } from "@/components/icons";
+import { ConversationsConsole } from "@/components/conversations-console";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -332,6 +333,8 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
                 </div>
               </article>
             </section>
+
+            <ConversationsConsole storeId={storeId} />
 
             <footer className="footer">
               Atualizado em{" "}

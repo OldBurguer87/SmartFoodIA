@@ -69,3 +69,65 @@ export async function getOperationalOverview(
 
   return response.json() as Promise<OperationalOverview>;
 }
+
+
+export type ConversationMessage = {
+  id: string;
+  direction: "INBOUND" | "OUTBOUND";
+  sender_type: "CUSTOMER" | "OLIVIA" | "HUMAN" | "SYSTEM";
+  content_type: string;
+  content: string;
+  metadata_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type ConversationSummary = {
+  id: string;
+  store_id: string;
+  customer_id: string | null;
+  channel: string;
+  external_conversation_id: string | null;
+  status: "OPEN" | "HUMAN" | "CLOSED";
+  last_message_at: string;
+  last_message: { sender_type: string; content: string; created_at: string } | null;
+};
+
+export type ConversationDetail = ConversationSummary & { messages: ConversationMessage[] };
+
+export async function listConversations(storeId: string, status?: string): Promise<ConversationSummary[]> {
+  const params = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await fetch(`${API_URL}/api/v1/operations/stores/${storeId}/conversations${params}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("Não foi possível carregar as conversas.");
+  return response.json();
+}
+
+export async function getConversation(conversationId: string): Promise<ConversationDetail> {
+  const response = await fetch(`${API_URL}/api/v1/operations/conversations/${conversationId}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("Não foi possível carregar a conversa.");
+  return response.json();
+}
+
+async function postConversationAction(conversationId: string, action: "takeover" | "release", body: Record<string, unknown>): Promise<ConversationSummary> {
+  const response = await fetch(`${API_URL}/api/v1/operations/conversations/${conversationId}/${action}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error((await response.text()) || "Não foi possível alterar o atendimento.");
+  return response.json();
+}
+
+export function takeOverConversation(conversationId: string, assignedTo: string) {
+  return postConversationAction(conversationId, "takeover", { assigned_to: assignedTo });
+}
+
+export function releaseConversation(conversationId: string, assignedTo: string) {
+  return postConversationAction(conversationId, "release", { assigned_to: assignedTo });
+}
+
+export async function sendHumanReply(conversationId: string, assignedTo: string, content: string) {
+  const response = await fetch(`${API_URL}/api/v1/operations/conversations/${conversationId}/reply`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assigned_to: assignedTo, content }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || "Não foi possível enviar a mensagem.");
+  return response.json();
+}

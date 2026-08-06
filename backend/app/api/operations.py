@@ -64,6 +64,31 @@ def list_conversations(
     ]
 
 
+
+@router.get("/conversations/{conversation_id}")
+def get_conversation(
+    conversation_id: UUID,
+    db: Session = Depends(get_db),
+) -> dict:
+    conversation = conversation_repository.get(db, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    messages = conversation_repository.list_messages(db, conversation_id, limit=200)
+    payload = conversation_to_dict(conversation)
+    payload["messages"] = [
+        {
+            "id": str(message.id),
+            "direction": message.direction,
+            "sender_type": message.sender_type,
+            "content_type": message.content_type,
+            "content": message.content,
+            "metadata_json": message.metadata_json,
+            "created_at": message.created_at,
+        }
+        for message in messages
+    ]
+    return payload
+
 @router.post("/conversations/{conversation_id}/takeover")
 def take_over(
     conversation_id: UUID,
