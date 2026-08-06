@@ -1,11 +1,14 @@
 # Changelog
 
+## 0.3.1
+
+- Adicionado comando de provisionamento da integração Consumer.
+- Adicionada geração segura de token por loja.
+- Adicionada impressão das quatro URLs de configuração.
+- Adicionadas notificações de status do pedido pelo WhatsApp.
+- Mantida idempotência para atualizações repetidas.
+- Adicionados testes do ciclo Consumer → WhatsApp.
+
 ## 0.3.0
-- Criada porta neutra `OrderIntegrationAdapter`.
-- Consumer isolado em módulo próprio.
-- Pedidos confirmados passam a `READY_FOR_INTEGRATION`.
-- Implementados polling, detalhes, ODR e atualização de status.
-- Adicionada validação obrigatória de códigos PDV.
-- Adicionada idempotência de ODR e status.
-- Mantida fachada compatível com a API já existente.
-- Adicionados testes do adaptador modular.
+
+- Adicionado adaptador modular da API Parceiro Consumer.
