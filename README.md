@@ -4,7 +4,7 @@ Base oficial do projeto SmartFoodIA.
 
 ## Versão atual
 
-`0.0.6 — Customers & Persistent Cart`
+`0.0.7 — Checkout & Persistent Orders`
 
 ## Requisitos
 
@@ -21,7 +21,7 @@ Base oficial do projeto SmartFoodIA.
 docker compose up --build
 ```
 
-4. Crie ou atualize as tabelas:
+4. Atualize as tabelas:
 
 ```bash
 docker compose exec api alembic upgrade head
@@ -30,7 +30,6 @@ docker compose exec api alembic upgrade head
 5. Acesse:
 
 - API: http://localhost:8000
-- Health check: http://localhost:8000/health
 - Swagger: http://localhost:8000/docs
 
 ## Estado atual
@@ -38,20 +37,22 @@ docker compose exec api alembic upgrade head
 Esta versão contém:
 
 - catálogo e complementos;
-- Smart Catalog Engine;
 - importador Consumer;
-- clientes identificados pelo telefone;
-- múltiplos endereços;
+- clientes e endereços;
 - carrinho persistente;
-- itens e complementos;
-- validação de compatibilidade;
-- cálculo de subtotal feito pelo Core;
-- APIs para criar, consultar, alterar e limpar o carrinho.
+- checkout;
+- entrega e retirada;
+- PIX, crédito, débito e dinheiro;
+- validação de troco;
+- pedido persistente;
+- snapshots de dados e preços;
+- evento `PLACED / PLC`;
+- proteção contra pedido duplicado pelo mesmo carrinho.
 
 Consulte:
 
 ```text
-docs/CUSTOMERS_AND_CART.md
+docs/CHECKOUT_AND_ORDERS.md
 ```
 
-A próxima etapa será checkout, entrega, pagamento e pedido persistente.
+A próxima etapa será disponibilizar os endpoints da API de parceiro do Consumer.

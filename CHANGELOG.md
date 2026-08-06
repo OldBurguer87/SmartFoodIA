@@ -1,40 +1,40 @@
 # Changelog
 
+## 0.0.7
+
+- Adicionado checkout do carrinho.
+- Adicionados pedidos persistentes.
+- Adicionados itens e complementos do pedido.
+- Adicionados snapshots de cliente, endereço, produtos e preços.
+- Adicionados modos entrega e retirada.
+- Adicionados PIX, crédito, débito e dinheiro.
+- Adicionada validação de troco.
+- Adicionada taxa de entrega e desconto.
+- Adicionado evento `PLACED / PLC`.
+- Adicionada idempotência por carrinho.
+- Adicionadas APIs de checkout e consulta de pedido.
+- Adicionados testes de checkout.
+
 ## 0.0.6
 
-- Adicionados clientes por loja e telefone.
-- Adicionada normalização de telefone.
-- Adicionados endereços de clientes.
-- Adicionado endereço padrão.
-- Adicionado carrinho persistente.
-- Adicionados itens e complementos do carrinho.
-- Adicionados snapshots de nomes, códigos e preços.
-- Adicionada validação de disponibilidade.
-- Adicionada validação de compatibilidade e limites de complementos.
-- Adicionado cálculo de subtotal no Core.
-- Adicionadas APIs de clientes e carrinhos.
-- Adicionados testes de clientes, endereços e carrinho.
+- Adicionados clientes, endereços e carrinho persistente.
+- Adicionada validação de complementos e cálculo de subtotal.
 
 ## 0.0.5
 
-- Adicionado importador de planilhas `.xlsx` do Consumer.
-- Adicionada importação idempotente por código PDV.
-- Adicionado bloqueio de códigos PDV conflitantes.
-- Adicionado relatório JSON da importação.
+- Adicionado importador do catálogo Consumer.
 
 ## 0.0.4
 
 - Adicionado Smart Catalog Engine.
-- Adicionado `CatalogService`.
-- Adicionada busca normalizada e ranking de relevância.
 
 ## 0.0.3
 
-- Adicionados grupos de complementos e regras de seleção.
+- Adicionados grupos de complementos.
 
 ## 0.0.2
 
-- Criadas as tabelas iniciais e API de catálogo.
+- Criadas tabelas iniciais e API de catálogo.
 
 ## 0.0.1
 

@@ -1,5 +1,5 @@
 {
   "project": "SmartFoodIA",
-  "version": "0.0.6",
-  "status": "customers-and-persistent-cart"
+  "version": "0.0.7",
+  "status": "checkout-and-persistent-orders"
 }

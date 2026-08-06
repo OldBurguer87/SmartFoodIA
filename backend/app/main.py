@@ -4,6 +4,7 @@ from app.api.catalog import router as catalog_router
 from app.api.modifiers import router as modifiers_router
 from app.api.customers import router as customers_router
 from app.api.carts import router as carts_router
+from app.api.orders import router as orders_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -16,6 +17,7 @@ app.include_router(catalog_router)
 app.include_router(modifiers_router)
 app.include_router(customers_router)
 app.include_router(carts_router)
+app.include_router(orders_router)
 
 
 @app.get("/")

@@ -17,6 +17,12 @@ from app.models.catalog import (  # noqa: F401
 )
 from app.models.customer import Customer, CustomerAddress  # noqa: F401
 from app.models.cart import Cart, CartItem, CartItemModifier  # noqa: F401
+from app.models.order import (  # noqa: F401
+    Order,
+    OrderEvent,
+    OrderItem,
+    OrderItemModifier,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
@@ -35,7 +41,6 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
     )
-
     with context.begin_transaction():
         context.run_migrations()
 
@@ -46,14 +51,12 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
         )
-
         with context.begin_transaction():
             context.run_migrations()
 
