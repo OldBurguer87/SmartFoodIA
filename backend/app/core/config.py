@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "SmartFoodIA"
-    app_version: str = "0.1.7"
+    app_version: str = "0.2.0"
     app_env: str = "development"
     app_debug: bool = True
     database_url: str = "postgresql+psycopg://smartfoodia:change-me@db:5432/smartfoodia"
@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     channel_worker_poll_seconds: float = 2.0
     channel_worker_batch_size: int = 50
     channel_worker_max_attempts: int = 5
+    frontend_origin: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(
         env_file=".env",

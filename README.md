@@ -2,16 +2,30 @@
 
 ## Versão atual
 
-`0.1.7 — Operational Dashboard API`
+`0.2.0 — First Web Operational Dashboard`
 
-Esta versão adiciona uma visão consolidada para o piloto:
+Esta versão entrega a primeira funcionalidade visual do SmartFoodIA:
 
-- conversas em atendimento;
-- tickets e urgências;
-- pedidos e receita;
-- desempenho da IA;
-- saúde das filas;
+- painel web responsivo;
+- visão de conversas, pedidos, receita e tickets;
+- saúde da IA e das filas;
 - lacunas de conhecimento;
-- alertas operacionais automáticos.
+- alertas operacionais;
+- integração direta com a API existente;
+- serviço web no Docker Compose;
+- CORS configurável.
 
-Consulte `docs/OPERATIONAL_DASHBOARD.md`.
+## Iniciar
+
+```bash
+docker compose up --build
+docker compose exec api alembic upgrade head
+```
+
+Acesse:
+
+```text
+http://localhost:3000
+```
+
+Consulte `docs/WEB_DASHBOARD.md`.

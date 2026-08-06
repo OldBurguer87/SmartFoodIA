@@ -20,6 +20,20 @@ services:
       timeout: 5s
       retries: 10
 
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: smartfoodia-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
   worker:
     build:
       context: ./backend

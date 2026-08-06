@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.catalog import router as catalog_router
 from app.api.modifiers import router as modifiers_router
@@ -20,6 +21,15 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.app_debug,
+)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(catalog_router)
