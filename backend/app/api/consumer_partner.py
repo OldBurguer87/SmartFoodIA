@@ -95,6 +95,8 @@ def receive_order_event(
         )
     except ConsumerNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except ConsumerValidationError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.post(

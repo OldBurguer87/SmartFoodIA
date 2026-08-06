@@ -1,14 +1,16 @@
 # Changelog
 
+## 0.3.2
+
+- Restringido o endpoint de eventos a `ODR`.
+- Validado `ORDER_DETAILS_REQUESTED` quando `EventFullCode` é enviado.
+- Adicionada validação defensiva no adaptador Consumer.
+- Removido nome fixo da Old Burguer 87 nas notificações.
+- Notificações agora utilizam o nome real da loja.
+- Removido o script duplicado de configuração Consumer.
+- Normalizadas alterações falsas de quebra de linha.
+- Adicionados testes de endurecimento do contrato.
+
 ## 0.3.1
 
-- Adicionado comando de provisionamento da integração Consumer.
-- Adicionada geração segura de token por loja.
-- Adicionada impressão das quatro URLs de configuração.
-- Adicionadas notificações de status do pedido pelo WhatsApp.
-- Mantida idempotência para atualizações repetidas.
-- Adicionados testes do ciclo Consumer → WhatsApp.
-
-## 0.3.0
-
-- Adicionado adaptador modular da API Parceiro Consumer.
+- Preparado provisionamento do piloto e notificações de status.

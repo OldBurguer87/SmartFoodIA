@@ -23,7 +23,13 @@ class ConsumerPartnerAdapter:
     def acknowledge_details_request(self, db: Session, *, store_id: UUID, order_id: UUID, code: str, full_code: str, reason: str|None=None):
         order=self.orders.get_for_store(db,store_id=store_id,order_id=order_id)
         if not order: raise IntegrationOrderNotFound('Pedido não encontrado.')
-        normalized=code.upper()
+        normalized=code.strip().upper()
+        normalized_full=(full_code or 'ORDER_DETAILS_REQUESTED').strip().upper()
+        if normalized != 'ODR' or normalized_full != 'ORDER_DETAILS_REQUESTED':
+            raise IntegrationStatusError(
+                'Evento suportado neste endpoint: ODR / ORDER_DETAILS_REQUESTED.'
+            )
+        full_code=normalized_full
         existing=next((e for e in order.events if e.code==normalized and e.full_code==full_code),None)
         if existing: return IntegrationEvent(existing.id,existing.order_id,existing.created_at.astimezone(timezone.utc),existing.code,existing.full_code)
         if normalized=='ODR':

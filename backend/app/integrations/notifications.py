@@ -4,17 +4,19 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models.order import Order
+from app.models.catalog import Store
 from app.repositories.channel import ChannelRepository
 from app.repositories.order import OrderRepository
 
 
 STATUS_MESSAGES = {
-    "CONFIRMED": "Seu pedido foi confirmado pela Old Burguer 87.",
+    "CONFIRMED": "Seu pedido foi confirmado pela {store_name}.",
     "READY": "Seu pedido está pronto para retirada.",
     "DISPATCHED": "Seu pedido saiu para entrega.",
     "CONCLUDED": "Seu pedido foi finalizado. Obrigado pela preferência!",
-    "CANCELLED": "Seu pedido foi cancelado. Entre em contato caso precise de ajuda.",
+    "CANCELLED": (
+        "Seu pedido foi cancelado. Entre em contato caso precise de ajuda."
+    ),
 }
 
 
@@ -36,8 +38,8 @@ class WhatsAppOrderStatusNotifier:
         order_id: UUID,
         status: str,
     ) -> bool:
-        message = STATUS_MESSAGES.get(status)
-        if message is None:
+        template = STATUS_MESSAGES.get(status)
+        if template is None:
             return False
 
         order = self.orders.get_for_store(
@@ -48,6 +50,10 @@ class WhatsAppOrderStatusNotifier:
         if order is None or not order.customer_phone:
             return False
 
+        store = db.get(Store, store_id)
+        if store is None:
+            return False
+
         account = self.channels.get_account_by_store(
             db,
             store_id=store_id,
@@ -56,6 +62,7 @@ class WhatsAppOrderStatusNotifier:
         if account is None:
             return False
 
+        message = template.format(store_name=store.name)
         self.channels.create_outbound(
             db,
             account=account,

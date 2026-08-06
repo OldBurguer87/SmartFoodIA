@@ -1,0 +1,7 @@
+Após copiar esta atualização, exclua manualmente o arquivo abaixo, caso ainda
+exista no projeto:
+
+backend/app/scripts/configure_consumer_integration.py
+
+O configurador oficial é:
+backend/app/scripts/configure_consumer_partner.py

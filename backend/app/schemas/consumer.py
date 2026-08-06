@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ConsumerEventRead(BaseModel):
@@ -20,9 +21,20 @@ class ConsumerPollingResponse(BaseModel):
 
 class ConsumerOrderEventRequest(BaseModel):
     OrderId: UUID
-    EventCode: str = Field(min_length=2, max_length=20)
+    EventCode: Literal["ODR"]
     EventFullCode: str | None = Field(default=None, max_length=80)
     EventFull: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_details_request(self):
+        if (
+            self.EventFullCode is not None
+            and self.EventFullCode.strip().upper() != "ORDER_DETAILS_REQUESTED"
+        ):
+            raise ValueError(
+                "EventFullCode deve ser ORDER_DETAILS_REQUESTED para o evento ODR."
+            )
+        return self
 
 
 class ConsumerStatusRequest(BaseModel):

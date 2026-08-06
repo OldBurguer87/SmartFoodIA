@@ -2,14 +2,19 @@
 
 ## Versão atual
 
-`0.3.1 — Consumer Pilot Readiness`
+`0.3.2 — Consumer Contract Hardening`
 
-Esta versão mantém o foco no fluxo aprovado com o Consumer e adiciona:
+Esta versão mantém o foco exclusivo no fluxo aprovado:
 
-- configuração segura da integração por loja;
-- geração de token e das quatro URLs do Consumer;
-- notificações automáticas de status pelo WhatsApp;
-- idempotência para não avisar duas vezes a mesma atualização;
-- documentação de preparação do piloto.
+```text
+WhatsApp → Olívia → pedido confirmado → Consumer → status → cliente
+```
 
-Consulte `docs/CONSUMER_PILOT_READINESS.md`.
+Principais ajustes:
+
+- validação rígida de `ODR / ORDER_DETAILS_REQUESTED`;
+- nome da loja dinâmico nas notificações;
+- remoção do configurador Consumer duplicado;
+- testes adicionais do contrato e da modularidade.
+
+Consulte `docs/CONSUMER_HARDENING.md`.
