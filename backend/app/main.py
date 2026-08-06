@@ -9,6 +9,7 @@ from app.api.consumer_partner import router as consumer_partner_router
 from app.api.olivia_tools import router as olivia_tools_router
 from app.api.olivia_chat import router as olivia_chat_router
 from app.api.conversations import router as conversations_router
+from app.api.whatsapp import router as whatsapp_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -26,6 +27,7 @@ app.include_router(consumer_partner_router)
 app.include_router(olivia_tools_router)
 app.include_router(olivia_chat_router)
 app.include_router(conversations_router)
+app.include_router(whatsapp_router)
 
 
 @app.get("/")

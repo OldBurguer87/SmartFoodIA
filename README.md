@@ -2,15 +2,17 @@
 
 ## Versão atual
 
-`0.1.1 — OpenAI Provider & Olivia Orchestrator`
+`0.1.2 — WhatsApp Channel Gateway`
 
-Esta versão adiciona:
+Esta versão adiciona o primeiro canal real do SmartFoodIA:
 
-- adaptador substituível de IA;
-- Responses API da OpenAI;
-- ciclo de chamadas de ferramentas;
-- persistência automática das mensagens;
-- registro de eventos e duração;
-- endpoint real de resposta da Olívia.
+- webhook do WhatsApp Cloud API;
+- verificação e assinatura;
+- idempotência;
+- sessões por telefone;
+- integração com o orquestrador da Olívia;
+- envio de respostas;
+- persistência de eventos e mensagens de saída;
+- base preparada para retry e fila.
 
-Consulte `docs/OPENAI_PROVIDER.md`.
+Consulte `docs/WHATSAPP_GATEWAY.md`.

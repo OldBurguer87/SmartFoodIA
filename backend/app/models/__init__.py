@@ -23,6 +23,8 @@ from app.models.conversation import (
 __all__ = [
     "AIEvent",
     "Cart",
+    "ChannelAccount",
+    "ChannelEvent",
     "CartItem",
     "CartItemModifier",
     "Category",
@@ -40,8 +42,11 @@ __all__ = [
     "OrderEvent",
     "OrderItem",
     "OrderItemModifier",
+    "OutboundChannelMessage",
     "Product",
     "ProductModifierGroup",
     "Store",
     "StoreIntegration",
 ]
+
+from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage
