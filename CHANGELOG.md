@@ -1,25 +1,28 @@
 # Changelog
 
+## 0.0.9
+
+- Criada camada de ferramentas da Olívia.
+- Adicionados contratos `ToolDefinition` e `ToolResult`.
+- Adicionado registro central de ferramentas.
+- Adicionadas definições compatíveis com function calling.
+- Adicionadas ferramentas de catálogo.
+- Adicionadas ferramentas de cliente e endereço.
+- Adicionadas ferramentas de carrinho.
+- Adicionada ferramenta de checkout.
+- Adicionada confirmação explícita obrigatória.
+- Adicionada escalação humana estruturada.
+- Adicionados endpoints de desenvolvimento das ferramentas.
+- Adicionados testes do fluxo de ferramentas.
+
 ## 0.0.8
 
-- Adicionadas credenciais de integração por loja.
-- Adicionado armazenamento de token somente como hash SHA-256.
-- Adicionada autenticação Bearer por loja.
-- Adicionado endpoint de polling do Consumer.
-- Adicionado endpoint de detalhes do pedido.
-- Adicionado recebimento de evento `ODR`.
-- Adicionada atualização de status do pedido.
-- Adicionado mapeamento do pedido para o contrato Consumer.
-- Adicionada filtragem de eventos por loja.
-- Adicionada idempotência na atualização de status.
-- Adicionado script seguro de configuração da integração.
-- Adicionados testes da API de parceiro.
+- Adicionada API de parceiro do Consumer.
+- Adicionados polling, detalhes e atualização de status.
 
 ## 0.0.7
 
 - Adicionado checkout e pedidos persistentes.
-- Adicionado evento `PLACED / PLC`.
-- Adicionada idempotência por carrinho.
 
 ## 0.0.6
 

@@ -4,7 +4,7 @@ Base oficial do projeto SmartFoodIA.
 
 ## Versão atual
 
-`0.0.8 — Consumer Partner API`
+`0.0.9 — Olivia Tool Layer`
 
 ## Requisitos
 
@@ -38,21 +38,18 @@ Esta versão contém:
 
 - catálogo e importador Consumer;
 - clientes, endereços e carrinhos;
-- checkout e pedidos persistentes;
-- eventos de pedido;
-- credenciais Consumer por loja;
-- token armazenado somente como hash;
-- polling;
-- detalhes completos do pedido;
-- recebimento de evento ODR;
-- atualização de status;
-- proteção por loja e token;
-- idempotência de atualizações.
+- checkout e pedidos;
+- API de parceiro do Consumer;
+- camada de ferramentas da Olívia;
+- definições compatíveis com function calling;
+- ferramentas de catálogo, cliente, endereço, carrinho e checkout;
+- confirmação explícita antes de criar pedido;
+- escalação humana estruturada.
 
 Consulte:
 
 ```text
-docs/CONSUMER_PARTNER_API.md
+docs/OLIVIA_TOOLS.md
 ```
 
-A próxima etapa será criar as ferramentas da Olívia para catálogo, cliente, carrinho e checkout.
+A próxima etapa será integrar um provedor de IA e persistir conversas, mensagens e tickets.
