@@ -29,6 +29,10 @@ class ConversationNotFoundError(LookupError):
     pass
 
 
+class ConversationStateError(ValueError):
+    pass
+
+
 def normalize_question(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value)
     without_accents = "".join(
@@ -98,6 +102,88 @@ class ConversationService:
         db.refresh(message)
         return message
 
+    def take_over(
+        self,
+        db: Session,
+        *,
+        conversation_id: UUID,
+        assigned_to: str,
+    ) -> Conversation:
+        conversation = self.repository.get(db, conversation_id)
+        if conversation is None:
+            raise ConversationNotFoundError(str(conversation_id))
+        if conversation.status == "CLOSED":
+            raise ConversationStateError(
+                "Conversa encerrada não pode ser assumida."
+            )
+        conversation.status = "HUMAN"
+        db.add(
+            AIEvent(
+                store_id=conversation.store_id,
+                conversation_id=conversation.id,
+                event_type="HUMAN_TAKEOVER",
+                success=True,
+                payload_json={"assigned_to": assigned_to},
+            )
+        )
+        db.commit()
+        db.refresh(conversation)
+        return conversation
+
+    def release_to_olivia(
+        self,
+        db: Session,
+        *,
+        conversation_id: UUID,
+        assigned_to: str,
+    ) -> Conversation:
+        conversation = self.repository.get(db, conversation_id)
+        if conversation is None:
+            raise ConversationNotFoundError(str(conversation_id))
+        if conversation.status != "HUMAN":
+            raise ConversationStateError(
+                "Conversa não está sob atendimento humano."
+            )
+        conversation.status = "OPEN"
+        db.add(
+            AIEvent(
+                store_id=conversation.store_id,
+                conversation_id=conversation.id,
+                event_type="HUMAN_RELEASE",
+                success=True,
+                payload_json={"assigned_to": assigned_to},
+            )
+        )
+        db.commit()
+        db.refresh(conversation)
+        return conversation
+
+    def add_human_message(
+        self,
+        db: Session,
+        *,
+        conversation_id: UUID,
+        content: str,
+        assigned_to: str,
+    ) -> Message:
+        conversation = self.repository.get(db, conversation_id)
+        if conversation is None:
+            raise ConversationNotFoundError(str(conversation_id))
+        if conversation.status != "HUMAN":
+            raise ConversationStateError(
+                "Assuma a conversa antes de enviar uma resposta humana."
+            )
+        return self.add_message(
+            db,
+            conversation_id=conversation_id,
+            payload=MessageCreate(
+                direction="OUTBOUND",
+                sender_type="HUMAN",
+                content=content,
+                metadata_json={"assigned_to": assigned_to},
+            ),
+        )
+
     def create_ticket(
         self,
         db: Session,
@@ -135,7 +221,10 @@ class ConversationService:
         )
         if existing is not None:
             existing.occurrences += 1
-            if existing.conversation_id is None and payload.conversation_id is not None:
+            if (
+                existing.conversation_id is None
+                and payload.conversation_id is not None
+            ):
                 existing.conversation_id = payload.conversation_id
             if existing.ticket_id is None and payload.ticket_id is not None:
                 existing.ticket_id = payload.ticket_id

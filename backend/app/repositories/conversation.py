@@ -25,10 +25,12 @@ class ConversationRepository:
         statement = select(Conversation).where(
             Conversation.store_id == store_id,
             Conversation.channel == channel,
-            Conversation.status == "OPEN",
+            Conversation.status.in_(["OPEN", "HUMAN"]),
         )
         if external_conversation_id is None:
-            statement = statement.where(Conversation.external_conversation_id.is_(None))
+            statement = statement.where(
+                Conversation.external_conversation_id.is_(None)
+            )
         else:
             statement = statement.where(
                 Conversation.external_conversation_id == external_conversation_id
@@ -51,6 +53,25 @@ class ConversationRepository:
         messages = list(db.scalars(statement).all())
         messages.reverse()
         return messages
+
+    def list_for_store(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[Conversation]:
+        statement = (
+            select(Conversation)
+            .where(Conversation.store_id == store_id)
+            .options(selectinload(Conversation.messages))
+            .order_by(Conversation.last_message_at.desc())
+            .limit(limit)
+        )
+        if status is not None:
+            statement = statement.where(Conversation.status == status)
+        return list(db.scalars(statement).all())
 
     def get_open_gap(
         self,

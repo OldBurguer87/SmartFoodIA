@@ -2,17 +2,16 @@
 
 ## Versão atual
 
-`0.1.4 — Continuous Worker & Readiness`
+`0.1.5 — Human Takeover & Operational Conversations`
 
 Esta versão adiciona:
 
-- worker contínuo para a fila de canais;
-- serviço `worker` no Docker Compose;
-- reinício automático;
-- configurações de lote, intervalo e tentativas;
-- endpoint `/live`;
-- endpoint `/ready`;
-- healthcheck da API;
-- inicialização ordenada entre banco, API e worker.
+- listagem operacional de conversas;
+- tomada de atendimento humano;
+- pausa automática da Olívia;
+- persistência de mensagens recebidas durante o atendimento humano;
+- respostas humanas pela fila do WhatsApp;
+- devolução da conversa para a Olívia;
+- auditoria de takeover e release.
 
-Consulte `docs/WORKER_AND_READINESS.md`.
+Consulte `docs/HUMAN_TAKEOVER.md`.

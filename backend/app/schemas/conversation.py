@@ -47,3 +47,12 @@ class AIEventCreate(BaseModel):
     duration_ms: int | None = Field(default=None, ge=0)
     payload_json: dict[str, Any] | None = None
     error_message: str | None = None
+
+
+class ConversationTakeoverRequest(BaseModel):
+    assigned_to: str = Field(min_length=2, max_length=160)
+
+
+class HumanReplyRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=4000)
+    assigned_to: str = Field(min_length=2, max_length=160)

@@ -1,6 +1,5 @@
-from uuid import UUID
-
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -24,6 +23,20 @@ class ChannelRepository:
             )
         )
 
+    def get_account_by_store(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        provider: str,
+    ) -> ChannelAccount | None:
+        return db.scalar(
+            select(ChannelAccount).where(
+                ChannelAccount.store_id == store_id,
+                ChannelAccount.provider == provider,
+                ChannelAccount.active.is_(True),
+            )
+        )
 
     def get_account_by_verify_token_hash(
         self,
@@ -104,11 +117,44 @@ class ChannelRepository:
         db.refresh(message)
         return message
 
-
-    def list_due_events(self, db: Session, *, now: datetime, limit: int = 50) -> list[ChannelEvent]:
-        statement = (select(ChannelEvent).where(ChannelEvent.status.in_(["RECEIVED", "RETRY"]), or_(ChannelEvent.next_attempt_at.is_(None), ChannelEvent.next_attempt_at <= now)).order_by(ChannelEvent.created_at).limit(limit))
+    def list_due_events(
+        self,
+        db: Session,
+        *,
+        now: datetime,
+        limit: int = 50,
+    ) -> list[ChannelEvent]:
+        statement = (
+            select(ChannelEvent)
+            .where(
+                ChannelEvent.status.in_(["RECEIVED", "RETRY"]),
+                or_(
+                    ChannelEvent.next_attempt_at.is_(None),
+                    ChannelEvent.next_attempt_at <= now,
+                ),
+            )
+            .order_by(ChannelEvent.created_at)
+            .limit(limit)
+        )
         return list(db.scalars(statement).all())
 
-    def list_due_outbound(self, db: Session, *, now: datetime, limit: int = 50) -> list[OutboundChannelMessage]:
-        statement = (select(OutboundChannelMessage).where(OutboundChannelMessage.status.in_(["PENDING", "RETRY"]), or_(OutboundChannelMessage.next_attempt_at.is_(None), OutboundChannelMessage.next_attempt_at <= now)).order_by(OutboundChannelMessage.created_at).limit(limit))
+    def list_due_outbound(
+        self,
+        db: Session,
+        *,
+        now: datetime,
+        limit: int = 50,
+    ) -> list[OutboundChannelMessage]:
+        statement = (
+            select(OutboundChannelMessage)
+            .where(
+                OutboundChannelMessage.status.in_(["PENDING", "RETRY"]),
+                or_(
+                    OutboundChannelMessage.next_attempt_at.is_(None),
+                    OutboundChannelMessage.next_attempt_at <= now,
+                ),
+            )
+            .order_by(OutboundChannelMessage.created_at)
+            .limit(limit)
+        )
         return list(db.scalars(statement).all())

@@ -1,17 +1,16 @@
 # Changelog
 
+## 0.1.5
+
+- Adicionada listagem operacional de conversas.
+- Adicionado atendimento humano com estado `HUMAN`.
+- Adicionada pausa da Olívia durante takeover.
+- Adicionada persistência de mensagens recebidas durante atendimento humano.
+- Adicionado envio de respostas humanas pela fila do WhatsApp.
+- Adicionada devolução da conversa para a Olívia.
+- Adicionados eventos de auditoria de takeover e release.
+- Adicionados testes do fluxo humano.
+
 ## 0.1.4
 
-- Adicionado worker contínuo para filas de canais.
-- Adicionado serviço separado no Docker Compose.
-- Adicionado reinício automático da API, worker e banco.
-- Adicionadas configurações de intervalo, lote e tentativas.
-- Adicionado endpoint de liveness `/live`.
-- Adicionado endpoint de readiness `/ready`.
-- Adicionado healthcheck da API.
-- Adicionada dependência do worker sobre a prontidão da API.
-- Adicionados testes de saúde.
-
-## 0.1.3
-
-- Adicionada fila persistente e retentativas do WhatsApp.
+- Adicionado worker contínuo e verificações de prontidão.

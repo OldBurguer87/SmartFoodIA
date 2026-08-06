@@ -10,7 +10,7 @@ from app.ai.providers.openai_provider import OpenAIResponsesProvider
 from app.channels.whatsapp.client import WhatsAppCloudClient
 from app.models.channel import ChannelAccount, ChannelEvent
 from app.repositories.channel import ChannelRepository
-from app.schemas.conversation import ConversationCreate
+from app.schemas.conversation import ConversationCreate, MessageCreate
 from app.services.conversation import ConversationService
 
 
@@ -163,6 +163,37 @@ class WhatsAppGatewayService:
         body = str((message.get("text") or {}).get("body") or "").strip()
         if not body:
             raise WhatsAppWebhookError("Mensagem de texto vazia.")
-        conversation = self.conversations.get_or_create(db, ConversationCreate(store_id=account.store_id, channel="WHATSAPP", external_conversation_id=sender))
-        reply = self.orchestrator_factory().reply(db, store_id=account.store_id, conversation_id=conversation.id, customer_message=body, customer_phone=sender)
-        self.repository.create_outbound(db, account=account, conversation_id=conversation.id, recipient=sender, content=reply)
+        conversation = self.conversations.get_or_create(
+            db,
+            ConversationCreate(
+                store_id=account.store_id,
+                channel="WHATSAPP",
+                external_conversation_id=sender,
+            ),
+        )
+        if conversation.status == "HUMAN":
+            self.conversations.add_message(
+                db,
+                conversation_id=conversation.id,
+                payload=MessageCreate(
+                    direction="INBOUND",
+                    sender_type="CUSTOMER",
+                    content=body,
+                    external_message_id=event.external_event_id,
+                ),
+            )
+            return
+        reply = self.orchestrator_factory().reply(
+            db,
+            store_id=account.store_id,
+            conversation_id=conversation.id,
+            customer_message=body,
+            customer_phone=sender,
+        )
+        self.repository.create_outbound(
+            db,
+            account=account,
+            conversation_id=conversation.id,
+            recipient=sender,
+            content=reply,
+        )
