@@ -56,3 +56,16 @@ class ConversationTakeoverRequest(BaseModel):
 class HumanReplyRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
     assigned_to: str = Field(min_length=2, max_length=160)
+
+
+class HumanTicketAssign(BaseModel):
+    assigned_to: str = Field(min_length=2, max_length=160)
+
+
+class HumanTicketResolve(BaseModel):
+    resolution: str = Field(min_length=2, max_length=4000)
+    assigned_to: str = Field(min_length=2, max_length=160)
+
+
+class KnowledgeSearchRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=1000)

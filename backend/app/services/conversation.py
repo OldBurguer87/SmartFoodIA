@@ -184,6 +184,57 @@ class ConversationService:
             ),
         )
 
+    def assign_ticket(
+        self,
+        db: Session,
+        *,
+        ticket_id: UUID,
+        assigned_to: str,
+    ) -> HumanTicket:
+        ticket = self.repository.get_ticket(db, ticket_id)
+        if ticket is None:
+            raise ConversationNotFoundError(str(ticket_id))
+        if ticket.status == "RESOLVED":
+            raise ConversationStateError(
+                "Ticket resolvido não pode ser reatribuído."
+            )
+        ticket.assigned_to = assigned_to
+        ticket.status = "IN_PROGRESS"
+        db.commit()
+        db.refresh(ticket)
+        return ticket
+
+    def resolve_ticket(
+        self,
+        db: Session,
+        *,
+        ticket_id: UUID,
+        resolution: str,
+        assigned_to: str,
+    ) -> HumanTicket:
+        ticket = self.repository.get_ticket(db, ticket_id)
+        if ticket is None:
+            raise ConversationNotFoundError(str(ticket_id))
+        ticket.assigned_to = assigned_to
+        ticket.resolution = resolution
+        ticket.status = "RESOLVED"
+        db.commit()
+        db.refresh(ticket)
+        return ticket
+
+    def find_knowledge_answer(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        question: str,
+    ) -> KnowledgeGap | None:
+        return self.repository.get_resolved_gap(
+            db,
+            store_id=store_id,
+            normalized_question=normalize_question(question),
+        )
+
     def create_ticket(
         self,
         db: Session,

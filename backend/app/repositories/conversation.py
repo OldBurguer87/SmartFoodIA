@@ -73,6 +73,64 @@ class ConversationRepository:
             statement = statement.where(Conversation.status == status)
         return list(db.scalars(statement).all())
 
+    def list_tickets(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        status: str | None = None,
+        priority: str | None = None,
+        limit: int = 100,
+    ) -> list[HumanTicket]:
+        statement = (
+            select(HumanTicket)
+            .where(HumanTicket.store_id == store_id)
+            .order_by(HumanTicket.created_at.desc())
+            .limit(limit)
+        )
+        if status is not None:
+            statement = statement.where(HumanTicket.status == status)
+        if priority is not None:
+            statement = statement.where(HumanTicket.priority == priority)
+        return list(db.scalars(statement).all())
+
+    def list_knowledge_gaps(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[KnowledgeGap]:
+        statement = (
+            select(KnowledgeGap)
+            .where(KnowledgeGap.store_id == store_id)
+            .order_by(
+                KnowledgeGap.occurrences.desc(),
+                KnowledgeGap.updated_at.desc(),
+            )
+            .limit(limit)
+        )
+        if status is not None:
+            statement = statement.where(KnowledgeGap.status == status)
+        return list(db.scalars(statement).all())
+
+    def get_resolved_gap(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        normalized_question: str,
+    ) -> KnowledgeGap | None:
+        return db.scalar(
+            select(KnowledgeGap).where(
+                KnowledgeGap.store_id == store_id,
+                KnowledgeGap.normalized_question == normalized_question,
+                KnowledgeGap.status == "RESOLVED",
+                KnowledgeGap.answer.is_not(None),
+            )
+        )
+
     def get_open_gap(
         self,
         db: Session,

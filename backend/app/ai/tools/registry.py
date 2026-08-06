@@ -19,6 +19,7 @@ from app.ai.tools.customer import (
     ListCustomerAddressesTool,
 )
 from app.ai.tools.support import RequestHumanHelpTool
+from app.ai.tools.knowledge import SearchKnowledgeTool
 
 
 class UnknownToolError(LookupError):
@@ -39,6 +40,7 @@ class OliviaToolRegistry:
             UpdateCartItemTool(context),
             RemoveCartItemTool(context),
             CheckoutCartTool(context),
+            SearchKnowledgeTool(context),
             RequestHumanHelpTool(context),
         ]
         self._tools = {tool.definition.name: tool for tool in tools}

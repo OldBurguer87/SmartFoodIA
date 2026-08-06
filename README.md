@@ -2,16 +2,16 @@
 
 ## Versão atual
 
-`0.1.5 — Human Takeover & Operational Conversations`
+`0.1.6 — Support Operations & Approved Knowledge`
 
 Esta versão adiciona:
 
-- listagem operacional de conversas;
-- tomada de atendimento humano;
-- pausa automática da Olívia;
-- persistência de mensagens recebidas durante o atendimento humano;
-- respostas humanas pela fila do WhatsApp;
-- devolução da conversa para a Olívia;
-- auditoria de takeover e release.
+- fila operacional de tickets;
+- atribuição e resolução de tickets;
+- listagem de lacunas por recorrência;
+- aprovação de respostas;
+- busca de conhecimento aprovado;
+- ferramenta `search_knowledge` para a Olívia;
+- garantia de que perguntas ainda abertas não sejam usadas como verdade.
 
-Consulte `docs/HUMAN_TAKEOVER.md`.
+Consulte `docs/SUPPORT_OPERATIONS.md`.

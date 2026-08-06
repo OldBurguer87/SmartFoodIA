@@ -12,6 +12,7 @@ from app.api.conversations import router as conversations_router
 from app.api.whatsapp import router as whatsapp_router
 from app.api.system import router as system_router
 from app.api.operations import router as operations_router
+from app.api.support_operations import router as support_operations_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -32,6 +33,7 @@ app.include_router(conversations_router)
 app.include_router(whatsapp_router)
 app.include_router(system_router)
 app.include_router(operations_router)
+app.include_router(support_operations_router)
 
 
 @app.get("/")
