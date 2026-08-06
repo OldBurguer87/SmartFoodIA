@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2
+## 0.1.3
 
 - Adicionado gateway de canais para WhatsApp Cloud API.
 - Adicionados webhooks de verificação e recebimento.

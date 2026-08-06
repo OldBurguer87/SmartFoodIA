@@ -1,1 +1,5 @@
-{"project":"SmartFoodIA","version":"0.1.2","status":"whatsapp-channel-gateway"}
+{
+  "project": "SmartFoodIA",
+  "version": "0.1.3",
+  "status": "channel-queue-and-retries"
+}

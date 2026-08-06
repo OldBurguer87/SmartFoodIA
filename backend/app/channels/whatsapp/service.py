@@ -35,6 +35,7 @@ class WhatsAppGatewayService:
         conversation_service: ConversationService | None = None,
         orchestrator_factory: Callable[[], OliviaOrchestrator] | None = None,
         client_factory: Callable[[], WhatsAppCloudClient] | None = None,
+        process_inline: bool = True,
     ) -> None:
         self.repository = repository or ChannelRepository()
         self.conversations = conversation_service or ConversationService()
@@ -42,6 +43,7 @@ class WhatsAppGatewayService:
             lambda: OliviaOrchestrator(OpenAIResponsesProvider())
         )
         self.client_factory = client_factory
+        self.process_inline = process_inline
 
     def process_payload(self, db: Session, payload: dict[str, Any]) -> WebhookProcessingResult:
         received = processed = duplicated = ignored = failed = 0
@@ -106,22 +108,32 @@ class WhatsAppGatewayService:
                         event_type="INBOUND_MESSAGE",
                         payload=message,
                     )
+                    event.status = "RECEIVED"
+                    event.next_attempt_at = None
+                    db.commit()
+                    if not self.process_inline:
+                        processed += 1
+                        continue
                     try:
-                        self._process_message(db, account, event, message)
-                    except Exception as error:
-                        event.status = "FAILED"
-                        event.attempts += 1
-                        event.error_message = str(error)
-                        db.commit()
-                        failed += 1
-                    else:
+                        self.process_event(db, account, event)
                         event.attempts += 1
                         if event.status == "IGNORED":
                             ignored += 1
                         else:
                             event.status = "PROCESSED"
                             processed += 1
-                        db.commit()
+                    except Exception as error:
+                        event.status = "FAILED"
+                        event.attempts += 1
+                        event.error_message = str(error)
+                        failed += 1
+                    db.commit()
+                    if event.status == "PROCESSED" and self.client_factory is not None:
+                        from app.channels.whatsapp.queue import WhatsAppQueueProcessor
+                        queue_result = WhatsAppQueueProcessor(
+                            repository=self.repository,
+                            client_factory=self.client_factory,
+                        ).run_once(db)
 
         return WebhookProcessingResult(
             received=received,
@@ -131,12 +143,14 @@ class WhatsAppGatewayService:
             failed=failed,
         )
 
+    def process_event(self, db: Session, account: ChannelAccount, event: ChannelEvent) -> None:
+        if event.event_type != "INBOUND_MESSAGE":
+            event.status = "IGNORED"
+            return
+        self._process_message(db, account, event, event.payload_json)
+
     def _process_message(
-        self,
-        db: Session,
-        account: ChannelAccount,
-        event: ChannelEvent,
-        message: dict[str, Any],
+        self, db: Session, account: ChannelAccount, event: ChannelEvent, message: dict[str, Any]
     ) -> None:
         sender = str(message.get("from") or "")
         message_type = str(message.get("type") or "")
@@ -146,48 +160,9 @@ class WhatsAppGatewayService:
             event.status = "IGNORED"
             event.error_message = f"Tipo ainda não suportado: {message_type or 'desconhecido'}"
             return
-
         body = str((message.get("text") or {}).get("body") or "").strip()
         if not body:
             raise WhatsAppWebhookError("Mensagem de texto vazia.")
-
-        conversation = self.conversations.get_or_create(
-            db,
-            ConversationCreate(
-                store_id=account.store_id,
-                channel="WHATSAPP",
-                external_conversation_id=sender,
-            ),
-        )
-        reply = self.orchestrator_factory().reply(
-            db,
-            store_id=account.store_id,
-            conversation_id=conversation.id,
-            customer_message=body,
-            customer_phone=sender,
-        )
-
-        outbound = self.repository.create_outbound(
-            db,
-            account=account,
-            conversation_id=conversation.id,
-            recipient=sender,
-            content=reply,
-        )
-        if self.client_factory is None:
-            raise WhatsAppWebhookError("Cliente de envio do WhatsApp não configurado.")
-        outbound.attempts += 1
-        try:
-            external_id = self.client_factory().send_text(
-                phone_number_id=account.external_account_id,
-                recipient=sender,
-                text=reply,
-            )
-        except Exception as error:
-            outbound.status = "FAILED"
-            outbound.error_message = str(error)
-            db.commit()
-            raise
-        outbound.status = "SENT"
-        outbound.external_message_id = external_id
-        db.commit()
+        conversation = self.conversations.get_or_create(db, ConversationCreate(store_id=account.store_id, channel="WHATSAPP", external_conversation_id=sender))
+        reply = self.orchestrator_factory().reply(db, store_id=account.store_id, conversation_id=conversation.id, customer_message=body, customer_phone=sender)
+        self.repository.create_outbound(db, account=account, conversation_id=conversation.id, recipient=sender, content=reply)

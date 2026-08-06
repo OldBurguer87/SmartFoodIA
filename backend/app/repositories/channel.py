@@ -1,6 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage
@@ -101,3 +103,12 @@ class ChannelRepository:
         db.commit()
         db.refresh(message)
         return message
+
+
+    def list_due_events(self, db: Session, *, now: datetime, limit: int = 50) -> list[ChannelEvent]:
+        statement = (select(ChannelEvent).where(ChannelEvent.status.in_(["RECEIVED", "RETRY"]), or_(ChannelEvent.next_attempt_at.is_(None), ChannelEvent.next_attempt_at <= now)).order_by(ChannelEvent.created_at).limit(limit))
+        return list(db.scalars(statement).all())
+
+    def list_due_outbound(self, db: Session, *, now: datetime, limit: int = 50) -> list[OutboundChannelMessage]:
+        statement = (select(OutboundChannelMessage).where(OutboundChannelMessage.status.in_(["PENDING", "RETRY"]), or_(OutboundChannelMessage.next_attempt_at.is_(None), OutboundChannelMessage.next_attempt_at <= now)).order_by(OutboundChannelMessage.created_at).limit(limit))
+        return list(db.scalars(statement).all())

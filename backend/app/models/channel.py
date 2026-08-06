@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
@@ -40,6 +41,8 @@ class ChannelEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[datetime | None] = mapped_column()
+    processed_at: Mapped[datetime | None] = mapped_column()
 
 
 class OutboundChannelMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -60,3 +63,5 @@ class OutboundChannelMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     external_message_id: Mapped[str | None] = mapped_column(String(180))
     error_message: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[datetime | None] = mapped_column()
+    sent_at: Mapped[datetime | None] = mapped_column()

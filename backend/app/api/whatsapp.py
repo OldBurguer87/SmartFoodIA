@@ -54,7 +54,7 @@ async def receive_webhook(
     ):
         raise HTTPException(status_code=401, detail="Assinatura inválida.")
     payload = await request.json()
-    result = WhatsAppGatewayService(client_factory=make_client).process_payload(
+    result = WhatsAppGatewayService(client_factory=make_client, process_inline=False).process_payload(
         db,
         payload,
     )
