@@ -18,6 +18,23 @@ class OrderRepository:
         )
         return db.scalar(statement)
 
+    def get_for_store(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        order_id: UUID,
+    ) -> Order | None:
+        statement = (
+            select(Order)
+            .where(Order.id == order_id, Order.store_id == store_id)
+            .options(
+                selectinload(Order.items).selectinload(OrderItem.modifiers),
+                selectinload(Order.events),
+            )
+        )
+        return db.scalar(statement)
+
     def get_by_cart(self, db: Session, cart_id: UUID) -> Order | None:
         statement = (
             select(Order)
@@ -35,10 +52,20 @@ class OrderRepository:
         ) or 0
         return str(count + 1).zfill(6)
 
-    def list_pending_events(self, db: Session, limit: int = 100) -> list[OrderEvent]:
+    def list_pending_events(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        limit: int = 100,
+    ) -> list[OrderEvent]:
         statement = (
             select(OrderEvent)
-            .where(OrderEvent.status == "PENDING")
+            .join(Order, Order.id == OrderEvent.order_id)
+            .where(
+                OrderEvent.status == "PENDING",
+                Order.store_id == store_id,
+            )
             .order_by(OrderEvent.created_at)
             .limit(limit)
         )

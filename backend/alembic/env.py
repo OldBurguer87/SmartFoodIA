@@ -23,6 +23,7 @@ from app.models.order import (  # noqa: F401
     OrderItem,
     OrderItemModifier,
 )
+from app.models.integration import StoreIntegration  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

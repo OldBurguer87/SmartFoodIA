@@ -1,24 +1,29 @@
 # Changelog
 
+## 0.0.8
+
+- Adicionadas credenciais de integração por loja.
+- Adicionado armazenamento de token somente como hash SHA-256.
+- Adicionada autenticação Bearer por loja.
+- Adicionado endpoint de polling do Consumer.
+- Adicionado endpoint de detalhes do pedido.
+- Adicionado recebimento de evento `ODR`.
+- Adicionada atualização de status do pedido.
+- Adicionado mapeamento do pedido para o contrato Consumer.
+- Adicionada filtragem de eventos por loja.
+- Adicionada idempotência na atualização de status.
+- Adicionado script seguro de configuração da integração.
+- Adicionados testes da API de parceiro.
+
 ## 0.0.7
 
-- Adicionado checkout do carrinho.
-- Adicionados pedidos persistentes.
-- Adicionados itens e complementos do pedido.
-- Adicionados snapshots de cliente, endereço, produtos e preços.
-- Adicionados modos entrega e retirada.
-- Adicionados PIX, crédito, débito e dinheiro.
-- Adicionada validação de troco.
-- Adicionada taxa de entrega e desconto.
+- Adicionado checkout e pedidos persistentes.
 - Adicionado evento `PLACED / PLC`.
 - Adicionada idempotência por carrinho.
-- Adicionadas APIs de checkout e consulta de pedido.
-- Adicionados testes de checkout.
 
 ## 0.0.6
 
 - Adicionados clientes, endereços e carrinho persistente.
-- Adicionada validação de complementos e cálculo de subtotal.
 
 ## 0.0.5
 

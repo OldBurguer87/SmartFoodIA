@@ -11,6 +11,7 @@ from app.models.catalog import (
 from app.models.customer import Customer, CustomerAddress
 from app.models.cart import Cart, CartItem, CartItemModifier
 from app.models.order import Order, OrderEvent, OrderItem, OrderItemModifier
+from app.models.integration import StoreIntegration
 
 __all__ = [
     "Cart",
@@ -30,4 +31,5 @@ __all__ = [
     "Product",
     "ProductModifierGroup",
     "Store",
+    "StoreIntegration",
 ]

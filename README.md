@@ -4,7 +4,7 @@ Base oficial do projeto SmartFoodIA.
 
 ## Versão atual
 
-`0.0.7 — Checkout & Persistent Orders`
+`0.0.8 — Consumer Partner API`
 
 ## Requisitos
 
@@ -36,23 +36,23 @@ docker compose exec api alembic upgrade head
 
 Esta versão contém:
 
-- catálogo e complementos;
-- importador Consumer;
-- clientes e endereços;
-- carrinho persistente;
-- checkout;
-- entrega e retirada;
-- PIX, crédito, débito e dinheiro;
-- validação de troco;
-- pedido persistente;
-- snapshots de dados e preços;
-- evento `PLACED / PLC`;
-- proteção contra pedido duplicado pelo mesmo carrinho.
+- catálogo e importador Consumer;
+- clientes, endereços e carrinhos;
+- checkout e pedidos persistentes;
+- eventos de pedido;
+- credenciais Consumer por loja;
+- token armazenado somente como hash;
+- polling;
+- detalhes completos do pedido;
+- recebimento de evento ODR;
+- atualização de status;
+- proteção por loja e token;
+- idempotência de atualizações.
 
 Consulte:
 
 ```text
-docs/CHECKOUT_AND_ORDERS.md
+docs/CONSUMER_PARTNER_API.md
 ```
 
-A próxima etapa será disponibilizar os endpoints da API de parceiro do Consumer.
+A próxima etapa será criar as ferramentas da Olívia para catálogo, cliente, carrinho e checkout.
