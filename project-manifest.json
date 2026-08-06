@@ -1,5 +1,5 @@
 {
   "project": "SmartFoodIA",
-  "version": "0.1.3",
-  "status": "channel-queue-and-retries"
+  "version": "0.1.4",
+  "status": "continuous-worker-and-readiness"
 }

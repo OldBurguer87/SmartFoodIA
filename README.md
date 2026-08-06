@@ -2,22 +2,17 @@
 
 ## Versão atual
 
-`0.1.3 — WhatsApp Channel Gateway`
+`0.1.4 — Continuous Worker & Readiness`
 
-Esta versão adiciona o primeiro canal real do SmartFoodIA:
+Esta versão adiciona:
 
-- webhook do WhatsApp Cloud API;
-- verificação e assinatura;
-- idempotência;
-- sessões por telefone;
-- integração com o orquestrador da Olívia;
-- envio de respostas;
-- persistência de eventos e mensagens de saída;
-- base preparada para retry e fila.
+- worker contínuo para a fila de canais;
+- serviço `worker` no Docker Compose;
+- reinício automático;
+- configurações de lote, intervalo e tentativas;
+- endpoint `/live`;
+- endpoint `/ready`;
+- healthcheck da API;
+- inicialização ordenada entre banco, API e worker.
 
-Consulte `docs/WHATSAPP_GATEWAY.md`.
-
-
-## Fila de canais
-
-Consulte `docs/CHANNEL_QUEUE.md`. O webhook grava rapidamente o evento e o worker processa a Olívia e o envio com retentativas.
+Consulte `docs/WORKER_AND_READINESS.md`.

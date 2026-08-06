@@ -1,19 +1,17 @@
 # Changelog
 
+## 0.1.4
+
+- Adicionado worker contínuo para filas de canais.
+- Adicionado serviço separado no Docker Compose.
+- Adicionado reinício automático da API, worker e banco.
+- Adicionadas configurações de intervalo, lote e tentativas.
+- Adicionado endpoint de liveness `/live`.
+- Adicionado endpoint de readiness `/ready`.
+- Adicionado healthcheck da API.
+- Adicionada dependência do worker sobre a prontidão da API.
+- Adicionados testes de saúde.
+
 ## 0.1.3
 
-- Adicionado gateway de canais para WhatsApp Cloud API.
-- Adicionados webhooks de verificação e recebimento.
-- Adicionada validação `X-Hub-Signature-256`.
-- Adicionadas contas de canal por loja.
-- Adicionada idempotência por evento externo.
-- Adicionada persistência de eventos de entrada.
-- Adicionada persistência e status de mensagens de saída.
-- Integrado WhatsApp ao `OliviaOrchestrator`.
-- Adicionado cliente da Graph API para envio de texto.
-- Adicionado script seguro de configuração do canal.
-- Adicionados testes de mensagens, duplicidade e assinatura.
-
-## 0.1.1
-
-- Adicionado provedor OpenAI e orquestrador da Olívia.
+- Adicionada fila persistente e retentativas do WhatsApp.
