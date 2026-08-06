@@ -46,3 +46,24 @@ class ConsumerStatusRequest(BaseModel):
 class ConsumerStatusResponse(BaseModel):
     statusCode: int = 0
     reasonPhrase: str | None = None
+
+
+class ConsumerEndpointSet(BaseModel):
+    polling: str
+    orderDetails: str
+    orderEvent: str
+    orderStatus: str
+
+
+class ConsumerDiagnosticsResponse(BaseModel):
+    statusCode: int = 0
+    reasonPhrase: str | None = None
+    storeSlug: str
+    storeName: str
+    provider: str
+    integrationActive: bool
+    merchantId: str | None
+    merchantName: str | None
+    pendingEvents: int
+    endpoints: ConsumerEndpointSet
+    checks: dict[str, bool]

@@ -2,19 +2,15 @@
 
 ## Versão atual
 
-`0.3.2 — Consumer Contract Hardening`
+`0.3.3 — Consumer Homologation & Public HTTPS`
 
-Esta versão mantém o foco exclusivo no fluxo aprovado:
+Esta versão permanece focada no MVP Consumer e adiciona:
 
-```text
-WhatsApp → Olívia → pedido confirmado → Consumer → status → cliente
-```
+- implantação pública com HTTPS automático;
+- proxy reverso Caddy;
+- endpoint protegido de diagnóstico da integração;
+- verificador externo de DNS, HTTPS, autenticação e polling;
+- geração das quatro URLs finais;
+- roteiro do primeiro pedido de homologação.
 
-Principais ajustes:
-
-- validação rígida de `ODR / ORDER_DETAILS_REQUESTED`;
-- nome da loja dinâmico nas notificações;
-- remoção do configurador Consumer duplicado;
-- testes adicionais do contrato e da modularidade.
-
-Consulte `docs/CONSUMER_HARDENING.md`.
+Consulte `docs/CONSUMER_HOMOLOGATION.md`.

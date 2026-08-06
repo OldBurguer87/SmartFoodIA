@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.schemas.consumer import (
+    ConsumerDiagnosticsResponse,
     ConsumerEventRead,
     ConsumerOrderEventRequest,
     ConsumerPollingResponse,
@@ -38,6 +39,31 @@ def authenticate(
         )
     except ConsumerAuthenticationError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
+
+
+
+
+@router.get(
+    "/diagnostics",
+    response_model=ConsumerDiagnosticsResponse,
+)
+def diagnostics(
+    store_slug: str,
+    base_url: str = Query(
+        ...,
+        min_length=8,
+        description="URL pública HTTPS sem barra final.",
+    ),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> ConsumerDiagnosticsResponse:
+    store, integration = authenticate(db, store_slug, authorization)
+    return service.diagnostics(
+        db,
+        store=store,
+        integration=integration,
+        base_url=base_url,
+    )
 
 
 @router.get("/events", response_model=ConsumerPollingResponse)

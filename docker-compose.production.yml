@@ -1,0 +1,38 @@
+services:
+  api:
+    ports: []
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes: []
+
+  web:
+    ports: []
+
+  worker:
+    volumes: []
+
+  db:
+    ports: []
+
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: smartfoodia-caddy
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - smartfoodia_caddy_data:/data
+      - smartfoodia_caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+
+volumes:
+  smartfoodia_caddy_data:
+  smartfoodia_caddy_config:

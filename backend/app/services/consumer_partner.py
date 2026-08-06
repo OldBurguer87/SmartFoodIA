@@ -16,6 +16,8 @@ from app.integrations.notifications import WhatsAppOrderStatusNotifier
 from app.models.catalog import Store
 from app.models.integration import StoreIntegration
 from app.schemas.consumer import (
+    ConsumerDiagnosticsResponse,
+    ConsumerEndpointSet,
     ConsumerEventRead,
     ConsumerPollingResponse,
     ConsumerStatusResponse,
@@ -43,6 +45,46 @@ class ConsumerPartnerService:
             db,
             store_slug=store_slug,
             authorization=authorization,
+        )
+
+    def diagnostics(
+        self,
+        db: Session,
+        *,
+        store: Store,
+        integration: StoreIntegration,
+        base_url: str,
+    ) -> ConsumerDiagnosticsResponse:
+        normalized_base = base_url.rstrip("/")
+        prefix = (
+            f"{normalized_base}/api/v1/integrations/consumer/{store.slug}"
+        )
+        pending = self.adapter.poll(db, store_id=store.id, limit=500)
+        merchant_ready = bool(
+            integration.merchant_external_id and integration.merchant_name
+        )
+        return ConsumerDiagnosticsResponse(
+            storeSlug=store.slug,
+            storeName=store.name,
+            provider=integration.provider,
+            integrationActive=integration.active,
+            merchantId=integration.merchant_external_id,
+            merchantName=integration.merchant_name,
+            pendingEvents=len(pending),
+            endpoints=ConsumerEndpointSet(
+                polling=f"{prefix}/events",
+                orderDetails=f"{prefix}/orders/{{order_id}}",
+                orderEvent=f"{prefix}/orders/{{order_id}}/events",
+                orderStatus=f"{prefix}/orders/{{order_id}}/status",
+            ),
+            checks={
+                "integration_active": bool(integration.active),
+                "merchant_configured": merchant_ready,
+                "token_configured": bool(integration.token_hash),
+                "https_base_url": normalized_base.startswith("https://"),
+                "store_slug_configured": bool(store.slug),
+            },
+            reasonPhrase="Diagnóstico da integração Consumer concluído.",
         )
 
     def polling(self, db: Session, *, store: Store, limit: int = 100):
@@ -81,9 +123,7 @@ class ConsumerPartnerService:
             store_id=store.id,
             order_id=payload.OrderId,
             code=payload.EventCode,
-            full_code=(
-                payload.EventFullCode or "ORDER_DETAILS_REQUESTED"
-            ),
+            full_code=payload.EventFullCode or "ORDER_DETAILS_REQUESTED",
             reason=payload.EventFull,
         )
         return ConsumerEventRead(
