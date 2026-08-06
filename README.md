@@ -4,7 +4,7 @@ Base oficial do projeto SmartFoodIA.
 
 ## Versão atual
 
-`0.0.5 — Consumer Catalog Importer`
+`0.0.6 — Customers & Persistent Cart`
 
 ## Requisitos
 
@@ -33,30 +33,25 @@ docker compose exec api alembic upgrade head
 - Health check: http://localhost:8000/health
 - Swagger: http://localhost:8000/docs
 
-## Importador do Consumer
-
-O SmartFoodIA agora importa a planilha `.xlsx` exportada pelo Consumer.
-
-Consulte:
-
-```text
-docs/IMPORT_CONSUMER_CATALOG.md
-```
-
-O arquivo real do cardápio não deve ser enviado ao GitHub público.
-
 ## Estado atual
 
 Esta versão contém:
 
-- FastAPI;
-- PostgreSQL;
-- Docker Compose;
-- SQLAlchemy e Alembic;
-- empresas, lojas, categorias e produtos;
-- grupos e complementos;
+- catálogo e complementos;
 - Smart Catalog Engine;
-- importador idempotente da planilha Consumer;
-- relatório de códigos PDV inválidos ou conflitantes.
+- importador Consumer;
+- clientes identificados pelo telefone;
+- múltiplos endereços;
+- carrinho persistente;
+- itens e complementos;
+- validação de compatibilidade;
+- cálculo de subtotal feito pelo Core;
+- APIs para criar, consultar, alterar e limpar o carrinho.
 
-A próxima etapa será criar clientes, endereços e o carrinho persistente.
+Consulte:
+
+```text
+docs/CUSTOMERS_AND_CART.md
+```
+
+A próxima etapa será checkout, entrega, pagamento e pedido persistente.

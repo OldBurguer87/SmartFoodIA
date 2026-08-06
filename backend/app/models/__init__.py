@@ -8,10 +8,17 @@ from app.models.catalog import (
     ProductModifierGroup,
     Store,
 )
+from app.models.customer import Customer, CustomerAddress
+from app.models.cart import Cart, CartItem, CartItemModifier
 
 __all__ = [
+    "Cart",
+    "CartItem",
+    "CartItemModifier",
     "Category",
     "Company",
+    "Customer",
+    "CustomerAddress",
     "Modifier",
     "ModifierGroup",
     "ModifierGroupItem",
