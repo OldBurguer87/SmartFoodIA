@@ -1,24 +1,29 @@
 # Changelog
 
+## 0.1.0
+
+- Adicionadas conversas persistentes.
+- Adicionado histórico de mensagens.
+- Adicionados tickets de atendimento humano.
+- Adicionadas prioridades e categorias de ticket.
+- Adicionadas lacunas de conhecimento.
+- Adicionada deduplicação de perguntas equivalentes.
+- Adicionada contagem de ocorrências.
+- Adicionada resolução de lacunas.
+- Adicionados eventos técnicos e operacionais da IA.
+- Atualizada ferramenta de ajuda humana para persistir ticket e lacuna.
+- Adicionados endpoints de conversas e suporte.
+- Adicionados testes de persistência e escalação.
+
 ## 0.0.9
 
 - Criada camada de ferramentas da Olívia.
-- Adicionados contratos `ToolDefinition` e `ToolResult`.
-- Adicionado registro central de ferramentas.
-- Adicionadas definições compatíveis com function calling.
-- Adicionadas ferramentas de catálogo.
-- Adicionadas ferramentas de cliente e endereço.
-- Adicionadas ferramentas de carrinho.
-- Adicionada ferramenta de checkout.
-- Adicionada confirmação explícita obrigatória.
+- Adicionada confirmação explícita antes do checkout.
 - Adicionada escalação humana estruturada.
-- Adicionados endpoints de desenvolvimento das ferramentas.
-- Adicionados testes do fluxo de ferramentas.
 
 ## 0.0.8
 
 - Adicionada API de parceiro do Consumer.
-- Adicionados polling, detalhes e atualização de status.
 
 ## 0.0.7
 

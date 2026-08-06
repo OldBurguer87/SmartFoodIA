@@ -4,7 +4,7 @@ Base oficial do projeto SmartFoodIA.
 
 ## Versão atual
 
-`0.0.9 — Olivia Tool Layer`
+`0.1.0 — Conversations, Support & Knowledge Gaps`
 
 ## Requisitos
 
@@ -36,20 +36,22 @@ docker compose exec api alembic upgrade head
 
 Esta versão contém:
 
-- catálogo e importador Consumer;
-- clientes, endereços e carrinhos;
-- checkout e pedidos;
+- catálogo, clientes, carrinho e pedidos;
 - API de parceiro do Consumer;
-- camada de ferramentas da Olívia;
-- definições compatíveis com function calling;
-- ferramentas de catálogo, cliente, endereço, carrinho e checkout;
-- confirmação explícita antes de criar pedido;
-- escalação humana estruturada.
+- ferramentas seguras da Olívia;
+- conversas persistentes;
+- histórico de mensagens;
+- tickets humanos;
+- lacunas de conhecimento;
+- contagem de perguntas repetidas;
+- resolução de lacunas;
+- eventos técnicos da IA;
+- escalação humana persistida.
 
 Consulte:
 
 ```text
-docs/OLIVIA_TOOLS.md
+docs/CONVERSATIONS_AND_SUPPORT.md
 ```
 
-A próxima etapa será integrar um provedor de IA e persistir conversas, mensagens e tickets.
+A próxima etapa será integrar o primeiro provedor de IA à camada de ferramentas.

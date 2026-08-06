@@ -1,0 +1,196 @@
+from __future__ import annotations
+
+import re
+import unicodedata
+from datetime import datetime, timezone
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from app.models.conversation import (
+    AIEvent,
+    Conversation,
+    HumanTicket,
+    KnowledgeGap,
+    Message,
+)
+from app.repositories.conversation import ConversationRepository
+from app.schemas.conversation import (
+    AIEventCreate,
+    ConversationCreate,
+    HumanTicketCreate,
+    KnowledgeGapCreate,
+    KnowledgeGapResolve,
+    MessageCreate,
+)
+
+
+class ConversationNotFoundError(LookupError):
+    pass
+
+
+def normalize_question(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    without_accents = "".join(
+        char for char in normalized if not unicodedata.combining(char)
+    )
+    return re.sub(r"\s+", " ", without_accents.casefold()).strip()
+
+
+class ConversationService:
+    def __init__(self, repository: ConversationRepository | None = None) -> None:
+        self.repository = repository or ConversationRepository()
+
+    def get_or_create(
+        self,
+        db: Session,
+        payload: ConversationCreate,
+    ) -> Conversation:
+        existing = self.repository.get_open(
+            db,
+            store_id=payload.store_id,
+            channel=payload.channel,
+            external_conversation_id=payload.external_conversation_id,
+        )
+        if existing is not None:
+            if payload.customer_id is not None and existing.customer_id is None:
+                existing.customer_id = payload.customer_id
+                db.commit()
+                db.refresh(existing)
+            return existing
+
+        conversation = Conversation(
+            store_id=payload.store_id,
+            customer_id=payload.customer_id,
+            channel=payload.channel,
+            external_conversation_id=payload.external_conversation_id,
+            status="OPEN",
+            last_message_at=datetime.now(timezone.utc),
+        )
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+        return conversation
+
+    def add_message(
+        self,
+        db: Session,
+        *,
+        conversation_id: UUID,
+        payload: MessageCreate,
+    ) -> Message:
+        conversation = self.repository.get(db, conversation_id)
+        if conversation is None:
+            raise ConversationNotFoundError(str(conversation_id))
+
+        message = Message(
+            conversation_id=conversation_id,
+            direction=payload.direction,
+            sender_type=payload.sender_type,
+            content_type=payload.content_type,
+            content=payload.content,
+            external_message_id=payload.external_message_id,
+            metadata_json=payload.metadata_json,
+        )
+        conversation.last_message_at = datetime.now(timezone.utc)
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return message
+
+    def create_ticket(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        payload: HumanTicketCreate,
+    ) -> HumanTicket:
+        ticket = HumanTicket(
+            store_id=store_id,
+            conversation_id=payload.conversation_id,
+            customer_id=payload.customer_id,
+            category=payload.category,
+            priority=payload.priority,
+            status="OPEN",
+            reason=payload.reason,
+            customer_message=payload.customer_message,
+        )
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        return ticket
+
+    def create_or_increment_gap(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        payload: KnowledgeGapCreate,
+    ) -> KnowledgeGap:
+        normalized = normalize_question(payload.question)
+        existing = self.repository.get_open_gap(
+            db,
+            store_id=store_id,
+            normalized_question=normalized,
+        )
+        if existing is not None:
+            existing.occurrences += 1
+            if existing.conversation_id is None and payload.conversation_id is not None:
+                existing.conversation_id = payload.conversation_id
+            if existing.ticket_id is None and payload.ticket_id is not None:
+                existing.ticket_id = payload.ticket_id
+            db.commit()
+            db.refresh(existing)
+            return existing
+
+        gap = KnowledgeGap(
+            store_id=store_id,
+            conversation_id=payload.conversation_id,
+            ticket_id=payload.ticket_id,
+            question=payload.question,
+            normalized_question=normalized,
+            status="OPEN",
+            occurrences=1,
+        )
+        db.add(gap)
+        db.commit()
+        db.refresh(gap)
+        return gap
+
+    def resolve_gap(
+        self,
+        db: Session,
+        *,
+        gap_id: UUID,
+        payload: KnowledgeGapResolve,
+    ) -> KnowledgeGap:
+        gap = db.get(KnowledgeGap, gap_id)
+        if gap is None:
+            raise ConversationNotFoundError(str(gap_id))
+        gap.answer = payload.answer
+        gap.status = "RESOLVED"
+        db.commit()
+        db.refresh(gap)
+        return gap
+
+    def record_event(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        payload: AIEventCreate,
+    ) -> AIEvent:
+        event = AIEvent(
+            store_id=store_id,
+            conversation_id=payload.conversation_id,
+            event_type=payload.event_type,
+            tool_name=payload.tool_name,
+            success=payload.success,
+            duration_ms=payload.duration_ms,
+            payload_json=payload.payload_json,
+            error_message=payload.error_message,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+        return event

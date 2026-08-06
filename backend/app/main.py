@@ -7,6 +7,7 @@ from app.api.carts import router as carts_router
 from app.api.orders import router as orders_router
 from app.api.consumer_partner import router as consumer_partner_router
 from app.api.olivia_tools import router as olivia_tools_router
+from app.api.conversations import router as conversations_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -22,6 +23,7 @@ app.include_router(carts_router)
 app.include_router(orders_router)
 app.include_router(consumer_partner_router)
 app.include_router(olivia_tools_router)
+app.include_router(conversations_router)
 
 
 @app.get("/")
