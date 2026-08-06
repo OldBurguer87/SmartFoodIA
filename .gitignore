@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.pytest_cache/
+.ruff_cache/
+*.db
+dist/
+build/
+
+# Exportações locais do Consumer e relatórios de importação
+data/import/*
+!data/import/.gitkeep
+data/reports/*
+!data/reports/.gitkeep

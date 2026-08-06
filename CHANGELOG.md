@@ -1,29 +1,38 @@
 # Changelog
 
+## 0.0.5
+
+- Adicionado importador de planilhas `.xlsx` do Consumer.
+- Adicionada criação automática da empresa e loja piloto.
+- Adicionada importação idempotente por código PDV.
+- Adicionada atualização de produtos existentes.
+- Adicionada normalização de espaços e tabulações.
+- Adicionado bloqueio de códigos PDV conflitantes.
+- Adicionado relatório JSON da importação.
+- Adicionados testes do importador.
+- Adicionado `openpyxl`.
+
 ## 0.0.4
 
-- Criado `CatalogService` como porta oficial de acesso ao catálogo.
-- Criados DTOs imutáveis para produtos, grupos e complementos.
-- Implementada busca normalizada, sem diferença de acentos e pontuação.
-- Implementado ranking de relevância por nome, descrição e categoria.
-- Adicionada busca de produto mais provável.
-- Adicionados filtros de disponibilidade para entrega e retirada.
-- A API de consulta passou a usar o Service em vez de acessar o banco diretamente.
-- Adicionados testes do motor de catálogo.
+- Adicionado Smart Catalog Engine.
+- Adicionado `CatalogService`.
+- Adicionados DTOs desacoplados do banco.
+- Adicionada busca normalizada e ranking de relevância.
+- Adicionados filtros de disponibilidade.
+- Adicionado retorno de complementos compatíveis.
 
 ## 0.0.3
 
-- Criados grupos de complementos e complementos.
-- Criadas relações de compatibilidade entre produtos, grupos e complementos.
-- Adicionadas regras de mínimo, máximo, repetição e quantidade padrão.
+- Adicionados grupos de complementos.
+- Adicionados complementos e códigos PDV.
+- Adicionadas relações produto × grupo e grupo × complemento.
+- Adicionadas regras de seleção.
 
 ## 0.0.2
 
 - Adicionadas configurações do Alembic.
 - Criada a primeira migration.
 - Criadas as tabelas de empresas, lojas, categorias e produtos.
-- Criados schemas Pydantic do catálogo.
-- Criado repositório de produtos.
 - Criada API inicial do catálogo.
 
 ## 0.0.1
@@ -31,4 +40,4 @@
 - Estrutura inicial do projeto.
 - FastAPI configurado.
 - PostgreSQL via Docker Compose.
-- Endpoints `/`, `/health` e `/version`.
+- Endpoints básicos e testes.
