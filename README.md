@@ -1,39 +1,45 @@
 # SmartFoodIA
 
+Base oficial do projeto SmartFoodIA.
+
 ## Versão atual
 
-`0.0.3 — Catálogo: grupos, complementos e compatibilidade`
+`0.0.4 — Smart Catalog Engine`
 
-## Como executar
+## Executar
 
 1. Copie `.env.example` para `.env`.
-2. Troque a senha `change-me` no `.env`.
+2. Troque a senha `change-me`.
 3. Execute:
 
 ```bash
 docker compose up --build
 ```
 
-4. Aplique as migrations:
+4. Crie ou atualize as tabelas:
 
 ```bash
 docker compose exec api alembic upgrade head
 ```
 
-5. Acesse o Swagger em `http://localhost:8000/docs`.
+5. Acesse:
 
-## Recursos presentes
+- API: `http://localhost:8000`
+- Swagger: `http://localhost:8000/docs`
+- Saúde: `http://localhost:8000/health`
 
-- empresas e lojas;
-- categorias e produtos;
-- grupos de complementos;
-- complementos com código PDV;
-- ligação produto × grupo;
-- ligação grupo × complemento;
-- mínimo, máximo, repetição e quantidade padrão;
-- API inicial de consulta e cadastro;
-- validações de domínio e banco.
+## Catálogo
 
-## Próxima etapa
+- `GET /api/v1/products?store_id=<uuid>`
+- `GET /api/v1/products/search?store_id=<uuid>&q=monster`
+- `GET /api/v1/products/{external_code}?store_id=<uuid>`
 
-Importador do cardápio exportado pelo Consumer e validação idempotente de códigos PDV.
+O retorno de produto inclui categoria, disponibilidade, grupos de complementos e complementos permitidos.
+
+## Testes
+
+```bash
+docker compose exec api pytest -q
+```
+
+A próxima versão implementará o importador do arquivo exportado pelo Consumer e a carga inicial da Old Burguer 87.

@@ -1,15 +1,21 @@
 # Changelog
 
+## 0.0.4
+
+- Criado `CatalogService` como porta oficial de acesso ao catálogo.
+- Criados DTOs imutáveis para produtos, grupos e complementos.
+- Implementada busca normalizada, sem diferença de acentos e pontuação.
+- Implementado ranking de relevância por nome, descrição e categoria.
+- Adicionada busca de produto mais provável.
+- Adicionados filtros de disponibilidade para entrega e retirada.
+- A API de consulta passou a usar o Service em vez de acessar o banco diretamente.
+- Adicionados testes do motor de catálogo.
+
 ## 0.0.3
 
-- Criados grupos de complementos.
-- Criados complementos com código PDV e preço.
-- Criada compatibilidade entre produto e grupo.
-- Criada composição de complementos por grupo.
+- Criados grupos de complementos e complementos.
+- Criadas relações de compatibilidade entre produtos, grupos e complementos.
 - Adicionadas regras de mínimo, máximo, repetição e quantidade padrão.
-- Criada migration `0002`.
-- Criada API inicial de grupos e complementos.
-- Adicionados testes de validação do domínio.
 
 ## 0.0.2
 
@@ -19,13 +25,10 @@
 - Criados schemas Pydantic do catálogo.
 - Criado repositório de produtos.
 - Criada API inicial do catálogo.
-- Adicionados testes do schema de produto.
 
 ## 0.0.1
 
 - Estrutura inicial do projeto.
 - FastAPI configurado.
 - PostgreSQL via Docker Compose.
-- Configuração por `.env`.
 - Endpoints `/`, `/health` e `/version`.
-- Testes básicos.
