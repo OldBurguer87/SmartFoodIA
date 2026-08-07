@@ -11,42 +11,52 @@ O Consumer consulta a API do SmartFoodIA. Cada loja possui:
 
 O token é armazenado somente como SHA-256, nunca em texto puro.
 
-## Configurar a loja
+Para o piloto da Old Burguer 87, a base pública oficial é:
 
-Depois das migrations:
-
-```bash
-docker compose exec api python -m app.scripts.configure_consumer_integration   --store-slug old-burguer-87   --merchant-id ID_FORNECIDO_PELO_CONSUMER   --merchant-name "Old Burguer 87"
+```text
+https://smartfoodia.com.br
 ```
 
-O terminal solicitará o token sem exibi-lo.
+## Configurar a loja
+
+Depois das migrations, use **somente o provisionador oficial**:
+
+```bash
+docker compose exec api python -m app.scripts.configure_consumer_partner \
+  --store-slug old-burguer-87 \
+  --merchant-id ID_FORNECIDO_PELO_CONSUMER \
+  --merchant-name "Old Burguer 87" \
+  --base-url https://smartfoodia.com.br
+```
+
+Guarde o token retornado pelo comando. O valor em texto puro deve ser tratado como segredo; o banco mantém somente o hash necessário à validação.
+
+`configure_consumer_integration` é legado e não deve mais ser usado na homologação.
 
 ## URLs para cadastrar no Consumer
-
-Substitua `https://api.seudominio.com` pelo domínio real.
 
 ### Polling
 
 ```text
-GET https://api.seudominio.com/api/v1/integrations/consumer/old-burguer-87/events
+GET https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/events
 ```
 
 ### Detalhes do pedido
 
 ```text
-GET https://api.seudominio.com/api/v1/integrations/consumer/old-burguer-87/orders/{order_id}
+GET https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/orders/{order_id}
 ```
 
 ### Evento do pedido
 
 ```text
-POST https://api.seudominio.com/api/v1/integrations/consumer/old-burguer-87/orders/{order_id}/events
+POST https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/orders/{order_id}/events
 ```
 
 ### Atualização de status
 
 ```text
-POST https://api.seudominio.com/api/v1/integrations/consumer/old-burguer-87/orders/{order_id}/status
+POST https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/orders/{order_id}/status
 ```
 
 ## Autenticação
@@ -60,9 +70,10 @@ Authorization: Bearer TOKEN_DA_LOJA
 1. O checkout cria `PLACED / PLC`.
 2. O Consumer consulta o polling.
 3. O Consumer consulta os detalhes.
-4. O Consumer envia `ODR`.
-5. O SmartFoodIA marca o evento PLC como entregue.
-6. Alterações no Consumer atualizam o status interno.
+4. O Consumer envia `ODR` quando aplicável ao fluxo.
+5. O SmartFoodIA registra o evento recebido e evita reprocessamento indevido.
+6. Alterações de status no Consumer atualizam o status interno.
+7. O canal de atendimento pode então notificar o cliente.
 
 ## Status suportados
 
@@ -74,3 +85,7 @@ Authorization: Bearer TOKEN_DA_LOJA
 - `OUT_FOR_DELIVERY`
 - `CONCLUDED`
 - `DELIVERED`
+
+## Princípio de arquitetura
+
+O Consumer é um adaptador do SmartFoodIA, não o núcleo do produto. Regras de cliente, carrinho, pedido, cálculo, idempotência e validação permanecem no Core para permitir outros ERPs no futuro sem reescrever o sistema.
