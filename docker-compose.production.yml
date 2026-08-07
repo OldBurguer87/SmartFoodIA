@@ -1,17 +1,20 @@
 services:
   api:
-    ports: []
+    ports: !reset []
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    volumes: []
+    volumes: !reset []
 
   web:
-    ports: []
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: https://${PUBLIC_DOMAIN}
+    ports: !reset []
 
   worker:
-    volumes: []
+    volumes: !reset []
 
   db:
-    ports: []
+    ports: !reset []
 
   caddy:
     image: caddy:2.10-alpine
