@@ -1,5 +1,8 @@
 {
   "project": "SmartFoodIA",
-  "version": "0.3.3",
-  "status": "consumer-homologation-and-public-https"
+  "version": "0.3.4",
+  "status": "documentation-governance-alignment",
+  "functional_baseline": "0.3.3-consumer-homologation-and-public-https",
+  "public_base_url": "https://smartfoodia.com.br",
+  "current_gate": "dns-and-public-https"
 }
