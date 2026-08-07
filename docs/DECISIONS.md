@@ -20,3 +20,15 @@
 - **DEC-018 — API de parceiro do Consumer:** aprovada.
 - **DEC-019 — PostgreSQL, FastAPI, SQLAlchemy e Alembic:** aprovada.
 - **DEC-020 — Docker para ambiente de execução:** aprovada.
+- **DEC-021 — VPS de produção na Master da Web:** aprovada para a fase atual de homologação e piloto.
+- **DEC-022 — Domínio público oficial `smartfoodia.com.br`:** aprovado.
+- **DEC-023 — Cloudflare como autoridade/gerenciador DNS:** aprovada; DNSSEC permanece desligado durante a troca inicial de nameservers e pode ser reavaliado após estabilização.
+- **DEC-024 — Caddy como proxy reverso e emissor/renovador de HTTPS:** aprovado.
+- **DEC-025 — Base pública canônica da API no domínio raiz:** aprovada como `https://smartfoodia.com.br`; a API é publicada pelos caminhos `/api/...`, sem dependência atual de `api.smartfoodia.com.br`.
+- **DEC-026 — Primeiro gate externo é o pedido aparecer no Consumer:** aprovado. Antes de ampliar o escopo, o SmartFoodIA deve publicar a API, passar os diagnósticos e fazer um pedido completo aparecer corretamente na fila do Consumer.
+- **DEC-027 — Consumer é o primeiro ERP integrado, não o núcleo do produto:** reafirmada. Novos ERPs ou um ERP próprio devem entrar por adaptadores sem acoplar as regras do Core.
+- **DEC-028 — `configure_consumer_partner` é o provisionador oficial da integração Consumer:** aprovado. Referências a `configure_consumer_integration` são consideradas legadas.
+
+## Regra de governança
+
+Uma decisão nova que altere arquitetura, escopo V1, contrato de integração, infraestrutura pública ou segurança deve ser registrada aqui antes de ser tratada como padrão oficial do projeto.
