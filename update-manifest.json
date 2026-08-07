@@ -1,12 +1,17 @@
 {
   "project": "SmartFoodIA",
-  "update": "governance-and-scope",
+  "version": "0.3.4",
+  "update": "documentation-and-governance-alignment",
+  "functional_change": false,
   "files": [
-    "docs/PROJECT_CONSTITUTION.md",
+    "README.md",
+    ".env.example",
+    "CHANGELOG.md",
+    "docs/CONSUMER_HOMOLOGATION.md",
+    "docs/CONSUMER_PARTNER_API.md",
     "docs/DECISIONS.md",
-    "docs/V1_SCOPE.md",
-    "docs/BACKLOG.md",
     "docs/ROADMAP.md",
-    "CHANGELOG.md"
+    "project-manifest.json",
+    "update-manifest.json"
   ]
 }
