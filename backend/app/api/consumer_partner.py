@@ -55,9 +55,10 @@ def diagnostics(
         description="URL pública HTTPS sem barra final.",
     ),
     authorization: str | None = Header(default=None),
+    x_apikey: str | None = Header(default=None, alias="xapikey"),
     db: Session = Depends(get_db),
 ) -> ConsumerDiagnosticsResponse:
-    store, integration = authenticate(db, store_slug, authorization)
+    store, integration = authenticate(db, store_slug, authorization or x_apikey)
     return service.diagnostics(
         db,
         store=store,
@@ -71,9 +72,10 @@ def polling(
     store_slug: str,
     limit: int = Query(default=100, ge=1, le=500),
     authorization: str | None = Header(default=None),
+    x_apikey: str | None = Header(default=None, alias="xapikey"),
     db: Session = Depends(get_db),
 ) -> ConsumerPollingResponse:
-    store, _ = authenticate(db, store_slug, authorization)
+    store, _ = authenticate(db, store_slug, authorization or x_apikey)
     return service.polling(db, store=store, limit=limit)
 
 
@@ -82,9 +84,10 @@ def order_details(
     store_slug: str,
     order_id: UUID,
     authorization: str | None = Header(default=None),
+    x_apikey: str | None = Header(default=None, alias="xapikey"),
     db: Session = Depends(get_db),
 ) -> dict:
-    store, integration = authenticate(db, store_slug, authorization)
+    store, integration = authenticate(db, store_slug, authorization or x_apikey)
     try:
         return service.order_details(
             db,
@@ -105,9 +108,10 @@ def receive_order_event(
     order_id: UUID,
     payload: ConsumerOrderEventRequest,
     authorization: str | None = Header(default=None),
+    x_apikey: str | None = Header(default=None, alias="xapikey"),
     db: Session = Depends(get_db),
 ) -> ConsumerEventRead:
-    store, _ = authenticate(db, store_slug, authorization)
+    store, _ = authenticate(db, store_slug, authorization or x_apikey)
     if payload.OrderId != order_id:
         raise HTTPException(
             status_code=422,
@@ -134,9 +138,10 @@ def update_order_status(
     order_id: UUID,
     payload: ConsumerStatusRequest,
     authorization: str | None = Header(default=None),
+    x_apikey: str | None = Header(default=None, alias="xapikey"),
     db: Session = Depends(get_db),
 ) -> ConsumerStatusResponse:
-    store, _ = authenticate(db, store_slug, authorization)
+    store, _ = authenticate(db, store_slug, authorization or x_apikey)
     if payload.orderId != order_id:
         raise HTTPException(
             status_code=422,

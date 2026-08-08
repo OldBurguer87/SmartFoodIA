@@ -18,9 +18,11 @@ class ConsumerAuthenticator:
         integration = self.repository.get_store_integration(db, store_id=store.id, provider='CONSUMER') if store else None
         if store is None or integration is None or not integration.active:
             raise IntegrationAuthenticationError('Loja ou integração inválida.')
-        if not authorization or not authorization.startswith('Bearer '):
+        if not authorization:
             raise IntegrationAuthenticationError('Token ausente ou inválido.')
-        token=authorization.removeprefix('Bearer ').strip()
+        token = authorization.strip()
+        if token.lower().startswith('bearer '):
+            token = token[7:].strip()
         if not token or not hmac.compare_digest(hash_token(token), integration.token_hash):
             raise IntegrationAuthenticationError('Token ausente ou inválido.')
         return store, integration

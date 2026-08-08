@@ -13,3 +13,6 @@ data/import/*
 !data/import/.gitkeep
 data/reports/*
 !data/reports/.gitkeep
+consumer-setup*.txt
+*.bak
+backup-pre-hardening*.sql
