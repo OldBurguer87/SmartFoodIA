@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -147,6 +147,46 @@ def update_order_status(
             status_code=422,
             detail="orderId do corpo difere do caminho.",
         )
+    try:
+        return service.update_status(db, store=store, payload=payload)
+    except ConsumerNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ConsumerValidationError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+@router.post(
+    "/orders/status",
+    response_model=ConsumerStatusResponse,
+)
+async def update_order_status_without_path_id(
+    store_slug: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_apikey: str | None = Header(default=None, alias="xapikey"),
+    db: Session = Depends(get_db),
+) -> ConsumerStatusResponse:
+    store, _ = authenticate(db, store_slug, authorization or x_apikey)
+
+    body = await request.body()
+
+    try:
+        import json
+        data = json.loads(body)
+        if "OrderId" in data:
+            data["orderId"] = data.pop("OrderId")
+        if "Status" in data:
+            data["status"] = data.pop("Status")
+        if "Justification" in data:
+            data["justification"] = data.pop("Justification")
+        if isinstance(data.get("status"), str):
+            data["status"] = data["status"].upper()
+        payload = ConsumerStatusRequest.model_validate(data)
+    except Exception as error:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Payload de status inválido: {error}",
+        ) from error
+
     try:
         return service.update_status(db, store=store, payload=payload)
     except ConsumerNotFoundError as error:

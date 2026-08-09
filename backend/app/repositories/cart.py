@@ -15,7 +15,7 @@ class CartRepository:
                 selectinload(Cart.items).selectinload(CartItem.modifiers),
             )
         )
-        return db.scalar(statement)
+        return db.scalar(statement.execution_options(populate_existing=True))
 
     def get_open_for_customer(
         self,
