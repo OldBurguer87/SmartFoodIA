@@ -87,6 +87,7 @@ def main() -> None:
     print(f"Linhas lidas: {report.rows_read}")
     print(f"Produtos criados: {report.products_created}")
     print(f"Produtos atualizados: {report.products_updated}")
+    print(f"Produtos desativados: {report.products_deactivated}")
     print(f"Conflitos ignorados: {report.conflicts_skipped}")
     print(f"Linhas inválidas: {report.invalid_rows}")
     print(f"Relatório: {report_path}")

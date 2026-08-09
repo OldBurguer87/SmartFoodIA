@@ -16,3 +16,5 @@ data/reports/*
 consumer-setup*.txt
 *.bak
 backup-pre-hardening*.sql
+
+cardapioConsumer-*.xlsx

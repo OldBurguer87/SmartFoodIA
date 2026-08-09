@@ -63,6 +63,7 @@ class ImportReport:
     products_created: int = 0
     products_updated: int = 0
     products_unchanged: int = 0
+    products_deactivated: int = 0
     duplicates_ignored: int = 0
     conflicts_skipped: int = 0
     invalid_rows: int = 0
@@ -253,6 +254,40 @@ class ConsumerCatalogImportService:
                     report.products_updated += 1
                 else:
                     report.products_unchanged += 1
+
+            # Produtos que existiam no SmartFoodIA, mas desapareceram
+            # da nova exportação do Consumer, são desativados.
+            imported_codes = {row.external_code for row in selected_rows}
+
+            # Protege códigos encontrados em linhas inválidas ou conflitos,
+            # evitando desativação acidental.
+            protected_codes = {
+                issue.external_code
+                for issue in report.issues
+                if issue.external_code
+            }
+
+            # Segurança: se nenhuma linha válida for importada,
+            # não desativa o catálogo inteiro.
+            if imported_codes:
+                for external_code, product in products.items():
+                    if external_code in imported_codes:
+                        continue
+                    if external_code in protected_codes:
+                        continue
+
+                    was_available = (
+                        product.active
+                        or product.available_for_delivery
+                        or product.available_for_takeout
+                    )
+
+                    product.active = False
+                    product.available_for_delivery = False
+                    product.available_for_takeout = False
+
+                    if was_available:
+                        report.products_deactivated += 1
 
             db.commit()
         except Exception:
