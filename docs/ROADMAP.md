@@ -17,6 +17,7 @@
 - **v0.3.3 — Consumer Homologation & Public HTTPS:** Caddy, HTTPS automático, diagnóstico protegido, verificador externo e roteiro de homologação.
 - **v0.3.4 — Documentation & Governance Alignment:** documentação e decisões alinhadas ao estado então conhecido do projeto.
 - **Homologação operacional de 2026-08-11:** retirada e delivery validados de ponta a ponta no Consumer, com callbacks de status e payload DELIVERY ajustado em produção.
+- **Hardening de 2026-08-11:** hotfixes Consumer consolidados no GitHub, logs sensíveis corrigidos e credencial Consumer rotacionada com polling `200 OK` após a troca.
 
 ## Gates atuais até a V1
 
@@ -40,7 +41,8 @@
 
 - integração cadastrada;
 - Consumer realizando polling e consultando pedidos;
-- autenticação real observada via `xapikey`.
+- autenticação real observada via `xapikey`;
+- credencial rotacionada e revalidada em 2026-08-11.
 
 ### Gate E — Primeiro pedido controlado — CONCLUÍDO
 
@@ -81,7 +83,7 @@ Ainda devem ser cobertos de forma controlada os demais cenários aprovados:
 - retomada após falha;
 - pedido iniciado pela Olívia usando o fluxo real do cliente.
 
-Também é necessário consolidar no GitHub os hotfixes que estão em produção no adaptador Consumer antes de qualquer novo deploy.
+Os hotfixes Consumer já foram consolidados no GitHub e a VPS foi sincronizada. A exposição de `xapikey` em novos access logs foi corrigida, testada e seguida de rotação da credencial Consumer.
 
 ### Gate H — Produção assistida — PENDENTE
 
@@ -90,7 +92,6 @@ Antes do piloto produtivo:
 - configurar OpenAI na VPS;
 - configurar a conta WhatsApp da loja;
 - validar o fluxo WhatsApp → Olívia → Core → Consumer → status → WhatsApp;
-- corrigir a exposição de `xapikey` nos access logs do Caddy;
 - backup e restauração testados;
 - monitoramento e observabilidade;
 - segurança final da VPS;
