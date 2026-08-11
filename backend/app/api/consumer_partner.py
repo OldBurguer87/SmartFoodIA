@@ -185,8 +185,6 @@ async def update_order_status_without_path_id(
 
     body = await request.body()
 
-    print("CONSUMER_STATUS_BODY=" + body.decode("utf-8", errors="replace"))
-
     try:
         import json
         data = json.loads(body)
