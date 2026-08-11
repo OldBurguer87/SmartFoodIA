@@ -38,11 +38,16 @@ def normalize_header(value: Any) -> str:
 class ParsedCatalogRow:
     source_row: int
     enabled: bool
+    source_context: str
     category: str
     external_code: str
     name: str
     price: Decimal
     description: str | None
+
+    @property
+    def is_combo_option(self) -> bool:
+        return "combo" in self.source_context.casefold()
 
 
 @dataclass(frozen=True)
@@ -142,6 +147,11 @@ class ConsumerCatalogWorkbookParser:
 
         external_code = clean_text(value("Código PDV"))
         name = clean_text(value("Produto"))
+        source_context = (
+            clean_text(value("Categoria (iFood)"))
+            if "Categoria (iFood)" in header_index
+            else ""
+        )
         category = clean_text(value("Categoria (Consumer)")) or "Sem categoria"
         description = clean_text(value("Descrição")) or None
         enabled_value = values[0] if values else True
@@ -164,6 +174,7 @@ class ConsumerCatalogWorkbookParser:
         return ParsedCatalogRow(
             source_row=source_row,
             enabled=enabled,
+            source_context=source_context,
             category=category,
             external_code=external_code,
             name=name,
@@ -310,10 +321,20 @@ class ConsumerCatalogImportService:
 
         selected: list[ParsedCatalogRow] = []
         for external_code, candidates in grouped.items():
-            first = candidates[0]
+            # O Consumer repete o mesmo código PDV em opções de combo e pode
+            # atribuir preço promocional/de composição diferente. Para o catálogo
+            # principal, a linha normal é a fonte de verdade. Linhas de combo só
+            # entram na disputa quando não existe nenhuma linha normal.
+            regular_candidates = [
+                candidate for candidate in candidates if not candidate.is_combo_option
+            ]
+            preferred = regular_candidates or candidates
+            report.duplicates_ignored += len(candidates) - len(preferred)
+
+            first = preferred[0]
             conflicts = [
                 candidate
-                for candidate in candidates[1:]
+                for candidate in preferred[1:]
                 if (
                     candidate.name.casefold() != first.name.casefold()
                     or candidate.price != first.price
@@ -329,14 +350,14 @@ class ConsumerCatalogImportService:
                         external_code=external_code,
                         issue_type="external_code_conflict",
                         message=(
-                            "Código PDV repetido com nome, preço ou categoria diferente. "
-                            "Nenhuma linha desse código foi importada."
+                            "Código PDV repetido com nome, preço ou categoria diferente "
+                            "entre linhas prioritárias. Nenhuma linha desse código foi importada."
                         ),
                     )
                 )
                 continue
 
-            report.duplicates_ignored += len(candidates) - 1
+            report.duplicates_ignored += len(preferred) - 1
             selected.append(first)
 
         return selected
