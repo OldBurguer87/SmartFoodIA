@@ -41,7 +41,17 @@ class ConsumerPartnerAdapter:
     def apply_external_status(self, db: Session, *, store_id: UUID, order_id: UUID, status: str, justification: str|None=None):
         order=self.orders.get_for_store(db,store_id=store_id,order_id=order_id)
         if not order: raise IntegrationOrderNotFound('Pedido não encontrado.')
-        normalized=status.strip().upper(); internal=STATUS_TO_INTERNAL.get(normalized)
+        normalized = status.strip().upper().replace('-', '_').replace(' ', '_')
+        compact = normalized.replace('_', '')
+        normalized = next(
+            (
+                key
+                for key in STATUS_TO_INTERNAL
+                if key.replace('_', '') == compact
+            ),
+            normalized,
+        )
+        internal = STATUS_TO_INTERNAL.get(normalized)
         if not internal: raise IntegrationStatusError(f'Status não suportado: {status}.')
         if order.status==internal: return internal,False
         order.status=internal; code,full=INTERNAL_EVENT[internal]
