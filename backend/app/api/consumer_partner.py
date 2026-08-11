@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -39,8 +40,6 @@ def authenticate(
         )
     except ConsumerAuthenticationError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
-
-
 
 
 @router.get(
@@ -89,12 +88,28 @@ def order_details(
 ) -> dict:
     store, integration = authenticate(db, store_slug, authorization or x_apikey)
     try:
-        return service.order_details(
+        details = service.order_details(
             db,
             store=store,
             integration=integration,
             order_id=order_id,
         )
+
+        db.execute(
+            text(
+                """
+                UPDATE order_events
+                SET status = 'DELIVERED', updated_at = now()
+                WHERE order_id = :order_id
+                  AND code = 'PLC'
+                  AND status = 'PENDING'
+                """
+            ),
+            {"order_id": order_id},
+        )
+        db.commit()
+
+        return details
     except ConsumerNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -154,6 +169,7 @@ def update_order_status(
     except ConsumerValidationError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
+
 @router.post(
     "/orders/status",
     response_model=ConsumerStatusResponse,
@@ -168,6 +184,8 @@ async def update_order_status_without_path_id(
     store, _ = authenticate(db, store_slug, authorization or x_apikey)
 
     body = await request.body()
+
+    print("CONSUMER_STATUS_BODY=" + body.decode("utf-8", errors="replace"))
 
     try:
         import json
@@ -193,3 +211,65 @@ async def update_order_status_without_path_id(
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ConsumerValidationError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.post(
+    "/orders/details",
+    response_model=ConsumerStatusResponse,
+)
+async def receive_order_details_without_path_id(
+    store_slug: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_apikey: str | None = Header(default=None, alias="xapikey"),
+    db: Session = Depends(get_db),
+) -> ConsumerStatusResponse:
+    store, _ = authenticate(db, store_slug, authorization or x_apikey)
+
+    try:
+        data = await request.json()
+    except Exception as error:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Payload de detalhes inválido: {error}",
+        ) from error
+
+    order_id = data.get("Id") or data.get("id") or data.get("OrderId") or data.get("orderId")
+    display_id = data.get("DisplayId") or data.get("displayId")
+
+    if order_id:
+        try:
+            parsed_order_id = UUID(str(order_id))
+        except (TypeError, ValueError, AttributeError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail="Id do pedido inválido.",
+            ) from error
+
+        db.execute(
+            text(
+                """
+                UPDATE order_events
+                SET status = 'DELIVERED', updated_at = now()
+                WHERE order_id = :order_id
+                  AND status = 'PENDING'
+                  AND (
+                        (code = 'ODR' AND full_code = 'ORDER_DETAILS_REQUESTED')
+                        OR code = 'PLC'
+                  )
+                """
+            ),
+            {"order_id": parsed_order_id},
+        )
+        db.commit()
+
+    print(
+        "CONSUMER_ORDER_DETAILS "
+        f"order_id={order_id} display_id={display_id} "
+        f"keys={sorted(data.keys())}"
+    )
+
+    return ConsumerStatusResponse(
+        statusCode=0,
+        reasonPhrase=f"{order_id or 'Pedido'} recebido com sucesso.",
+    )
