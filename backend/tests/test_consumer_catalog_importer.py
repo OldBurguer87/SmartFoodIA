@@ -102,13 +102,37 @@ def test_import_is_idempotent_and_updates_changed_product(tmp_path: Path) -> Non
     assert product.description == "Nova descrição"
 
 
-def test_conflicting_external_code_is_not_imported(tmp_path: Path) -> None:
+def test_regular_product_wins_over_combo_variant(tmp_path: Path) -> None:
     file_path = tmp_path / "catalog.xlsx"
     create_workbook(
         file_path,
         [
-            (True, "Modelo", "Bebidas", "59", "Suco de Acerola", 7, ""),
-            (True, "Combo", "Bebidas", "59", "Suco de Acerola", 5, ""),
+            (True, "Modelo Padrão", "Bebidas", "59", "Suco de Acerola", 7, ""),
+            (True, "Modelo Padrão (Combo)", "Bebidas", "59", "Suco de Acerola", 5, ""),
+        ],
+    )
+    db, store = make_database()
+
+    report = ConsumerCatalogImportService().import_workbook(
+        db,
+        store_id=store.id,
+        file_path=file_path,
+    )
+
+    product = db.scalar(select(Product).where(Product.external_code == "59"))
+    assert report.conflicts_skipped == 0
+    assert report.duplicates_ignored == 1
+    assert product is not None
+    assert product.price == Decimal("7.00")
+
+
+def test_conflict_between_regular_rows_is_still_blocked(tmp_path: Path) -> None:
+    file_path = tmp_path / "catalog.xlsx"
+    create_workbook(
+        file_path,
+        [
+            (True, "Modelo Padrão", "Bebidas", "59", "Suco de Acerola", 7, ""),
+            (True, "Modelo Alternativo", "Bebidas", "59", "Suco de Acerola", 5, ""),
         ],
     )
     db, store = make_database()
