@@ -15,82 +15,93 @@
 - **v0.2.x — Console e web:** dashboard web e console de conversas/operação.
 - **v0.3.0–v0.3.2 — Consumer hardening:** revisão e endurecimento do contrato da API Parceiro, remoção de dependências fixas de loja e preparação para homologação real.
 - **v0.3.3 — Consumer Homologation & Public HTTPS:** Caddy, HTTPS automático, diagnóstico protegido, verificador externo e roteiro de homologação.
-- **v0.3.4 — Documentation & Governance Alignment:** documentação e decisões alinhadas ao estado real do projeto, sem mudança funcional do Core.
+- **v0.3.4 — Documentation & Governance Alignment:** documentação e decisões alinhadas ao estado então conhecido do projeto.
+- **Homologação operacional de 2026-08-11:** retirada e delivery validados de ponta a ponta no Consumer, com callbacks de status e payload DELIVERY ajustado em produção.
 
 ## Gates atuais até a V1
 
-### Gate A — DNS público
+### Gate A — DNS público — CONCLUÍDO
 
-- Cloudflare reconhecer os nameservers do `smartfoodia.com.br`.
-- Registros DNS apontarem corretamente para a VPS.
+- `smartfoodia.com.br` resolve para a VPS pública.
 
-**Saída:** domínio resolvendo publicamente para o servidor correto.
+### Gate B — HTTPS público — CONCLUÍDO
 
-### Gate B — HTTPS público
+- Caddy ativo;
+- certificado TLS válido para `smartfoodia.com.br`.
 
-- Subir Caddy com a configuração de produção.
-- Emitir certificado TLS válido para `smartfoodia.com.br`.
+### Gate C — Diagnóstico da API Parceiro — CONCLUÍDO
 
-**Saída:** `https://smartfoodia.com.br` acessível externamente.
-
-### Gate C — Diagnóstico da API Parceiro
-
-- `health` operacional.
-- autenticação por token validada;
+- `/ready` operacional;
+- autenticação da integração validada;
 - merchant configurado;
-- polling e URLs finais funcionando externamente.
+- polling e URLs operacionais funcionando externamente.
 
-**Saída:** API pronta para cadastro no Consumer.
+### Gate D — Configuração no Consumer — CONCLUÍDO
 
-### Gate D — Configuração no Consumer
+- integração cadastrada;
+- Consumer realizando polling e consultando pedidos;
+- autenticação real observada via `xapikey`.
 
-- cadastrar token e as quatro URLs da API Parceiro;
-- ativar a Fila de Pedidos Online.
+### Gate E — Primeiro pedido controlado — CONCLUÍDO
 
-**Saída:** Consumer consultando a API do SmartFoodIA.
+- pedido válido publicado;
+- `PLACED / PLC` disponibilizado;
+- Consumer consultou detalhes;
+- pedido apareceu corretamente na fila;
+- fluxo sem duplicidade observado nos testes controlados.
 
-### Gate E — Primeiro pedido controlado
+### Gate F — Retorno de status — CONCLUÍDO PARA RETIRADA E DELIVERY
 
-- criar pedido válido;
-- exigir confirmação explícita;
-- gerar `PLACED / PLC`;
-- Consumer consultar detalhes;
-- pedido aparecer corretamente na fila do Consumer;
-- nenhuma duplicidade.
+Homologado em 2026-08-11:
 
-**Saída:** primeiro pedido integrado de ponta a ponta até a fila do Consumer.
+#### Retirada
+- `Confirmed`;
+- `ReadyToPickup`;
+- `Concluded`.
 
-### Gate F — Retorno de status
+#### Delivery
+- `Confirmed`;
+- despacho / `Em Rota`;
+- `Concluded`.
 
-- validar confirmação;
+Os estados foram persistidos no SmartFoodIA com respostas HTTP `200 OK`.
+
+### Gate G — Homologação ampliada — EM ANDAMENTO
+
+Ainda devem ser cobertos de forma controlada os demais cenários aprovados:
+
 - cancelamento;
-- pronto para retirada;
-- saiu para entrega;
-- conclusão;
-- refletir estados no SmartFoodIA.
+- adicionais e observações reais;
+- PIX pendente;
+- cartão crédito/débito;
+- dinheiro e troco;
+- indisponibilidade;
+- alteração antes da confirmação;
+- idempotência e repetição de polling;
+- retomada após falha;
+- pedido iniciado pela Olívia usando o fluxo real do cliente.
 
-**Saída:** ciclo bidirecional Consumer ↔ SmartFoodIA homologado.
+Também é necessário consolidar no GitHub os hotfixes que estão em produção no adaptador Consumer antes de qualquer novo deploy.
 
-### Gate G — Homologação ampliada
+### Gate H — Produção assistida — PENDENTE
 
-Testar os cenários aprovados de retirada, delivery, adicionais, observações, PIX pendente, cartões, dinheiro/troco, indisponibilidade, alterações antes da confirmação, idempotência, repetição de polling e retomada após falha.
+Antes do piloto produtivo:
 
-**Saída:** matriz mínima de homologação aprovada.
-
-### Gate H — Produção assistida
-
-- backup;
-- monitoramento;
+- configurar OpenAI na VPS;
+- configurar a conta WhatsApp da loja;
+- validar o fluxo WhatsApp → Olívia → Core → Consumer → status → WhatsApp;
+- corrigir a exposição de `xapikey` nos access logs do Caddy;
+- backup e restauração testados;
+- monitoramento e observabilidade;
 - segurança final da VPS;
-- observabilidade;
-- operação assistida com a Old Burguer 87.
-
-**Saída:** piloto produtivo estável.
+- procedimentos operacionais mínimos.
 
 ## v1.0.0 — Produção
 
-Critério: primeiro piloto operando de forma estável com pedido via SmartFoodIA entrando no Consumer, retorno de status funcionando, proteção contra duplicidade, observabilidade e procedimentos operacionais mínimos.
+Critério: Old Burguer 87 operando de forma estável com pedido real via WhatsApp/Olívia entrando no Consumer, retorno de status chegando ao SmartFoodIA e ao cliente, proteção contra duplicidade, segurança de logs, observabilidade e procedimentos operacionais mínimos.
 
 ## Depois da V1
 
 Painel mais amplo, fidelidade, campanhas, pagamentos avançados, novos ERPs e eventual ERP próprio permanecem evolução futura. A arquitetura deve continuar permitindo novos adapters sem acoplar o Core ao Consumer.
+
+Consulte também `docs/PRODUCTION_RUNTIME.md` para o estado efetivamente auditado da VPS.
