@@ -27,7 +27,33 @@ def map_order(order: Order, integration: StoreIntegration) -> dict:
         required={'state':order.address_state,'city':order.address_city,'street':order.address_street,'number':order.address_number,'neighborhood':order.address_neighborhood}
         missing=[k for k,v in required.items() if not v]
         if missing: raise ConsumerContractError('Endereço delivery incompleto: '+', '.join(missing)+'.')
-        delivery={'mode':'DEFAULT','pickupCode':order.display_id,'deliveredBy':'MERCHANT','deliveryDateTime':_iso(order.created_at+timedelta(minutes=45)),'deliveryAddress':{'country':'BR','state':order.address_state,'city':order.address_city,'postalCode':order.address_postal_code or '','streetName':order.address_street,'streetNumber':order.address_number,'neighborhood':order.address_neighborhood,'complement':order.address_complement,'reference':order.address_reference}}
+        formatted_address = (
+            f"{order.address_street}, {order.address_number}, "
+            f"{order.address_neighborhood} - {order.address_city}/{order.address_state}"
+        )
+        delivery = {
+            'mode': 'DEFAULT',
+            'pickupCode': order.display_id,
+            'deliveredBy': 'Partner',
+            'deliveryDateTime': _iso(order.created_at + timedelta(minutes=45)),
+            'deliveryAddress': {
+                'country': 'BR',
+                'state': order.address_state,
+                'city': order.address_city,
+                'postalCode': order.address_postal_code or '',
+                'streetName': order.address_street,
+                'formattedAddress': formatted_address,
+                'streetNumber': order.address_number,
+                'coordinates': {
+                    'latitude': 0,
+                    'longitude': 0,
+                },
+                'neighborhood': order.address_neighborhood,
+                'complement': order.address_complement,
+                'reference': order.address_reference,
+            },
+            'observations': None,
+        }
     else:
         takeout={'mode':'DEFAULT','takeoutDateTime':_iso(order.created_at+timedelta(minutes=30))}
     method={'method':order.payment_method,'type':order.payment_type,'currency':'BRL','value':float(order.total),'prepaid':order.payment_type=='PREPAID','cash':({'changeFor':float(order.change_for)} if order.payment_method=='CASH' and order.change_for is not None else None),'card':None,'wallet':None}
