@@ -30,6 +30,9 @@
 
     log {
         output stdout
-        format json
+        format filter {
+            request>headers>Xapikey replace REDACTED
+            wrap json
+        }
     }
 }
