@@ -1,8 +1,19 @@
 {
   "project": "SmartFoodIA",
-  "version": "0.3.4",
-  "status": "documentation-governance-alignment",
-  "functional_baseline": "0.3.3-consumer-homologation-and-public-https",
+  "documentation_version": "0.3.4",
+  "runtime_version_observed": "0.3.3",
+  "status": "consumer-homologated-expanded-validation",
   "public_base_url": "https://smartfoodia.com.br",
-  "current_gate": "dns-and-public-https"
+  "current_gate": "expanded-homologation",
+  "consumer_homologation": {
+    "takeout": true,
+    "delivery": true,
+    "status_return": true
+  },
+  "production_configuration": {
+    "openai_configured": false,
+    "whatsapp_configured": false
+  },
+  "runtime_audit_date": "2026-08-11",
+  "runtime_reference": "docs/PRODUCTION_RUNTIME.md"
 }
