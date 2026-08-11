@@ -134,7 +134,7 @@ class OliviaOrchestrator:
                 "name": definition.name,
                 "description": definition.description,
                 "parameters": definition.input_schema,
-                "strict": True,
+                "strict": False,
             }
             for definition in registry.definitions()
         ]
