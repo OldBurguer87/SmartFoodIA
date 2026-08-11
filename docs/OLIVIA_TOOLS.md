@@ -2,11 +2,9 @@
 
 ## Objetivo
 
-A Olívia não acessa o banco e não executa regras de negócio diretamente.
+A Olívia não acessa o banco nem executa regras de negócio diretamente. Ela usa ferramentas autorizadas que chamam os Services do SmartFoodIA.
 
-Ela usa ferramentas autorizadas que chamam os Services do SmartFoodIA.
-
-## Ferramentas disponíveis
+## Ferramentas disponíveis no código
 
 ### Catálogo
 
@@ -31,7 +29,7 @@ Ela usa ferramentas autorizadas que chamam os Services do SmartFoodIA.
 
 - `checkout_cart`
 
-O checkout exige:
+O checkout exige confirmação explícita do cliente:
 
 ```json
 {
@@ -39,46 +37,40 @@ O checkout exige:
 }
 ```
 
-Sem confirmação explícita, o pedido não é criado.
+Sem confirmação, o pedido não é criado.
+
+### Conhecimento
+
+- `search_knowledge`
+
+Essa ferramenta consulta somente respostas aprovadas/resolvidas na base de conhecimento.
 
 ### Suporte humano
 
 - `request_human_help`
 
-Nesta versão ela devolve uma escalação estruturada. A próxima etapa persistirá tickets,
-alertas e lacunas de conhecimento no banco.
+Diferente das versões iniciais, essa ferramenta já persiste um `HumanTicket` e pode criar/incrementar uma `KnowledgeGap` associada à conversa.
 
-## Endpoints de desenvolvimento
-
-### Listar definições compatíveis com function calling
+## Endpoints
 
 ```text
-GET /api/v1/olivia/stores/{store_slug}/tools
-```
-
-### Executar uma ferramenta
-
-```text
+GET  /api/v1/olivia/stores/{store_slug}/tools
 POST /api/v1/olivia/stores/{store_slug}/tools/execute
+POST /api/v1/olivia/reply
 ```
 
-Exemplo:
+## Integração OpenAI
 
-```json
-{
-  "tool_name": "search_catalog",
-  "arguments": {
-    "query": "monster",
-    "service_mode": "DELIVERY"
-  }
-}
-```
+A integração OpenAI já está implementada no código por meio de adaptador próprio. Na auditoria da VPS em 2026-08-11, porém, `OPENAI_CONFIGURED=False`, portanto a Olívia ainda não estava ativa com uma chave OpenAI real em produção.
 
 ## Regras
 
 - ferramentas nunca inventam dados;
 - valores vêm do Core;
 - complementos são validados pelo catálogo;
-- o checkout exige confirmação explícita;
+- checkout exige confirmação explícita;
 - erros são devolvidos de forma estruturada;
-- a integração OpenAI ainda não está nesta versão.
+- a IA não envia pedidos diretamente ao Consumer;
+- escalonamento humano persiste trabalho operacional corrigível.
+
+Consulte `docs/PRODUCTION_RUNTIME.md` para distinguir funcionalidade implementada de funcionalidade configurada na VPS.
