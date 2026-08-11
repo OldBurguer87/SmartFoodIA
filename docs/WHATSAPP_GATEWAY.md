@@ -10,7 +10,21 @@ Meta Webhook → Channel Gateway → Conversation → OliviaOrchestrator → Too
 
 A Cloud API usa a Graph API para envio e webhooks para recebimento de mensagens e eventos.
 
-## Configuração local
+## Estado do código
+
+O gateway, filas, worker, persistência de eventos, takeover humano e envio de mensagens já estão implementados.
+
+## Estado da produção auditada em 2026-08-11
+
+```text
+WHATSAPP_TOKEN_CONFIGURED=False
+WHATSAPP_APP_SECRET_CONFIGURED=False
+channel_accounts=0
+```
+
+O worker estava em execução, mas nenhuma conta WhatsApp da loja estava configurada. Portanto, o canal ainda não estava ativo para tráfego real.
+
+## Configuração esperada
 
 No `.env`:
 
@@ -21,9 +35,7 @@ WHATSAPP_GRAPH_API_VERSION=v23.0
 WHATSAPP_TIMEOUT_SECONDS=30
 ```
 
-Nunca envie esses valores ao GitHub.
-
-Depois das migrations, configure a conta da loja:
+Depois das migrations:
 
 ```bash
 docker compose exec api python -m app.scripts.configure_whatsapp_channel \
@@ -32,30 +44,36 @@ docker compose exec api python -m app.scripts.configure_whatsapp_channel \
   --display-phone-number 5597XXXXXXXXX
 ```
 
-O script solicita o verify token e salva somente o hash.
-
 ## Webhook
 
-Callback URL:
+Callback:
 
 ```text
-https://SEU_DOMINIO/api/v1/channels/whatsapp/webhook
+https://smartfoodia.com.br/api/v1/channels/whatsapp/webhook
 ```
 
-O mesmo endpoint atende:
+O endpoint atende:
 
-- `GET`: verificação do webhook;
+- `GET`: verificação;
 - `POST`: mensagens e atualizações de status.
 
 ## Segurança e confiabilidade
 
 - validação de `X-Hub-Signature-256` quando `WHATSAPP_APP_SECRET` está configurado;
 - idempotência pelo ID externo da mensagem/evento;
-- eventos recebidos persistidos antes do processamento;
+- eventos persistidos antes do processamento;
 - mensagens de saída persistidas com status e tentativas;
-- falhas ficam registradas para retry futuro;
-- tipos ainda não suportados são marcados como `IGNORED`, sem resposta duplicada.
+- retentativas e estado `DEAD` após limite;
+- tipos não suportados podem ser marcados como `IGNORED`.
 
-## Escopo desta versão
+## Próximo passo operacional
 
-Processamento automático de mensagens de texto e status. Imagens, áudio, localização e documentos já são reconhecidos pelo gateway, mas ficam marcados para implementação posterior.
+Configurar a conta real da Old Burguer 87 e validar o ciclo completo:
+
+```text
+WhatsApp → Olívia → Core → Consumer → status → WhatsApp
+```
+
+O Consumer já foi homologado separadamente. A etapa pendente é ativar e homologar o canal WhatsApp em produção.
+
+Consulte `docs/PRODUCTION_RUNTIME.md`.
