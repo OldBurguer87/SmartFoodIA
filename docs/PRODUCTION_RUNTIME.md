@@ -11,7 +11,6 @@ Este documento registra o que estava efetivamente executando na VPS e o que já 
 ## Snapshot da VPS
 
 - branch: `main`;
-- commit base: `1a912a74999ef18fb42eadbfece8354c007d4533`;
 - ambiente: `production`;
 - domínio público: `smartfoodia.com.br`;
 - HTTPS ativo via Caddy;
@@ -20,7 +19,7 @@ Este documento registra o que estava efetivamente executando na VPS e o que já 
 - frontend Next.js 16 / React 19;
 - migrations Alembic em `0008 (head)`.
 
-A API em execução reportava `APP_VERSION=0.3.3`, embora a documentação e os manifests do repositório estivessem em `0.3.4`. Até a versão de runtime ser sincronizada, esta diferença deve permanecer explícita.
+Na auditoria inicial de 2026-08-11 a API reportava `APP_VERSION=0.3.3`, embora a documentação e os manifests do repositório estivessem em `0.3.4`. Essa diferença de versionamento deve permanecer explícita até o runtime ser sincronizado.
 
 ## Serviços ativos
 
@@ -66,6 +65,22 @@ xapikey: TOKEN
 
 O backend também aceita `Authorization: Bearer TOKEN` por compatibilidade.
 
+### Rotação de credencial em 2026-08-11
+
+A credencial Consumer foi rotacionada após a homologação porque a chave anterior havia aparecido em logs históricos do Caddy.
+
+Procedimento concluído:
+
+- nova chave gerada fora do banco;
+- SmartFoodIA atualizado para o novo hash;
+- Consumer atualizado para a nova chave;
+- polling voltou a responder `200 OK` com a nova credencial;
+- chave anterior deixou de ser válida;
+- arquivos temporários contendo a nova chave e o hash de rollback foram removidos da VPS;
+- cópia local temporária da nova chave foi removida do computador usado na operação.
+
+Durante a janela de troca ocorreu um `401` transitório porque o Consumer foi salvo com a chave nova antes do SmartFoodIA. Após a atualização do hash no SmartFoodIA, as chamadas seguintes retornaram `200 OK`.
+
 ### Callback de status observado
 
 A URL utilizada pelo Consumer homologado é:
@@ -98,7 +113,7 @@ O runtime possui também:
 POST /api/v1/integrations/consumer/{store_slug}/orders/details
 ```
 
-Essa rota foi adicionada como compatibilidade operacional e ainda precisa ser consolidada no código versionado antes de um novo deploy substituir a imagem atual.
+Essa rota foi adicionada como compatibilidade operacional.
 
 ### Normalização de status
 
@@ -127,16 +142,34 @@ O payload que passou a ser aceito pelo Consumer contém:
 
 Durante a homologação, a entrada do pedido DELIVERY passou a funcionar após a inclusão conjunta desses campos. Não foi feito teste isolado para afirmar qual deles é individualmente obrigatório. Portanto, esse conjunto deve ser tratado como **baseline homologado** e não deve ser reduzido sem nova homologação A/B.
 
-## Hotfixes ainda não versionados no commit base
+## Consolidação dos hotfixes Consumer
 
-Na auditoria de 2026-08-11, os seguintes arquivos estavam modificados localmente na VPS e em uso pela API:
+Os hotfixes que estavam apenas na VPS foram consolidados no GitHub em 2026-08-11 e a VPS foi sincronizada por fast-forward.
+
+Arquivos consolidados:
 
 - `backend/app/api/consumer_partner.py`;
 - `backend/app/integrations/consumer/adapter.py`;
 - `backend/app/integrations/consumer/mapper.py`;
 - `backend/app/integrations/consumer/status.py`.
 
-Essas diferenças incluem o comportamento homologado descrito acima. Um novo deploy feito somente a partir do commit base pode removê-las. Antes do próximo deploy, os hotfixes devem ser revisados, testados e versionados.
+Após a sincronização, a API foi reconstruída e voltou a estado `healthy`.
+
+## Segurança de logs — RESOLVIDO PARA NOVOS LOGS
+
+Durante a homologação, o access log JSON do Caddy registrou o header `xapikey` em texto. A correção foi aplicada e validada em 2026-08-11.
+
+Medidas aplicadas:
+
+- removido o `print` do corpo bruto de callback de status da API;
+- Caddy configurado para `request>headers>Xapikey delete` no access log;
+- container Caddy recriado para garantir que o novo bind mount do `Caddyfile` fosse carregado;
+- teste controlado com chave falsa confirmou `OK: token nao apareceu no log`;
+- a requisição `/ready` continuou respondendo `200` sem o header aparecer na linha de log.
+
+A regra atua apenas no log; o header continua sendo encaminhado normalmente para autenticação da API.
+
+Observação: logs históricos anteriores à correção continham a credencial antiga. Por esse motivo, a credencial foi rotacionada e a antiga invalidada.
 
 ## OpenAI / Olívia
 
@@ -176,12 +209,6 @@ Via Caddy estão publicados para o backend:
 - `/ready`.
 
 As rotas internas `/health` e `/version` existem na FastAPI, mas no domínio público raiz são encaminhadas ao frontend e retornam `404`. Para diagnóstico externo atual, usar `/ready` e os endpoints sob `/api/...`.
-
-## Não conformidade de segurança aberta
-
-A Constituição do projeto determina que logs não exponham tokens ou dados sensíveis. Durante a homologação, o access log JSON do Caddy registrou o header `xapikey` em texto.
-
-Esse comportamento deve ser tratado como **bloqueador de segurança antes do piloto produtivo assistido**. Até a correção, logs que contenham esse header devem ser tratados como sensíveis e não devem ser compartilhados publicamente.
 
 ## Gate atual
 
