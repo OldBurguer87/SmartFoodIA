@@ -31,7 +31,7 @@
     log {
         output stdout
         format filter {
-            request>headers>Xapikey replace REDACTED
+            request>headers>Xapikey delete
             wrap json
         }
     }
