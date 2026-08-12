@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.olivia_prompt import OLIVIA_INSTRUCTIONS
@@ -11,6 +12,7 @@ from app.ai.providers.base import AIProvider
 from app.ai.tools.context import ToolContext
 from app.ai.tools.registry import OliviaToolRegistry
 from app.core.config import settings
+from app.models.order import Order
 from app.repositories.conversation import ConversationRepository
 from app.repositories.customer import CustomerRepository
 from app.schemas.conversation import AIEventCreate, MessageCreate
@@ -125,11 +127,33 @@ def _customer_context(
     else:
         address_text = "nenhum endereço salvo"
 
+    recent_orders = list(
+        db.scalars(
+            select(Order)
+            .where(
+                Order.store_id == store_id,
+                Order.customer_id == customer.id,
+            )
+            .order_by(Order.created_at.desc())
+            .limit(3)
+        ).all()
+    )
+    if recent_orders:
+        order_text = "; ".join(
+            f"pedido {order.display_id}: "
+            f"{', '.join(f'{item.quantity}x {item.product_name}' for item in order.items)}; "
+            f"modo={order.service_mode}; pagamento={order.payment_method}"
+            for order in recent_orders
+        )
+    else:
+        order_text = "nenhum pedido anterior"
+
     return (
         "CONTEXTO DO CLIENTE JÁ CADASTRADO: "
         f"nome={customer.name}; telefone já conhecido pelo canal; "
-        f"endereços={address_text}. "
-        "Não peça novamente nome ou telefone. Para entrega, ofereça endereço salvo antes de pedir outro."
+        f"endereços={address_text}; últimos pedidos={order_text}. "
+        "Não peça novamente nome ou telefone. Para entrega, ofereça endereço salvo antes de pedir outro. "
+        "Use pedidos anteriores apenas para facilitar sugestões; nunca repita item, pagamento ou endereço sem confirmação."
     )
 
 
