@@ -15,8 +15,8 @@ TMP="$BACKUP_DIR/smartfoodia-$STAMP.dump.tmp"
 OUT="$BACKUP_DIR/smartfoodia-$STAMP.dump"
 
 # O dump custom (-Fc) permite restore seletivo e é comprimido pelo PostgreSQL.
-docker compose $COMPOSE_FILES exec -T db \
-  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$TMP"
+docker compose $COMPOSE_FILES exec -T db sh -c \
+  'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$TMP"
 
 if [ ! -s "$TMP" ]; then
   rm -f "$TMP"
