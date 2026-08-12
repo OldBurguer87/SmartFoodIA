@@ -1,8 +1,8 @@
 # Estado real de produção
 
-Última auditoria operacional: **2026-08-11**.
+Última auditoria operacional: **2026-08-12**.
 
-Este documento registra o que estava efetivamente executando na VPS e o que já foi homologado na prática. Ele não substitui a Constituição nem o Roadmap; serve para separar três conceitos que não devem ser confundidos:
+Este documento registra o que está efetivamente executando na VPS e o que já foi homologado na prática. Ele separa três conceitos que não devem ser confundidos:
 
 1. **implementado no código**;
 2. **configurado na produção**;
@@ -17,9 +17,7 @@ Este documento registra o que estava efetivamente executando na VPS e o que já 
 - PostgreSQL 17;
 - Python 3.12;
 - frontend Next.js 16 / React 19;
-- migrations Alembic em `0008 (head)`.
-
-Na auditoria inicial de 2026-08-11 a API reportava `APP_VERSION=0.3.3`, embora a documentação e os manifests do repositório estivessem em `0.3.4`. Essa diferença de versionamento deve permanecer explícita até o runtime ser sincronizado.
+- migrations Alembic em `0008 (head)` na auditoria original.
 
 ## Serviços ativos
 
@@ -29,67 +27,129 @@ Na auditoria inicial de 2026-08-11 a API reportava `APP_VERSION=0.3.3`, embora a
 - `smartfoodia-db`: ativo e saudável;
 - `smartfoodia-caddy`: ativo.
 
-## Consumer
+## Consumer — estado atual
 
-Estado: **configurado e homologado** para a Old Burguer 87.
+Estado: **configurado e homologado de ponta a ponta** para a Old Burguer 87.
 
-Foram homologados de ponta a ponta:
+### Retirada homologada
 
-### Retirada
+Fluxo real validado:
 
-- polling;
-- consulta de detalhes;
-- entrada do pedido no Consumer;
-- `Confirmed`;
-- `ReadyToPickup`;
-- `Concluded`;
-- persistência dos eventos e estados internos.
+```text
+PLACED / PLC
+→ Confirmed
+→ ReadyToPickup
+→ Concluded
+```
 
-### Delivery
+Estados internos persistidos:
 
-- polling;
-- consulta de detalhes;
-- entrada do pedido no Consumer;
-- `Confirmed`;
-- `Em Rota` / despacho;
-- `Concluded`;
-- persistência dos eventos e estados internos.
+```text
+READY_FOR_INTEGRATION
+→ CONFIRMED
+→ READY
+→ CONCLUDED
+```
+
+### Delivery homologado
+
+Fluxo real validado:
+
+```text
+PLACED / PLC
+→ Confirmed
+→ ReadyToPickup
+→ Dispatched
+→ Concluded
+```
+
+Estados internos persistidos:
+
+```text
+READY_FOR_INTEGRATION
+→ CONFIRMED
+→ READY
+→ DISPATCHED
+→ CONCLUDED
+```
+
+O payload DELIVERY homologado inclui endereço completo, referência, taxa de entrega, `deliveredBy: "Partner"`, `formattedAddress`, coordenadas e bloco de entrega compatível com o Consumer.
+
+### Teste simultâneo de dois pedidos
+
+Em 2026-08-12 foram criados do zero e processados ao mesmo tempo:
+
+- pedido `000019` — TAKEOUT;
+- pedido `000020` — DELIVERY.
+
+Os callbacks de status chegaram intercalados, mas cada atualização manteve o UUID correto do pedido. Não houve mistura entre pedidos.
+
+Resultado final:
+
+```text
+000019: PLC → CFM → RTP → CON
+000020: PLC → CFM → RTP → DSP → CON
+```
+
+Todos os eventos ficaram `DELIVERED` e os dois pedidos terminaram em `CONCLUDED`.
+
+### Proteção contra regressão de status
+
+Após os testes foi adicionada proteção no adapter Consumer para impedir regressões como:
+
+```text
+CONCLUDED → READY
+DISPATCHED → READY
+READY → CONFIRMED
+```
+
+Estados terminais não são reabertos por callbacks tardios, e regressões de estágio são ignoradas.
 
 ### Autenticação observada
 
-O Consumer real envia o token no header:
+O Consumer real envia o token em:
 
 ```text
 xapikey: TOKEN
 ```
 
-O backend também aceita `Authorization: Bearer TOKEN` por compatibilidade.
+O backend também aceita:
 
-### Rotação de credencial em 2026-08-11
+```text
+Authorization: Bearer TOKEN
+```
 
-A credencial Consumer foi rotacionada após a homologação porque a chave anterior havia aparecido em logs históricos do Caddy.
+por compatibilidade.
 
-Procedimento concluído:
+### Rotação de credencial Consumer
 
-- nova chave gerada fora do banco;
-- SmartFoodIA atualizado para o novo hash;
-- Consumer atualizado para a nova chave;
-- polling voltou a responder `200 OK` com a nova credencial;
-- chave anterior deixou de ser válida;
-- arquivos temporários contendo a nova chave e o hash de rollback foram removidos da VPS;
-- cópia local temporária da nova chave foi removida do computador usado na operação.
+A credencial foi rotacionada durante a homologação de 2026-08-11/12 porque a chave antiga havia aparecido em logs históricos anteriores à correção do Caddy.
 
-Durante a janela de troca ocorreu um `401` transitório porque o Consumer foi salvo com a chave nova antes do SmartFoodIA. Após a atualização do hash no SmartFoodIA, as chamadas seguintes retornaram `200 OK`.
+Durante a rotação foi identificado que o polling já utilizava a chave nova, enquanto o componente do Consumer responsável por alterações manuais de status ainda mantinha a chave antiga em memória. Isso produziu `401 Unauthorized` apenas nos callbacks de status.
 
-### Callback de status observado
+Diagnóstico confirmado sem registrar o segredo: a credencial recebida e a credencial configurada tinham hashes diferentes.
 
-A URL utilizada pelo Consumer homologado é:
+A correção operacional foi:
+
+1. gerar nova chave;
+2. armazenar somente o hash no SmartFoodIA;
+3. salvar a mesma chave na API Parceiro do Consumer;
+4. reiniciar completamente o Consumer após a troca;
+5. validar polling e callbacks de status com `200 OK`.
+
+Depois do reinício completo, `Confirmed`, `ReadyToPickup`, `Dispatched` e `Concluded` passaram a usar a nova credencial corretamente.
+
+### Callback de status
+
+A rota observada na operação real é:
 
 ```text
 POST /api/v1/integrations/consumer/{store_slug}/orders/status
 ```
 
-O `OrderId` vem no corpo JSON. A rota antiga com UUID no caminho continua disponível como compatibilidade:
+O `OrderId` vem no corpo JSON.
+
+A rota com UUID no caminho permanece disponível como compatibilidade:
 
 ```text
 POST /api/v1/integrations/consumer/{store_slug}/orders/{order_id}/status
@@ -103,23 +163,11 @@ O Consumer consulta:
 GET /api/v1/integrations/consumer/{store_slug}/orders/{order_id}
 ```
 
-No runtime homologado, essa consulta marca o `PLC / PLACED` pendente como entregue. O endpoint ODR continua disponível, porém o fluxo real homologado não deve depender exclusivamente do recebimento de ODR.
-
-### Compatibilidade de detalhes
-
-O runtime possui também:
-
-```text
-POST /api/v1/integrations/consumer/{store_slug}/orders/details
-```
-
-Essa rota foi adicionada como compatibilidade operacional.
+Essa consulta marca o `PLC / PLACED` pendente como entregue no fluxo homologado.
 
 ### Normalização de status
 
-A produção normaliza diferenças de maiúsculas, hífens, espaços, underscores e nomes compactos.
-
-Mapeamentos homologados/aceitos:
+Mapeamentos aceitos/homologados:
 
 - `Confirmed` → `CONFIRMED`;
 - `ReadyToPickup` / `READY_TO_PICKUP` → `READY`;
@@ -130,75 +178,70 @@ Mapeamentos homologados/aceitos:
 - `Delivered` → `CONCLUDED`;
 - `Cancelled` → `CANCELLED`.
 
-### Payload DELIVERY homologado
+## Segurança de logs
 
-O payload que passou a ser aceito pelo Consumer contém:
-
-- `deliveredBy: "Partner"`;
-- `formattedAddress`;
-- `coordinates.latitude`;
-- `coordinates.longitude`;
-- `delivery.observations`.
-
-Durante a homologação, a entrada do pedido DELIVERY passou a funcionar após a inclusão conjunta desses campos. Não foi feito teste isolado para afirmar qual deles é individualmente obrigatório. Portanto, esse conjunto deve ser tratado como **baseline homologado** e não deve ser reduzido sem nova homologação A/B.
-
-## Consolidação dos hotfixes Consumer
-
-Os hotfixes que estavam apenas na VPS foram consolidados no GitHub em 2026-08-11 e a VPS foi sincronizada por fast-forward.
-
-Arquivos consolidados:
-
-- `backend/app/api/consumer_partner.py`;
-- `backend/app/integrations/consumer/adapter.py`;
-- `backend/app/integrations/consumer/mapper.py`;
-- `backend/app/integrations/consumer/status.py`.
-
-Após a sincronização, a API foi reconstruída e voltou a estado `healthy`.
-
-## Segurança de logs — RESOLVIDO PARA NOVOS LOGS
-
-Durante a homologação, o access log JSON do Caddy registrou o header `xapikey` em texto. A correção foi aplicada e validada em 2026-08-11.
+Estado: **corrigido para novos logs**.
 
 Medidas aplicadas:
 
-- removido o `print` do corpo bruto de callback de status da API;
-- Caddy configurado para `request>headers>Xapikey delete` no access log;
-- container Caddy recriado para garantir que o novo bind mount do `Caddyfile` fosse carregado;
-- teste controlado com chave falsa confirmou `OK: token nao apareceu no log`;
-- a requisição `/ready` continuou respondendo `200` sem o header aparecer na linha de log.
+- removido log de payload bruto de callback de status;
+- Caddy configurado para não persistir `Xapikey` no access log;
+- teste com chave falsa confirmou que o valor do token não aparece em novos logs;
+- diagnósticos temporários de autenticação e status usados na homologação foram removidos do código em 2026-08-12;
+- após a remoção, o polling continuou respondendo `200 OK`.
 
-A regra atua apenas no log; o header continua sendo encaminhado normalmente para autenticação da API.
-
-Observação: logs históricos anteriores à correção continham a credencial antiga. Por esse motivo, a credencial foi rotacionada e a antiga invalidada.
+A cópia temporária da nova chave no computador Windows utilizado na operação foi removida e a área de transferência foi limpa.
 
 ## OpenAI / Olívia
 
-Estado do código: **implementado**.
+Estado: **configurado e operacional na VPS**.
 
-Estado da produção auditada:
+Validações executadas em 2026-08-11/12:
 
-- `OPENAI_CONFIGURED = False`;
-- modelo configurado no ambiente: `gpt-5.5`;
-- não havia `OPENAI_API_KEY` ativa na VPS.
+- `OPENAI_API_KEY` configurada no ambiente;
+- modelo `gpt-5.5` disponível e utilizado;
+- chamada direta à OpenAI respondeu com sucesso;
+- Olívia respondeu pelo runtime real;
+- 13 tools carregadas;
+- `search_catalog` validado com catálogo real;
+- `get_product` validado com complementos reais;
+- carrinho validado com produto + complementos;
+- `checkout_cart` bloqueado antes de confirmação explícita;
+- checkout real homologado após confirmação explícita;
+- pedidos TAKEOUT e DELIVERY criados pela Olívia chegaram corretamente ao Consumer.
 
-Portanto, a integração OpenAI existe no projeto, mas **não estava operacional na produção auditada**.
+A Olívia não inventa preços ou complementos: os dados utilizados nos testes vieram do Core e do catálogo importado.
+
+## Catálogo e complementos
+
+O catálogo rico do Consumer foi importado a partir do arquivo `.prodcon` real.
+
+Última importação auditada:
+
+- versão Consumer: `16.1.0.6`;
+- produtos no arquivo: `212`;
+- detalhes de produtos: `264`;
+- complementos no arquivo: `40`;
+- vínculos no arquivo: `1849`;
+- grupos criados: `129`;
+- produtos com complementos: `129`;
+- vínculos grupo-item criados: `1849`;
+- produtos locais não encontrados: `0`;
+- detalhes de complemento não encontrados: `0`.
+
+O produto AMERICANO foi validado com complementos reais, incluindo Bacon e Queijo, e esses códigos PDV chegaram corretamente ao Consumer nos pedidos de teste.
 
 ## WhatsApp
 
 Estado do código: **implementado**.
 
-Estado da produção auditada:
+Estado de produção até esta auditoria:
 
-- `WHATSAPP_TOKEN_CONFIGURED = False`;
-- `WHATSAPP_APP_SECRET_CONFIGURED = False`;
-- nenhuma conta em `channel_accounts`;
-- worker de canais em execução.
+- canal real ainda não configurado;
+- nenhuma conta WhatsApp Cloud ativa havia sido cadastrada na última verificação;
+- o fluxo Consumer → SmartFoodIA está homologado, mas a notificação final ao cliente depende da ativação do canal.
 
-Portanto, o WhatsApp ainda não estava configurado para tráfego real. O ciclo Consumer → SmartFoodIA foi homologado, mas a notificação final ao cliente pelo WhatsApp ainda depende da configuração do canal.
-
-## Catálogo
-
-O importador Consumer vigente também desativa produtos que existiam no SmartFoodIA e desapareceram da nova planilha, desde que exista ao menos uma linha válida importada. Códigos associados a erros/conflitos são protegidos contra desativação acidental.
+Esse é o próximo grande gate operacional.
 
 ## Exposição pública atual
 
@@ -208,17 +251,33 @@ Via Caddy estão publicados para o backend:
 - `/live`;
 - `/ready`.
 
-As rotas internas `/health` e `/version` existem na FastAPI, mas no domínio público raiz são encaminhadas ao frontend e retornam `404`. Para diagnóstico externo atual, usar `/ready` e os endpoints sob `/api/...`.
+Para diagnóstico externo, usar `/ready` e os endpoints sob `/api/...`.
 
-## Gate atual
+## Gates atuais
 
-Situação em 2026-08-11:
+Situação em **2026-08-12**:
 
 - Gate A — DNS público: **concluído**;
 - Gate B — HTTPS público: **concluído**;
 - Gate C — diagnóstico API Parceiro: **concluído**;
 - Gate D — configuração no Consumer: **concluído**;
-- Gate E — primeiro pedido controlado: **concluído**;
+- Gate E — pedido controlado: **concluído**;
 - Gate F — retorno de status: **concluído para retirada e delivery**;
-- Gate G — homologação ampliada: **em andamento**;
-- Gate H — produção assistida: **pendente**.
+- Gate G — homologação ampliada: **avançada / em andamento**;
+- Gate H — produção assistida via WhatsApp: **pendente**.
+
+## Próximo passo operacional
+
+Configurar a conta WhatsApp Cloud da Old Burguer 87 e homologar o fluxo completo sem comandos manuais:
+
+```text
+WhatsApp real
+→ Olívia
+→ catálogo / cliente / endereço / carrinho
+→ confirmação explícita
+→ checkout
+→ Consumer
+→ mudanças de status
+→ SmartFoodIA
+→ mensagem ao cliente
+```
