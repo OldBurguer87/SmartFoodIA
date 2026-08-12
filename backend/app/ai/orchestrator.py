@@ -12,6 +12,7 @@ from app.ai.providers.base import AIProvider
 from app.ai.tools.context import ToolContext
 from app.ai.tools.registry import OliviaToolRegistry
 from app.core.config import settings
+from app.models.catalog import Store
 from app.models.order import Order
 from app.repositories.conversation import ConversationRepository
 from app.repositories.customer import CustomerRepository
@@ -92,6 +93,29 @@ def _drop_null_arguments(value: Any) -> Any:
     if isinstance(value, list):
         return [_drop_null_arguments(item) for item in value]
     return value
+
+
+def _store_context(db: Session, *, store_id: UUID) -> str:
+    store = db.scalar(select(Store).where(Store.id == store_id))
+    if store is None:
+        return "REGRAS DA LOJA: loja não encontrada; não invente regras comerciais."
+
+    if store.slug == "old-burguer-87":
+        return (
+            "REGRAS COMERCIAIS APROVADAS DA OLD BURGUER 87: "
+            "para ENTREGA, o pedido mínimo é R$ 15,00 somente em produtos, antes da taxa; "
+            "a taxa fixa de entrega é R$ 3,00; "
+            "a taxa não conta para atingir o pedido mínimo; "
+            "se o subtotal em produtos estiver abaixo de R$ 15,00, informe exatamente quanto falta e ofereça produtos do catálogo para completar; "
+            "não pergunte pagamento enquanto o subtotal de entrega estiver abaixo do mínimo; "
+            "quando o subtotal atingir pelo menos R$ 15,00, informe a taxa de R$ 3,00 diretamente, sem consultar equipe humana; "
+            "para RETIRADA não há taxa de entrega nem pedido mínimo de entrega."
+        )
+
+    return (
+        f"REGRAS DA LOJA {store.name}: use somente regras comerciais fornecidas por ferramentas ou contexto; "
+        "não invente pedido mínimo nem taxa de entrega."
+    )
 
 
 def _customer_context(
@@ -203,6 +227,8 @@ class OliviaOrchestrator:
         )
         instructions = (
             OLIVIA_INSTRUCTIONS
+            + "\n\n"
+            + _store_context(db, store_id=store_id)
             + "\n\n"
             + _customer_context(
                 db,
