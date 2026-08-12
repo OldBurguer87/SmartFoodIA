@@ -162,6 +162,11 @@ def update_order_status(
             status_code=422,
             detail="orderId do corpo difere do caminho.",
         )
+    print(
+        "CONSUMER_STATUS_RECEIVED "
+        f"order_id={payload.orderId} status={payload.status} "
+        f"justification_present={bool(payload.justification)}"
+    )
     try:
         return service.update_status(db, store=store, payload=payload)
     except ConsumerNotFoundError as error:
@@ -202,6 +207,12 @@ async def update_order_status_without_path_id(
             status_code=422,
             detail=f"Payload de status inválido: {error}",
         ) from error
+
+    print(
+        "CONSUMER_STATUS_RECEIVED "
+        f"order_id={payload.orderId} status={payload.status} "
+        f"justification_present={bool(payload.justification)}"
+    )
 
     try:
         return service.update_status(db, store=store, payload=payload)
