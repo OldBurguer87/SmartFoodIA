@@ -162,11 +162,6 @@ def update_order_status(
             status_code=422,
             detail="orderId do corpo difere do caminho.",
         )
-    print(
-        "CONSUMER_STATUS_RECEIVED "
-        f"order_id={payload.orderId} status={payload.status} "
-        f"justification_present={bool(payload.justification)}"
-    )
     try:
         return service.update_status(db, store=store, payload=payload)
     except ConsumerNotFoundError as error:
@@ -192,6 +187,7 @@ async def update_order_status_without_path_id(
 
     try:
         import json
+
         data = json.loads(body)
         if "OrderId" in data:
             data["orderId"] = data.pop("OrderId")
@@ -207,12 +203,6 @@ async def update_order_status_without_path_id(
             status_code=422,
             detail=f"Payload de status inválido: {error}",
         ) from error
-
-    print(
-        "CONSUMER_STATUS_RECEIVED "
-        f"order_id={payload.orderId} status={payload.status} "
-        f"justification_present={bool(payload.justification)}"
-    )
 
     try:
         return service.update_status(db, store=store, payload=payload)
@@ -244,7 +234,6 @@ async def receive_order_details_without_path_id(
         ) from error
 
     order_id = data.get("Id") or data.get("id") or data.get("OrderId") or data.get("orderId")
-    display_id = data.get("DisplayId") or data.get("displayId")
 
     if order_id:
         try:
@@ -271,12 +260,6 @@ async def receive_order_details_without_path_id(
             {"order_id": parsed_order_id},
         )
         db.commit()
-
-    print(
-        "CONSUMER_ORDER_DETAILS "
-        f"order_id={order_id} display_id={display_id} "
-        f"keys={sorted(data.keys())}"
-    )
 
     return ConsumerStatusResponse(
         statusCode=0,
