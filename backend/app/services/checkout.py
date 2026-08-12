@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.cart import Cart
+from app.models.catalog import Store
 from app.models.customer import CustomerAddress
 from app.models.order import Order, OrderEvent, OrderItem, OrderItemModifier
 from app.repositories.cart import CartRepository
@@ -17,6 +18,11 @@ from app.schemas.order import CheckoutRequest, OrderRead
 
 class CheckoutValidationError(ValueError):
     pass
+
+
+OLD_BURGUER_SLUG = "old-burguer-87"
+OLD_BURGUER_DELIVERY_FEE = Decimal("3.00")
+OLD_BURGUER_MINIMUM_DELIVERY_SUBTOTAL = Decimal("15.00")
 
 
 class CheckoutService:
@@ -53,19 +59,31 @@ class CheckoutService:
         if customer is None:
             raise CheckoutValidationError("Cliente não encontrado.")
 
+        store = db.scalar(select(Store).where(Store.id == cart.store_id))
+        if store is None:
+            raise CheckoutValidationError("Loja não encontrada.")
+
         address = self._resolve_address(db, cart, payload)
-
-        if cart.service_mode == "DELIVERY" and payload.delivery_fee <= 0:
-            raise CheckoutValidationError(
-                "Taxa de entrega obrigatória. Consulte o valor aprovado para o endereço antes de finalizar."
-            )
-        if cart.service_mode == "TAKEOUT" and payload.delivery_fee != 0:
-            raise CheckoutValidationError(
-                "Pedido para retirada não pode ter taxa de entrega."
-            )
-
         subtotal = self._calculate_subtotal(cart)
-        total = subtotal + payload.delivery_fee - payload.discount
+
+        delivery_fee = payload.delivery_fee
+        if cart.service_mode == "DELIVERY":
+            if store.slug == OLD_BURGUER_SLUG:
+                if subtotal < OLD_BURGUER_MINIMUM_DELIVERY_SUBTOTAL:
+                    missing = OLD_BURGUER_MINIMUM_DELIVERY_SUBTOTAL - subtotal
+                    raise CheckoutValidationError(
+                        "Pedido mínimo para entrega é R$ 15,00 em produtos, sem contar a taxa. "
+                        f"Faltam R$ {missing:.2f} em produtos para atingir o mínimo."
+                    )
+                delivery_fee = OLD_BURGUER_DELIVERY_FEE
+            elif delivery_fee <= 0:
+                raise CheckoutValidationError(
+                    "Taxa de entrega obrigatória. Consulte o valor aprovado para o endereço antes de finalizar."
+                )
+        else:
+            delivery_fee = Decimal("0.00")
+
+        total = subtotal + delivery_fee - payload.discount
         if total < 0:
             raise CheckoutValidationError("O desconto não pode superar o total.")
 
@@ -87,7 +105,7 @@ class CheckoutService:
             payment_type=payload.payment_type,
             change_for=payload.change_for,
             subtotal=subtotal,
-            delivery_fee=payload.delivery_fee,
+            delivery_fee=delivery_fee,
             discount=payload.discount,
             total=total,
             customer_name=customer.name,
