@@ -39,17 +39,9 @@ class ConsumerAuthenticator:
         )
 
         if store is None or integration is None or not integration.active:
-            print(
-                "CONSUMER_AUTH_FAIL "
-                f"store={store_slug} reason=integration_inactive_or_missing"
-            )
             raise IntegrationAuthenticationError("Loja ou integração inválida.")
 
         if not authorization:
-            print(
-                "CONSUMER_AUTH_FAIL "
-                f"store={store_slug} reason=credential_missing"
-            )
             raise IntegrationAuthenticationError("Token ausente ou inválido.")
 
         token = authorization.strip()
@@ -57,21 +49,9 @@ class ConsumerAuthenticator:
             token = token[7:].strip()
 
         if not token:
-            print(
-                "CONSUMER_AUTH_FAIL "
-                f"store={store_slug} reason=credential_empty"
-            )
             raise IntegrationAuthenticationError("Token ausente ou inválido.")
 
-        received_hash = hash_token(token)
-        if not hmac.compare_digest(received_hash, integration.token_hash):
-            print(
-                "CONSUMER_AUTH_FAIL "
-                f"store={store_slug} reason=credential_mismatch "
-                f"credential_length={len(token)} "
-                f"credential_hash_prefix={received_hash[:12]} "
-                f"configured_hash_prefix={integration.token_hash[:12]}"
-            )
+        if not hmac.compare_digest(hash_token(token), integration.token_hash):
             raise IntegrationAuthenticationError("Token ausente ou inválido.")
 
         return store, integration
