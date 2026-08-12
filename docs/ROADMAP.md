@@ -13,11 +13,11 @@
 - **v0.0.9 — Piloto técnico inicial:** consolidação da fundação do MVP.
 - **v0.1.x — Conversação e operação:** evolução de conversas, provedor OpenAI, gateway WhatsApp, filas, worker, takeover humano, operações de suporte e dashboard operacional.
 - **v0.2.x — Console e web:** dashboard web e console de conversas/operação.
-- **v0.3.0–v0.3.2 — Consumer hardening:** revisão e endurecimento do contrato da API Parceiro, remoção de dependências fixas de loja e preparação para homologação real.
+- **v0.3.0–v0.3.2 — Consumer hardening:** revisão e endurecimento do contrato da API Parceiro e preparação para homologação real.
 - **v0.3.3 — Consumer Homologation & Public HTTPS:** Caddy, HTTPS automático, diagnóstico protegido, verificador externo e roteiro de homologação.
 - **v0.3.4 — Documentation & Governance Alignment:** documentação e decisões alinhadas ao estado então conhecido do projeto.
-- **Homologação operacional de 2026-08-11:** retirada e delivery validados de ponta a ponta no Consumer, com callbacks de status e payload DELIVERY ajustado em produção.
-- **Hardening de 2026-08-11:** hotfixes Consumer consolidados no GitHub, logs sensíveis corrigidos e credencial Consumer rotacionada com polling `200 OK` após a troca.
+- **Homologação operacional de 2026-08-11/12:** Consumer validado de ponta a ponta para retirada e delivery; OpenAI/Olívia ativada; catálogo real com complementos importado; checkout real validado; ciclo completo de status aprovado.
+- **Hardening de 2026-08-12:** credencial Consumer rotacionada e estabilizada após reinício completo do Consumer; proteção contra regressão de status adicionada; diagnósticos temporários removidos; teste simultâneo de dois pedidos aprovado sem mistura de UUIDs.
 
 ## Gates atuais até a V1
 
@@ -42,56 +42,75 @@
 - integração cadastrada;
 - Consumer realizando polling e consultando pedidos;
 - autenticação real observada via `xapikey`;
-- credencial rotacionada e revalidada em 2026-08-11.
+- credencial rotacionada e revalidada;
+- callbacks de status retornando `200 OK` após reinício completo do Consumer.
 
-### Gate E — Primeiro pedido controlado — CONCLUÍDO
+### Gate E — Pedido controlado — CONCLUÍDO
 
 - pedido válido publicado;
 - `PLACED / PLC` disponibilizado;
 - Consumer consultou detalhes;
-- pedido apareceu corretamente na fila;
-- fluxo sem duplicidade observado nos testes controlados.
+- pedidos apareceram corretamente na fila;
+- TAKEOUT e DELIVERY criados pela Olívia e enviados ao Consumer;
+- produtos e complementos reais validados pelos códigos PDV.
 
 ### Gate F — Retorno de status — CONCLUÍDO PARA RETIRADA E DELIVERY
 
-Homologado em 2026-08-11:
-
 #### Retirada
+
 - `Confirmed`;
 - `ReadyToPickup`;
 - `Concluded`.
 
 #### Delivery
+
 - `Confirmed`;
-- despacho / `Em Rota`;
+- `ReadyToPickup`;
+- `Dispatched`;
 - `Concluded`.
 
-Os estados foram persistidos no SmartFoodIA com respostas HTTP `200 OK`.
+Todos os estados foram persistidos no SmartFoodIA com eventos `DELIVERED`.
 
-### Gate G — Homologação ampliada — EM ANDAMENTO
+Teste simultâneo com `000019` e `000020` confirmou ausência de mistura entre pedidos.
 
-Ainda devem ser cobertos de forma controlada os demais cenários aprovados:
+### Gate G — Homologação ampliada — AVANÇADA / EM ANDAMENTO
+
+Já coberto:
+
+- OpenAI/Olívia operacional;
+- catálogo real importado;
+- complementos reais;
+- carrinho;
+- confirmação explícita obrigatória;
+- checkout TAKEOUT;
+- checkout DELIVERY;
+- taxa de entrega;
+- débito;
+- retorno completo de status;
+- callbacks simultâneos;
+- proteção contra regressão de status.
+
+Ainda devem ser cobertos em testes dedicados:
 
 - cancelamento;
-- adicionais e observações reais;
 - PIX pendente;
-- cartão crédito/débito;
+- cartão crédito;
 - dinheiro e troco;
 - indisponibilidade;
-- alteração antes da confirmação;
+- alteração de pedido antes da confirmação;
 - idempotência e repetição de polling;
 - retomada após falha;
-- pedido iniciado pela Olívia usando o fluxo real do cliente.
+- notificações automáticas ao cliente pelo canal real.
 
-Os hotfixes Consumer já foram consolidados no GitHub e a VPS foi sincronizada. A exposição de `xapikey` em novos access logs foi corrigida, testada e seguida de rotação da credencial Consumer.
+### Gate H — Produção assistida via WhatsApp — PENDENTE
 
-### Gate H — Produção assistida — PENDENTE
+Próximos passos:
 
-Antes do piloto produtivo:
-
-- configurar OpenAI na VPS;
-- configurar a conta WhatsApp da loja;
-- validar o fluxo WhatsApp → Olívia → Core → Consumer → status → WhatsApp;
+- configurar a conta WhatsApp Cloud da Old Burguer 87;
+- configurar e validar webhook público;
+- validar conversa real WhatsApp → Olívia;
+- validar pedido completo sem comandos manuais;
+- validar status Consumer → SmartFoodIA → cliente;
 - backup e restauração testados;
 - monitoramento e observabilidade;
 - segurança final da VPS;
@@ -99,10 +118,10 @@ Antes do piloto produtivo:
 
 ## v1.0.0 — Produção
 
-Critério: Old Burguer 87 operando de forma estável com pedido real via WhatsApp/Olívia entrando no Consumer, retorno de status chegando ao SmartFoodIA e ao cliente, proteção contra duplicidade, segurança de logs, observabilidade e procedimentos operacionais mínimos.
+Critério: Old Burguer 87 operando de forma estável com pedido real via WhatsApp/Olívia entrando no Consumer, retorno de status chegando ao SmartFoodIA e ao cliente, proteção contra duplicidade/regressão, segurança de logs, observabilidade e procedimentos operacionais mínimos.
 
 ## Depois da V1
 
 Painel mais amplo, fidelidade, campanhas, pagamentos avançados, novos ERPs e eventual ERP próprio permanecem evolução futura. A arquitetura deve continuar permitindo novos adapters sem acoplar o Core ao Consumer.
 
-Consulte também `docs/PRODUCTION_RUNTIME.md` para o estado efetivamente auditado da VPS.
+Consulte também `docs/PRODUCTION_RUNTIME.md`.
