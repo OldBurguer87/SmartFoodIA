@@ -63,11 +63,14 @@ class ConsumerAuthenticator:
             )
             raise IntegrationAuthenticationError("Token ausente ou inválido.")
 
-        if not hmac.compare_digest(hash_token(token), integration.token_hash):
+        received_hash = hash_token(token)
+        if not hmac.compare_digest(received_hash, integration.token_hash):
             print(
                 "CONSUMER_AUTH_FAIL "
                 f"store={store_slug} reason=credential_mismatch "
-                f"credential_length={len(token)}"
+                f"credential_length={len(token)} "
+                f"credential_hash_prefix={received_hash[:12]} "
+                f"configured_hash_prefix={integration.token_hash[:12]}"
             )
             raise IntegrationAuthenticationError("Token ausente ou inválido.")
 
