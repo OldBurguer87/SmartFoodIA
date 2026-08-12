@@ -12,6 +12,7 @@ from app.ai.tools.context import ToolContext
 from app.ai.tools.registry import OliviaToolRegistry
 from app.core.config import settings
 from app.repositories.conversation import ConversationRepository
+from app.repositories.customer import CustomerRepository
 from app.schemas.conversation import AIEventCreate, MessageCreate
 from app.services.conversation import ConversationService
 
@@ -21,7 +22,6 @@ class OliviaExecutionError(RuntimeError):
 
 
 def _nullable_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Allow null in an OpenAI-facing JSON Schema without changing Core semantics."""
     result = deepcopy(schema)
     schema_type = result.get("type")
 
@@ -45,13 +45,6 @@ def _nullable_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def _responses_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Normalize tool schemas to the shape required by the Responses API.
-
-    The Responses API validates object schemas with every property listed in
-    ``required``. Internally optional fields remain optional by allowing null;
-    null values are removed before invoking the Core tool so Python defaults
-    continue to apply exactly as before.
-    """
     result = deepcopy(schema)
 
     properties = result.get("properties")
@@ -88,7 +81,6 @@ def _responses_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def _drop_null_arguments(value: Any) -> Any:
-    """Remove nullable placeholders before calling the internal tool."""
     if isinstance(value, dict):
         return {
             key: _drop_null_arguments(item)
@@ -98,6 +90,47 @@ def _drop_null_arguments(value: Any) -> Any:
     if isinstance(value, list):
         return [_drop_null_arguments(item) for item in value]
     return value
+
+
+def _customer_context(
+    db: Session,
+    *,
+    store_id: UUID,
+    customer_phone: str | None,
+) -> str:
+    if not customer_phone:
+        return "CANAL: telefone do cliente não disponível."
+
+    customer = CustomerRepository().get_by_phone(
+        db,
+        store_id=store_id,
+        phone=customer_phone,
+    )
+    if customer is None:
+        return (
+            "CONTEXTO DO CLIENTE: cliente ainda não cadastrado. "
+            "O telefone do WhatsApp já é conhecido pelo sistema; não peça o telefone. "
+            "Peça somente o nome quando precisar criar o cadastro."
+        )
+
+    addresses = [address for address in customer.addresses if address.active]
+    if addresses:
+        address_text = "; ".join(
+            f"{address.label}: {address.street}, {address.number}, "
+            f"{address.neighborhood}, {address.city}-{address.state}"
+            + (f", compl. {address.complement}" if address.complement else "")
+            + (f", ref. {address.reference}" if address.reference else "")
+            for address in addresses[:3]
+        )
+    else:
+        address_text = "nenhum endereço salvo"
+
+    return (
+        "CONTEXTO DO CLIENTE JÁ CADASTRADO: "
+        f"nome={customer.name}; telefone já conhecido pelo canal; "
+        f"endereços={address_text}. "
+        "Não peça novamente nome ou telefone. Para entrega, ofereça endereço salvo antes de pedir outro."
+    )
 
 
 class OliviaOrchestrator:
@@ -144,12 +177,21 @@ class OliviaOrchestrator:
                 customer_phone=customer_phone,
             )
         )
+        instructions = (
+            OLIVIA_INSTRUCTIONS
+            + "\n\n"
+            + _customer_context(
+                db,
+                store_id=store_id,
+                customer_phone=customer_phone,
+            )
+        )
         previous_response_id = None
 
         for round_number in range(1, settings.olivia_max_tool_rounds + 1):
             started = time.perf_counter()
             response = self.provider.respond(
-                instructions=OLIVIA_INSTRUCTIONS,
+                instructions=instructions,
                 input_items=input_items,
                 tools=self._provider_tools(registry),
                 previous_response_id=previous_response_id,
