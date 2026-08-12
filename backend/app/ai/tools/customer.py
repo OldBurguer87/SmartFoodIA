@@ -13,15 +13,16 @@ class FindOrCreateCustomerTool:
     definition = ToolDefinition(
         name="find_or_create_customer",
         description=(
-            "Localiza o cliente pelo telefone dentro da loja ou cria o cadastro."
+            "Localiza o cliente pelo telefone da conversa ou cria o cadastro. "
+            "No WhatsApp, prefira omitir phone porque o sistema já conhece o número do cliente."
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "name": {"type": "string", "minLength": 2},
-                "phone": {"type": "string", "minLength": 10},
+                "name": {"type": ["string", "null"], "minLength": 2},
+                "phone": {"type": ["string", "null"], "minLength": 10},
             },
-            "required": ["name", "phone"],
+            "required": [],
             "additionalProperties": False,
         },
     )
@@ -29,14 +30,72 @@ class FindOrCreateCustomerTool:
     def __init__(self, context: ToolContext) -> None:
         self.context = context
         self.service = CustomerService()
+        self.repository = CustomerRepository()
 
-    def execute(self, *, name: str, phone: str, **_: Any) -> ToolResult:
+    def execute(
+        self,
+        *,
+        name: str | None = None,
+        phone: str | None = None,
+        **_: Any,
+    ) -> ToolResult:
+        resolved_phone = (phone or self.context.customer_phone or "").strip()
+        if not resolved_phone:
+            return ToolResult(
+                ok=False,
+                error="Telefone do cliente não está disponível no canal.",
+            )
+
+        existing = self.repository.get_by_phone(
+            self.context.db,
+            store_id=self.context.store_id,
+            phone=resolved_phone,
+        )
+        if existing is not None:
+            if name and existing.name != name:
+                existing.name = name
+                self.context.db.commit()
+                self.context.db.refresh(existing)
+            return ToolResult(
+                ok=True,
+                data={
+                    "id": str(existing.id),
+                    "name": existing.name,
+                    "phone": existing.phone,
+                    "existing": True,
+                    "addresses": [
+                        {
+                            "id": str(address.id),
+                            "label": address.label,
+                            "street": address.street,
+                            "number": address.number,
+                            "neighborhood": address.neighborhood,
+                            "city": address.city,
+                            "state": address.state,
+                            "postal_code": address.postal_code,
+                            "complement": address.complement,
+                            "reference": address.reference,
+                            "is_default": address.is_default,
+                        }
+                        for address in existing.addresses
+                        if address.active
+                    ],
+                },
+            )
+
+        if not name:
+            return ToolResult(
+                ok=False,
+                error="Cliente ainda não cadastrado. Peça somente o nome para continuar.",
+                requires_human=False,
+            )
+
         customer = self.service.find_or_create(
             self.context.db,
             CustomerCreate(
                 store_id=self.context.store_id,
                 name=name,
-                phone=phone,
+                phone=resolved_phone,
             ),
         )
         return ToolResult(
@@ -45,6 +104,8 @@ class FindOrCreateCustomerTool:
                 "id": str(customer.id),
                 "name": customer.name,
                 "phone": customer.phone,
+                "existing": False,
+                "addresses": [],
             },
         )
 
