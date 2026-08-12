@@ -18,6 +18,29 @@ class WhatsAppWebhookError(ValueError):
     pass
 
 
+def normalize_whatsapp_recipient(value: str) -> str:
+    """Normalize a WhatsApp recipient without changing valid international numbers.
+
+    Meta may deliver some Brazilian mobile senders in the legacy 8-digit local
+    format. For Brazil (+55), a 12-digit E.164-like value means 55 + DDD +
+    8-digit local number. When that local number begins with 6-9 (mobile
+    range), insert the Brazilian ninth digit after the DDD.
+
+    Landlines (local number beginning with 2-5) and non-Brazilian numbers are
+    left unchanged.
+    """
+    digits = "".join(character for character in str(value) if character.isdigit())
+
+    if (
+        digits.startswith("55")
+        and len(digits) == 12
+        and digits[4] in "6789"
+    ):
+        return f"{digits[:4]}9{digits[4:]}"
+
+    return digits
+
+
 @dataclass(frozen=True)
 class WebhookProcessingResult:
     received: int = 0
@@ -130,6 +153,7 @@ class WhatsAppGatewayService:
                     db.commit()
                     if event.status == "PROCESSED" and self.client_factory is not None:
                         from app.channels.whatsapp.queue import WhatsAppQueueProcessor
+
                         queue_result = WhatsAppQueueProcessor(
                             repository=self.repository,
                             client_factory=self.client_factory,
@@ -150,9 +174,14 @@ class WhatsAppGatewayService:
         self._process_message(db, account, event, event.payload_json)
 
     def _process_message(
-        self, db: Session, account: ChannelAccount, event: ChannelEvent, message: dict[str, Any]
+        self,
+        db: Session,
+        account: ChannelAccount,
+        event: ChannelEvent,
+        message: dict[str, Any],
     ) -> None:
-        sender = str(message.get("from") or "")
+        raw_sender = str(message.get("from") or "")
+        sender = normalize_whatsapp_recipient(raw_sender)
         message_type = str(message.get("type") or "")
         if not sender:
             raise WhatsAppWebhookError("Mensagem sem remetente.")
