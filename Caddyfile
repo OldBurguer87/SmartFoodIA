@@ -5,19 +5,28 @@
 {$PUBLIC_DOMAIN} {
     encode zstd gzip
 
+    # Endpoints que precisam permanecer públicos para integrações externas.
+    @public_api {
+        path /live /ready /api/v1/channels/whatsapp/webhook /api/v1/integrations/consumer/*
+    }
+
+    handle @public_api {
+        reverse_proxy api:8000
+    }
+
+    # Demais APIs são exclusivas da operação/administração.
     handle /api/* {
+        basic_auth {
+            {$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+        }
         reverse_proxy api:8000
     }
 
-    handle /live {
-        reverse_proxy api:8000
-    }
-
-    handle /ready {
-        reverse_proxy api:8000
-    }
-
+    # O frontend é a central operacional e também exige autenticação.
     handle {
+        basic_auth {
+            {$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
+        }
         reverse_proxy web:3000
     }
 
@@ -31,7 +40,14 @@
     log {
         output stdout
         format filter {
+            # xapikey não está entre os headers sensíveis redigidos por padrão.
             request>headers>Xapikey delete
+
+            # O verify token da Meta chega como query string na validação inicial.
+            request>uri query {
+                replace hub.verify_token REDACTED
+            }
+
             wrap json
         }
     }
