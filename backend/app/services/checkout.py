@@ -54,6 +54,16 @@ class CheckoutService:
             raise CheckoutValidationError("Cliente não encontrado.")
 
         address = self._resolve_address(db, cart, payload)
+
+        if cart.service_mode == "DELIVERY" and payload.delivery_fee <= 0:
+            raise CheckoutValidationError(
+                "Taxa de entrega obrigatória. Consulte o valor aprovado para o endereço antes de finalizar."
+            )
+        if cart.service_mode == "TAKEOUT" and payload.delivery_fee != 0:
+            raise CheckoutValidationError(
+                "Pedido para retirada não pode ter taxa de entrega."
+            )
+
         subtotal = self._calculate_subtotal(cart)
         total = subtotal + payload.delivery_fee - payload.discount
         if total < 0:
