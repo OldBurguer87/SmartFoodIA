@@ -19,16 +19,6 @@ class WhatsAppWebhookError(ValueError):
 
 
 def normalize_whatsapp_recipient(value: str) -> str:
-    """Normalize a WhatsApp recipient without changing valid international numbers.
-
-    Meta may deliver some Brazilian mobile senders in the legacy 8-digit local
-    format. For Brazil (+55), a 12-digit E.164-like value means 55 + DDD +
-    8-digit local number. When that local number begins with 6-9 (mobile
-    range), insert the Brazilian ninth digit after the DDD.
-
-    Landlines (local number beginning with 2-5) and non-Brazilian numbers are
-    left unchanged.
-    """
     digits = "".join(character for character in str(value) if character.isdigit())
 
     if (
@@ -39,6 +29,24 @@ def normalize_whatsapp_recipient(value: str) -> str:
         return f"{digits[:4]}9{digits[4:]}"
 
     return digits
+
+
+def sanitize_whatsapp_text(value: str) -> str:
+    """Keep Olivia's WhatsApp replies plain and readable.
+
+    The prompt asks for plain text, but this defensive layer removes common
+    Markdown artifacts if a model response still contains them.
+    """
+    text = str(value).replace("`", "").replace("*", "")
+    lines = []
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            prefix_len = len(line) - len(stripped)
+            stripped = stripped.lstrip("#").lstrip()
+            line = (" " * prefix_len) + stripped
+        lines.append(line.rstrip())
+    return "\n".join(lines).strip()
 
 
 @dataclass(frozen=True)
@@ -154,7 +162,7 @@ class WhatsAppGatewayService:
                     if event.status == "PROCESSED" and self.client_factory is not None:
                         from app.channels.whatsapp.queue import WhatsAppQueueProcessor
 
-                        queue_result = WhatsAppQueueProcessor(
+                        WhatsAppQueueProcessor(
                             repository=self.repository,
                             client_factory=self.client_factory,
                         ).run_once(db)
@@ -224,5 +232,5 @@ class WhatsAppGatewayService:
             account=account,
             conversation_id=conversation.id,
             recipient=sender,
-            content=reply,
+            content=sanitize_whatsapp_text(reply),
         )
