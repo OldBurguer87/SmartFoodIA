@@ -47,12 +47,20 @@ async def receive_webhook(
     db: Session = Depends(get_db),
 ) -> dict:
     raw_body = await request.body()
-    if not verify_meta_signature(
+    valid_signature = verify_meta_signature(
         raw_body,
         x_hub_signature_256,
         settings.whatsapp_app_secret,
-    ):
+    )
+    if not valid_signature and settings.whatsapp_app_secret_previous:
+        valid_signature = verify_meta_signature(
+            raw_body,
+            x_hub_signature_256,
+            settings.whatsapp_app_secret_previous,
+        )
+    if not valid_signature:
         raise HTTPException(status_code=401, detail="Assinatura inválida.")
+
     payload = await request.json()
     result = WhatsAppGatewayService(client_factory=make_client, process_inline=False).process_payload(
         db,
