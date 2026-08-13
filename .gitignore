@@ -18,3 +18,8 @@ consumer-setup*.txt
 backup-pre-hardening*.sql
 
 cardapioConsumer-*.xlsx
+
+# Arquivos locais de produção — nunca versionar
+.env.bak-*
+.env.save
+backups/

@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.services.operational_dashboard import OperationalDashboardService
+from app.services.operational_dashboard_recent import RecentOperationalDashboardService
 
 router = APIRouter(
     prefix="/api/v1/operations",
     tags=["operational-dashboard"],
 )
-service = OperationalDashboardService()
+service = RecentOperationalDashboardService()
 
 
 @router.get("/stores/{store_id}/overview")
