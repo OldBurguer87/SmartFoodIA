@@ -32,6 +32,12 @@ from app.models.conversation import (  # noqa: F401
     KnowledgeGap,
     Message,
 )
+from app.models.commercial import (  # noqa: F401
+    StoreBusinessHours,
+    StoreCommercialRules,
+    StoreDeliveryZone,
+)
+from app.models.menu import StoreMenuDocument  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
