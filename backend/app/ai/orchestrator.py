@@ -18,6 +18,7 @@ from app.repositories.conversation import ConversationRepository
 from app.repositories.customer import CustomerRepository
 from app.schemas.conversation import AIEventCreate, MessageCreate
 from app.services.conversation import ConversationService
+from app.services.commercial_context import CommercialContextService
 
 
 class OliviaExecutionError(RuntimeError):
@@ -222,13 +223,14 @@ class OliviaOrchestrator:
             ToolContext(
                 db=db,
                 store_id=store_id,
+                conversation_id=conversation_id,
                 customer_phone=customer_phone,
             )
         )
         instructions = (
             OLIVIA_INSTRUCTIONS
             + "\n\n"
-            + _store_context(db, store_id=store_id)
+            + CommercialContextService().build(db, store_id)
             + "\n\n"
             + _customer_context(
                 db,

@@ -67,7 +67,11 @@ class RequestHumanHelpTool:
         create_knowledge_gap: bool = True,
         **_: Any,
     ) -> ToolResult:
-        conversation_uuid = UUID(conversation_id) if conversation_id else None
+        conversation_uuid = (
+            UUID(conversation_id)
+            if conversation_id
+            else self.context.conversation_id
+        )
         customer_uuid = UUID(customer_id) if customer_id else None
 
         ticket = self.service.create_ticket(
@@ -82,6 +86,13 @@ class RequestHumanHelpTool:
                 customer_message=customer_message,
             ),
         )
+
+        if conversation_uuid is not None:
+            self.service.take_over(
+                self.context.db,
+                conversation_id=conversation_uuid,
+                assigned_to="fila-humana",
+            )
 
         gap_id = None
         if create_knowledge_gap:

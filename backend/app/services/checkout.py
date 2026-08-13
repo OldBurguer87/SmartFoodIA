@@ -14,6 +14,7 @@ from app.repositories.cart import CartRepository
 from app.repositories.customer import CustomerRepository
 from app.repositories.order import OrderRepository
 from app.schemas.order import CheckoutRequest, OrderRead
+from app.services.commercial_status import CommercialStatusService
 
 
 class CheckoutValidationError(ValueError):
@@ -66,22 +67,58 @@ class CheckoutService:
         address = self._resolve_address(db, cart, payload)
         subtotal = self._calculate_subtotal(cart)
 
-        delivery_fee = payload.delivery_fee
+        commercial = CommercialStatusService()
+        rules = commercial.get_or_create_rules(db, cart.store_id)
+
+        current_status = commercial.current_status(
+            db,
+            cart.store_id,
+            service_mode=cart.service_mode,
+        )
+        if not current_status["open"]:
+            raise CheckoutValidationError(
+                f"Não é possível finalizar agora: {current_status['reason']}"
+            )
+
+        minimum_delivery = Decimal(rules.minimum_delivery_subtotal)
+
         if cart.service_mode == "DELIVERY":
-            if store.slug == OLD_BURGUER_SLUG:
-                if subtotal < OLD_BURGUER_MINIMUM_DELIVERY_SUBTOTAL:
-                    missing = OLD_BURGUER_MINIMUM_DELIVERY_SUBTOTAL - subtotal
-                    raise CheckoutValidationError(
-                        "Pedido mínimo para entrega é R$ 15,00 em produtos, sem contar a taxa. "
-                        f"Faltam R$ {missing:.2f} em produtos para atingir o mínimo."
-                    )
-                delivery_fee = OLD_BURGUER_DELIVERY_FEE
-            elif delivery_fee <= 0:
+            if subtotal < minimum_delivery:
+                missing = minimum_delivery - subtotal
                 raise CheckoutValidationError(
-                    "Taxa de entrega obrigatória. Consulte o valor aprovado para o endereço antes de finalizar."
+                    f"Pedido mínimo para entrega é R$ {minimum_delivery:.2f} "
+                    "em produtos, sem contar a taxa. "
+                    f"Faltam R$ {missing:.2f} em produtos para atingir o mínimo."
                 )
+
+            delivery_fee = commercial.delivery_fee(
+                db,
+                cart.store_id,
+                address.neighborhood if address else None,
+            )
         else:
             delivery_fee = Decimal("0.00")
+
+        payment_allowed = {
+            "PIX": rules.accepts_pix,
+            "CREDIT": rules.accepts_credit,
+            "DEBIT": rules.accepts_debit,
+            "CASH": rules.accepts_cash,
+        }
+
+        if not payment_allowed.get(payload.payment_method, False):
+            raise CheckoutValidationError(
+                "Esta forma de pagamento não está habilitada para a loja."
+            )
+
+        if (
+            payload.payment_method == "CASH"
+            and payload.change_for is not None
+            and not rules.allow_change
+        ):
+            raise CheckoutValidationError(
+                "A loja não está aceitando solicitação de troco."
+            )
 
         total = subtotal + delivery_fee - payload.discount
         if total < 0:
