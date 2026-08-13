@@ -38,6 +38,11 @@ from app.models.commercial import (  # noqa: F401
     StoreDeliveryZone,
 )
 from app.models.menu import StoreMenuDocument  # noqa: F401
+from app.models.catalog_version import (  # noqa: F401
+    CatalogSourceFile,
+    CatalogVersion,
+    StoreCatalogConfig,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

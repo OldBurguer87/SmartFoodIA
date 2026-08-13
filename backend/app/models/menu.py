@@ -13,6 +13,10 @@ class StoreMenuDocument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     store_id: Mapped[UUID] = mapped_column(
         ForeignKey("stores.id", ondelete="CASCADE"), nullable=False
     )
+    catalog_version_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("catalog_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     original_name: Mapped[str] = mapped_column(String(240), nullable=False)
     content_type: Mapped[str] = mapped_column(String(80), default="application/pdf", nullable=False)
     public_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
