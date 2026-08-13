@@ -74,8 +74,13 @@ def polling(
     x_apikey: str | None = Header(default=None, alias="xapikey"),
     db: Session = Depends(get_db),
 ) -> ConsumerPollingResponse:
-    store, _ = authenticate(db, store_slug, authorization or x_apikey)
-    return service.polling(db, store=store, limit=limit)
+    store, integration = authenticate(db, store_slug, authorization or x_apikey)
+    return service.polling(
+        db,
+        store=store,
+        integration=integration,
+        limit=limit,
+    )
 
 
 @router.get("/orders/{order_id}")
