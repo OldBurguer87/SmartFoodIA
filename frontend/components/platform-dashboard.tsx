@@ -7,6 +7,7 @@ import {
   PlatformOverview,
   ServiceStatus,
 } from "@/lib/api";
+import { Dashboard } from "@/components/dashboard";
 import { LogoMark, RefreshIcon } from "@/components/icons";
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -18,6 +19,7 @@ const number = new Intl.NumberFormat("pt-BR");
 export function PlatformDashboard() {
   const [hours, setHours] = useState(24);
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
+  const [selectedClient, setSelectedClient] = useState<ClientSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +43,16 @@ export function PlatformDashboard() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hours]);
+
+  if (selectedClient) {
+    return (
+      <Dashboard
+        initialStoreId={selectedClient.store_id}
+        clientName={selectedClient.name}
+        onBack={() => setSelectedClient(null)}
+      />
+    );
+  }
 
   return (
     <div className="shell">
@@ -139,12 +151,16 @@ export function PlatformDashboard() {
               <header className="panelHeader" style={{ marginBottom: 12 }}>
                 <div>
                   <h2>Clientes</h2>
-                  <p>Cada operação é monitorada separadamente.</p>
+                  <p>Cada operação é monitorada separadamente. Clique em um cliente para abrir os detalhes.</p>
                 </div>
               </header>
               <div className="dashboardGrid">
                 {overview.clients.map((client) => (
-                  <ClientCard key={client.store_id} client={client} />
+                  <ClientCard
+                    key={client.store_id}
+                    client={client}
+                    onOpen={() => setSelectedClient(client)}
+                  />
                 ))}
               </div>
             </section>
@@ -159,9 +175,19 @@ export function PlatformDashboard() {
   );
 }
 
-function ClientCard({ client }: { client: ClientSummary }) {
+function ClientCard({ client, onOpen }: { client: ClientSummary; onOpen: () => void }) {
   return (
-    <article className="panel wide">
+    <article
+      className="panel wide"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") onOpen();
+      }}
+      style={{ cursor: "pointer" }}
+      aria-label={`Abrir painel de ${client.name}`}
+    >
       <header className="panelHeader">
         <div>
           <p className="eyebrow">CLIENTE</p>
@@ -192,6 +218,10 @@ function ClientCard({ client }: { client: ClientSummary }) {
           <p className="muted">Nenhuma integração externa configurada.</p>
         )}
       </div>
+
+      <p className="muted" style={{ marginTop: 14, fontWeight: 700 }}>
+        Abrir painel do cliente →
+      </p>
     </article>
   );
 }
