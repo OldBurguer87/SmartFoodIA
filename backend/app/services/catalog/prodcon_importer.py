@@ -69,6 +69,7 @@ class ConsumerProdconImportService:
         store_id: UUID,
         file_path: Path,
         report_path: Path | None = None,
+        commit: bool = True,
     ) -> ProdconImportReport:
         store = db.get(Store, store_id)
         if store is None:
@@ -260,7 +261,10 @@ class ConsumerProdconImportService:
                 report.group_items_created += 1
 
         try:
-            db.commit()
+            if commit:
+                db.commit()
+            else:
+                db.flush()
         except Exception:
             db.rollback()
             raise

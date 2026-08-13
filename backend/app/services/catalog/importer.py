@@ -197,6 +197,7 @@ class ConsumerCatalogImportService:
         store_id: UUID,
         file_path: Path,
         report_path: Path | None = None,
+        commit: bool = True,
     ) -> ImportReport:
         store = db.get(Store, store_id)
         if store is None:
@@ -300,7 +301,10 @@ class ConsumerCatalogImportService:
                     if was_available:
                         report.products_deactivated += 1
 
-            db.commit()
+            if commit:
+                db.commit()
+            else:
+                db.flush()
         except Exception:
             db.rollback()
             raise
