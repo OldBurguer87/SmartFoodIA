@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     olivia_max_tool_rounds: int = 8
     whatsapp_access_token: str | None = None
     whatsapp_app_secret: str | None = None
+    whatsapp_app_secret_previous: str | None = None
     whatsapp_graph_api_version: str = "v23.0"
     whatsapp_timeout_seconds: float = 30.0
     channel_worker_poll_seconds: float = 2.0
