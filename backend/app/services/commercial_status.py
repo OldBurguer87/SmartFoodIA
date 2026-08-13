@@ -53,7 +53,12 @@ class CommercialStatusService:
         if service_mode == "TAKEOUT" and not rules.takeout_enabled:
             return {"open": False, "reason": "Retirada desativada.", "local_time": now}
         if day is None:
-            return {"open": True, "reason": "Horário ainda não cadastrado.", "local_time": now, "schedule_configured": False}
+            return {
+                "open": False,
+                "reason": "Horário de funcionamento ainda não cadastrado; não confirme que a loja está aberta.",
+                "local_time": now,
+                "schedule_configured": False,
+            }
         if day.closed:
             return {"open": False, "reason": "Restaurante fechado hoje.", "local_time": now, "schedule_configured": True}
         local_time = now.time().replace(tzinfo=None)
