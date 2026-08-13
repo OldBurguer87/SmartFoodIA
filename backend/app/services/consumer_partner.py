@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -87,8 +88,22 @@ class ConsumerPartnerService:
             reasonPhrase="Diagnóstico da integração Consumer concluído.",
         )
 
-    def polling(self, db: Session, *, store: Store, limit: int = 100):
+    def polling(
+        self,
+        db: Session,
+        *,
+        store: Store,
+        integration: StoreIntegration,
+        limit: int = 100,
+    ):
+        # A consulta periódica do Consumer funciona também como heartbeat da
+        # integração. Isso permite detectar automaticamente quando o parceiro
+        # deixa de consultar o SmartFoodIA sem criar tabela/migration adicional.
+        integration.updated_at = datetime.now(timezone.utc)
+        db.flush()
+
         events = self.adapter.poll(db, store_id=store.id, limit=limit)
+        db.commit()
         return ConsumerPollingResponse(
             items=[
                 ConsumerEventRead(
