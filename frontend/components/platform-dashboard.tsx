@@ -46,11 +46,17 @@ export function PlatformDashboard() {
 
   if (selectedClient) {
     return (
-      <Dashboard
-        initialStoreId={selectedClient.store_id}
-        clientName={selectedClient.name}
-        onBack={() => setSelectedClient(null)}
-      />
+      <div style={{ position: "relative" }}>
+        <button
+          type="button"
+          className="refreshButton"
+          onClick={() => setSelectedClient(null)}
+          style={{ position: "fixed", top: 18, right: 24, zIndex: 50 }}
+        >
+          ← Voltar para clientes
+        </button>
+        <Dashboard initialStoreId={selectedClient.store_id} />
+      </div>
     );
   }
 
