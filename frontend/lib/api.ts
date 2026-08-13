@@ -47,9 +47,67 @@ export type OperationalOverview = {
   alerts: AlertItem[];
 };
 
+export type ServiceStatus = "OPERATIONAL" | "WARNING" | "ATTENTION";
+
+export type ClientIntegrationSummary = {
+  provider: string;
+  merchant_name: string;
+  status: ServiceStatus;
+  detail: string;
+  last_activity_at: string;
+};
+
+export type ClientSummary = {
+  store_id: string;
+  name: string;
+  slug: string;
+  city: string;
+  state: string;
+  status: ServiceStatus;
+  orders: number;
+  revenue: number;
+  active_conversations: number;
+  urgent_tickets: number;
+  integrations: ClientIntegrationSummary[];
+};
+
+export type PlatformOverview = {
+  generated_at: string;
+  period_hours: number;
+  smartfoodia: {
+    status: ServiceStatus;
+    api: ServiceStatus;
+    openai: ServiceStatus;
+    whatsapp: ServiceStatus;
+    queue: ServiceStatus;
+    messages_sent: number;
+    active_alerts: string[];
+  };
+  summary: {
+    clients_total: number;
+    clients_attention: number;
+    orders_total: number;
+    revenue_total: number;
+    active_conversations: number;
+  };
+  clients: ClientSummary[];
+};
+
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
   "http://localhost:8000";
+
+export async function getPlatformOverview(hours: number): Promise<PlatformOverview> {
+  const response = await fetch(
+    `${API_URL}/api/v1/operations/overview?hours=${hours}`,
+    { cache: "no-store" },
+  );
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Não foi possível carregar a visão geral (${response.status}).`);
+  }
+  return response.json() as Promise<PlatformOverview>;
+}
 
 export async function getOperationalOverview(
   storeId: string,
