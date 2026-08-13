@@ -15,6 +15,7 @@ from app.api.system import router as system_router
 from app.api.operations import router as operations_router
 from app.api.support_operations import router as support_operations_router
 from app.api.operational_dashboard import router as operational_dashboard_router
+from app.api.commercial_rules import router as commercial_rules_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -46,6 +47,7 @@ app.include_router(system_router)
 app.include_router(operations_router)
 app.include_router(support_operations_router)
 app.include_router(operational_dashboard_router)
+app.include_router(commercial_rules_router)
 
 
 @app.get("/")
