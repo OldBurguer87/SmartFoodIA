@@ -3,9 +3,14 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
 from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
+from app.models.catalog import ProductFamily
 from app.services.catalog.exceptions import ProductNotFoundError
+from app.services.catalog.search import relevance_score
 from app.services.catalog.service import CatalogService
 
 
@@ -24,6 +29,8 @@ class SearchCatalogTool:
         name="search_catalog",
         description=(
             "Pesquisa produtos reais da loja por nome, descrição ou categoria. "
+            "Também retorna famílias de produtos com suas variações vendáveis. "
+            "O código da família é apenas agrupador e nunca pode ser usado no pedido. "
             "Nunca cria produtos, preços ou promoções."
         ),
         input_schema={
@@ -34,7 +41,11 @@ class SearchCatalogTool:
                     "type": "string",
                     "enum": ["DELIVERY", "TAKEOUT"],
                 },
-                "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                },
             },
             "required": ["query"],
             "additionalProperties": False,
@@ -61,17 +72,111 @@ class SearchCatalogTool:
             delivery=True if service_mode == "DELIVERY" else None,
             takeout=True if service_mode == "TAKEOUT" else None,
         )
+
+        family_rows = self.context.db.scalars(
+            select(ProductFamily)
+            .options(
+                selectinload(ProductFamily.products)
+            )
+            .where(
+                ProductFamily.store_id == self.context.store_id,
+                ProductFamily.active.is_(True),
+            )
+        ).all()
+
+        family_results = []
+
+        for family in family_rows:
+            score = relevance_score(
+                query,
+                name=family.name,
+                description=family.description,
+                category=None,
+            )
+
+            if score < 0.15:
+                continue
+
+            options = [
+                product
+                for product in family.products
+                if product.active
+                and availability(product, service_mode)
+            ]
+
+            if not options:
+                continue
+
+            options.sort(
+                key=lambda product: (
+                    product.price,
+                    product.name.casefold(),
+                )
+            )
+
+            family_results.append(
+                {
+                    # Apenas interno. Nunca deve ser usado no pedido.
+                    "family_external_code": family.external_code,
+                    "name": family.name,
+                    "description": family.description,
+                    "selection_name": (
+                        family.selection_name or "Opção"
+                    ),
+                    "selection_required": (
+                        family.selection_required
+                    ),
+                    "relevance_score": score,
+                    "options": [
+                        {
+                            # Este SIM é Código PDV vendável.
+                            "external_code": product.external_code,
+                            "name": product.name,
+                            "price": decimal_to_float(
+                                product.price
+                            ),
+                            "available": True,
+                        }
+                        for product in options
+                    ],
+                }
+            )
+
+        family_results.sort(
+            key=lambda item: (
+                -item["relevance_score"],
+                item["name"].casefold(),
+            )
+        )
+
+        selected_families = family_results[:limit]
+
+        # Evita devolver a mesma variação duas vezes:
+        # dentro da família e como produto solto.
+        family_product_codes = {
+            option["external_code"]
+            for family in selected_families
+            for option in family["options"]
+        }
+
         return ToolResult(
             ok=True,
             data={
                 "query": query,
+                "families": selected_families,
                 "products": [
                     {
                         "id": str(result.product.id),
-                        "external_code": result.product.external_code,
+                        "external_code": (
+                            result.product.external_code
+                        ),
                         "name": result.product.name,
-                        "description": result.product.description,
-                        "price": decimal_to_float(result.product.price),
+                        "description": (
+                            result.product.description
+                        ),
+                        "price": decimal_to_float(
+                            result.product.price
+                        ),
                         "category": result.product.category,
                         "available": availability(
                             result.product,
@@ -80,6 +185,10 @@ class SearchCatalogTool:
                         "relevance_score": result.score,
                     }
                     for result in results
+                    if (
+                        result.product.external_code
+                        not in family_product_codes
+                    )
                 ],
             },
         )
@@ -89,12 +198,16 @@ class GetProductTool:
     definition = ToolDefinition(
         name="get_product",
         description=(
-            "Obtém um produto real pelo código PDV e devolve adicionais compatíveis."
+            "Obtém um produto real pelo código PDV e devolve "
+            "adicionais compatíveis."
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "external_code": {"type": "string", "minLength": 1},
+                "external_code": {
+                    "type": "string",
+                    "minLength": 1,
+                },
                 "service_mode": {
                     "type": "string",
                     "enum": ["DELIVERY", "TAKEOUT"],
@@ -132,7 +245,10 @@ class GetProductTool:
         if not availability(product, service_mode):
             return ToolResult(
                 ok=False,
-                error=f"Produto indisponível para {service_mode.lower()}.",
+                error=(
+                    f"Produto indisponível para "
+                    f"{service_mode.lower()}."
+                ),
                 requires_human=False,
             )
 
@@ -157,13 +273,25 @@ class GetProductTool:
                         "modifiers": [
                             {
                                 "id": str(modifier.id),
-                                "external_code": modifier.external_code,
+                                "external_code": (
+                                    modifier.external_code
+                                ),
                                 "name": modifier.name,
-                                "description": modifier.description,
-                                "price": decimal_to_float(modifier.price),
-                                "min_quantity": modifier.min_quantity,
-                                "max_quantity": modifier.max_quantity,
-                                "default_quantity": modifier.default_quantity,
+                                "description": (
+                                    modifier.description
+                                ),
+                                "price": decimal_to_float(
+                                    modifier.price
+                                ),
+                                "min_quantity": (
+                                    modifier.min_quantity
+                                ),
+                                "max_quantity": (
+                                    modifier.max_quantity
+                                ),
+                                "default_quantity": (
+                                    modifier.default_quantity
+                                ),
                             }
                             for modifier in group.modifiers
                         ],
