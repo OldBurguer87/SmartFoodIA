@@ -12,6 +12,7 @@ from app.models.catalog import (  # noqa: F401
     ModifierGroup,
     ModifierGroupItem,
     Product,
+    ProductFamily,
     ProductModifierGroup,
     Store,
 )

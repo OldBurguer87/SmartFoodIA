@@ -41,6 +41,9 @@ class Store(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     products: Mapped[list["Product"]] = relationship(
         back_populates="store", cascade="all, delete-orphan"
     )
+    product_families: Mapped[list["ProductFamily"]] = relationship(
+        back_populates="store", cascade="all, delete-orphan"
+    )
     modifier_groups: Mapped[list["ModifierGroup"]] = relationship(
         back_populates="store", cascade="all, delete-orphan"
     )
@@ -64,6 +67,76 @@ class Category(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     products: Mapped[list["Product"]] = relationship(back_populates="category")
 
 
+class ProductFamily(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Agrupa variações vendáveis de um mesmo produto.
+
+    No Consumer, por exemplo, P85 pode representar Coca Cola,
+    enquanto os filhos 107 e 108 são os códigos PDV realmente
+    enviados no pedido.
+    """
+
+    __tablename__ = "product_families"
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id",
+            "external_code",
+            name="uq_product_family_store_external_code",
+        ),
+    )
+
+    store_id: Mapped[UUID] = mapped_column(
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # Código do agrupador no sistema de origem.
+    # Exemplo Consumer: P85.
+    # Nunca deve ser usado como código de item no pedido.
+    external_code: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+        index=True,
+    )
+
+    description: Mapped[str | None] = mapped_column(Text)
+
+    # Ex.: Tamanho, Sabor, Volume.
+    selection_name: Mapped[str | None] = mapped_column(
+        String(80)
+    )
+
+    selection_required: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    display_order: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    store: Mapped["Store"] = relationship(
+        back_populates="product_families"
+    )
+
+    products: Mapped[list["Product"]] = relationship(
+        back_populates="family"
+    )
+
+
 class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "products"
     __table_args__ = (
@@ -76,6 +149,10 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     category_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL")
     )
+    family_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("product_families.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     external_code: Mapped[str] = mapped_column(String(80), nullable=False)
     name: Mapped[str] = mapped_column(String(180), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -86,6 +163,9 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     store: Mapped[Store] = relationship(back_populates="products")
     category: Mapped[Category | None] = relationship(back_populates="products")
+    family: Mapped[ProductFamily | None] = relationship(
+        back_populates="products"
+    )
     modifier_group_links: Mapped[list["ProductModifierGroup"]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )

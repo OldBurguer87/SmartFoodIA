@@ -21,6 +21,7 @@ from app.models.catalog_version import (
     CatalogVersion,
 )
 from app.services.catalog.importer import ConsumerCatalogImportService
+from app.services.catalog.consumer_families import ConsumerFamilyImportService
 from app.services.catalog.prodcon_importer import (
     MANAGED_GROUP_PREFIX,
     ConsumerProdconImportService,
@@ -35,6 +36,7 @@ router = APIRouter(
 
 versioning = CatalogVersioningService()
 catalog_importer = ConsumerCatalogImportService()
+family_importer = ConsumerFamilyImportService()
 prodcon_importer = ConsumerProdconImportService()
 
 MAX_FILE_SIZE = 25 * 1024 * 1024
@@ -292,6 +294,26 @@ async def import_consumer_catalog(
                 commit=False,
             )
 
+            family_report = family_importer.import_workbook(
+                db,
+                store_id=store_id,
+                file_path=main_path,
+            )
+
+            # No formato Consumer validado, as linhas Pxx sem preço
+            # representam famílias/agrupadores. Qualquer outra linha
+            # inválida deve impedir a ativação do catálogo.
+            if main_report.conflicts_skipped:
+                raise ValueError(
+                    "Existem conflitos de Código PDV no Excel principal."
+                )
+
+            if main_report.invalid_rows != family_report.families_found:
+                raise ValueError(
+                    "O Excel possui linhas inválidas além dos "
+                    "agrupadores Pxx esperados."
+                )
+
             prodcon_report = None
 
             if prodcon_content is not None:
@@ -359,6 +381,14 @@ async def import_consumer_catalog(
             "products_deactivated": main_report.products_deactivated,
             "invalid_rows": main_report.invalid_rows,
             "conflicts_skipped": main_report.conflicts_skipped,
+        },
+        "family_import": {
+            "families_found": family_report.families_found,
+            "families_created": family_report.families_created,
+            "families_updated": family_report.families_updated,
+            "families_deactivated": family_report.families_deactivated,
+            "product_links": family_report.product_links,
+            "child_products_missing": family_report.child_products_missing,
         },
         "prodcon_import": (
             {
