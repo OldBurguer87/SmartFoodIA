@@ -12,6 +12,7 @@ from app.models.channel import ChannelAccount, ChannelEvent
 from app.repositories.channel import ChannelRepository
 from app.schemas.conversation import ConversationCreate, MessageCreate
 from app.services.conversation import ConversationService
+from app.services.human_relay import HumanRelayService
 
 
 class WhatsAppWebhookError(ValueError):
@@ -75,6 +76,7 @@ class WhatsAppGatewayService:
         )
         self.client_factory = client_factory
         self.process_inline = process_inline
+        self.human_relay = HumanRelayService()
 
     def process_payload(self, db: Session, payload: dict[str, Any]) -> WebhookProcessingResult:
         received = processed = duplicated = ignored = failed = 0
@@ -200,6 +202,21 @@ class WhatsAppGatewayService:
         body = str((message.get("text") or {}).get("body") or "").strip()
         if not body:
             raise WhatsAppWebhookError("Mensagem de texto vazia.")
+
+        staff = self.human_relay.get_staff_sender(
+            db,
+            store_id=account.store_id,
+            phone=sender,
+        )
+        if staff is not None:
+            self.human_relay.handle_staff_message(
+                db,
+                account=account,
+                staff=staff,
+                body=body,
+            )
+            return
+
         conversation = self.conversations.get_or_create(
             db,
             ConversationCreate(
@@ -219,6 +236,15 @@ class WhatsAppGatewayService:
                     external_message_id=event.external_event_id,
                 ),
             )
+
+            if conversation.status == "HUMAN":
+                self.human_relay.forward_customer_message_to_staff(
+                    db,
+                    account=account,
+                    conversation=conversation,
+                    body=body,
+                )
+
             return
         reply = self.orchestrator_factory().reply(
             db,

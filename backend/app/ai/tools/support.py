@@ -7,6 +7,7 @@ from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
 from app.schemas.conversation import HumanTicketCreate, KnowledgeGapCreate
 from app.services.conversation import ConversationService
+from app.services.human_relay import HumanRelayService
 
 
 class RequestHumanHelpTool:
@@ -87,12 +88,20 @@ class RequestHumanHelpTool:
             ),
         )
 
+        staff_notified = 0
+
         if conversation_uuid is not None:
             self.service.wait_for_human(
                 self.context.db,
                 conversation_id=conversation_uuid,
                 reason=reason,
                 ticket_id=ticket.id,
+            )
+            staff_notified = HumanRelayService().notify_waiting(
+                self.context.db,
+                store_id=self.context.store_id,
+                conversation_id=conversation_uuid,
+                reason=reason,
             )
 
         gap_id = None
@@ -121,5 +130,6 @@ class RequestHumanHelpTool:
                 "category": category,
                 "priority": priority,
                 "status": ticket.status,
+                "staff_notified": staff_notified,
             },
         )

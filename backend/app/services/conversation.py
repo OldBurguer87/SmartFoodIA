@@ -5,6 +5,7 @@ import unicodedata
 from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models.conversation import (
@@ -15,6 +16,7 @@ from app.models.conversation import (
     Message,
 )
 from app.repositories.conversation import ConversationRepository
+from app.models.staff import StoreStaffMember
 from app.schemas.conversation import (
     AIEventCreate,
     ConversationCreate,
@@ -179,6 +181,15 @@ class ConversationService:
                 "Conversa não está sob atendimento humano."
             )
         conversation.status = "OPEN"
+
+        db.execute(
+            update(StoreStaffMember)
+            .where(
+                StoreStaffMember.current_conversation_id == conversation.id
+            )
+            .values(current_conversation_id=None)
+        )
+
         db.add(
             AIEvent(
                 store_id=conversation.store_id,

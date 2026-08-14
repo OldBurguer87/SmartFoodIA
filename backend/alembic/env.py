@@ -39,6 +39,7 @@ from app.models.commercial import (  # noqa: F401
     StoreDeliveryZone,
 )
 from app.models.menu import StoreMenuDocument  # noqa: F401
+from app.models.staff import StoreStaffMember  # noqa: F401
 from app.models.catalog_version import (  # noqa: F401
     CatalogSourceFile,
     CatalogVersion,
