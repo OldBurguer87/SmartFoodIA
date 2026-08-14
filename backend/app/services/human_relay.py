@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.catalog import Store
 from app.models.channel import ChannelAccount
 from app.models.conversation import Conversation, HumanTicket
+from app.models.order import Order
 from app.schemas.conversation import MessageCreate
 from app.models.staff import StoreStaffMember
 from app.repositories.channel import ChannelRepository
@@ -59,6 +60,166 @@ class HumanRelayService:
             phone=normalize_phone(phone),
         )
 
+    @staticmethod
+    def _format_money(value) -> str:
+        formatted = f"{float(value):,.2f}"
+        formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"R$ {formatted}"
+
+    def _order_alert_context(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        conversation_id: UUID,
+        reason: str,
+    ) -> str:
+        match = re.search(
+            r"Pedido #([0-9]+)",
+            reason,
+            flags=re.IGNORECASE,
+        )
+
+        if not match:
+            return ""
+
+        display_id = match.group(1).zfill(6)
+
+        order = db.scalar(
+            select(Order)
+            .where(
+                Order.store_id == store_id,
+                Order.display_id == display_id,
+            )
+            .options(selectinload(Order.items))
+            .limit(1)
+        )
+
+        if order is None:
+            return ""
+
+        status_labels = {
+            "READY_FOR_INTEGRATION": "Pedido recebido, aguardando confirmação",
+            "CONFIRMED": "Pedido confirmado e em preparação",
+            "READY": "Pedido pronto",
+            "DISPATCHED": "Pedido saiu para entrega",
+            "CONCLUDED": "Pedido finalizado",
+            "CANCELLED": "Pedido cancelado",
+        }
+
+        issue_labels = {
+            "DELAY": "Atraso",
+            "WRONG_ITEM": "Item errado",
+            "MISSING_ITEM": "Item faltando",
+            "QUALITY": "Problema de qualidade",
+            "NOT_RECEIVED": "Pedido não recebido",
+            "PAYMENT": "Pagamento / cobrança",
+            "CANCELLATION": "Solicitação de cancelamento",
+            "OTHER": "Outro problema",
+        }
+
+        issue_match = re.search(
+            r"tipo=([A-Z_]+)",
+            reason,
+            flags=re.IGNORECASE,
+        )
+
+        issue_type = (
+            issue_match.group(1).upper()
+            if issue_match
+            else None
+        )
+
+        issue_label = (
+            issue_labels.get(issue_type, issue_type)
+            if issue_type
+            else "Atendimento solicitado"
+        )
+
+        created_at = order.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
+        elapsed_minutes = max(
+            0,
+            int(
+                (
+                    datetime.now(timezone.utc) - created_at
+                ).total_seconds()
+                // 60
+            ),
+        )
+
+        service_label = (
+            "Entrega"
+            if order.service_mode == "DELIVERY"
+            else "Retirada"
+        )
+
+        items = list(order.items)
+        item_lines = [
+            f"• {item.quantity}x {item.product_name}"
+            for item in items[:6]
+        ]
+
+        if len(items) > 6:
+            item_lines.append(
+                f"• +{len(items) - 6} outro(s) item(ns)"
+            )
+
+        ticket = self._active_ticket(
+            db,
+            conversation_id=conversation_id,
+        )
+
+        customer_report = (
+            ticket.customer_message.strip()
+            if ticket is not None and ticket.customer_message
+            else None
+        )
+
+        lines = [
+            "",
+            f"📦 Pedido #{order.display_id}",
+            f"Nome: {order.customer_name}",
+            f"Status: {status_labels.get(order.status, order.status)}",
+            f"Atendimento: {service_label}",
+        ]
+
+        if order.status not in {"CONCLUDED", "CANCELLED"}:
+            lines.append(f"Tempo decorrido: {elapsed_minutes} min")
+
+        lines.extend(
+            [
+                f"Total: {self._format_money(order.total)}",
+                f"Pagamento: {order.payment_method}",
+            ]
+        )
+
+        if item_lines:
+            lines.extend(
+                [
+                    "",
+                    "Itens:",
+                    *item_lines,
+                ]
+            )
+
+        lines.extend(
+            [
+                "",
+                f"⚠️ Problema: {issue_label}",
+            ]
+        )
+
+        if customer_report:
+            report = customer_report.replace("\n", " ").strip()
+            if len(report) > 350:
+                report = report[:347] + "..."
+            lines.append(f'Relato: "{report}"')
+
+        return "\n".join(lines)
+
     def notify_waiting(
         self,
         db: Session,
@@ -86,6 +247,13 @@ class HumanRelayService:
         code = self.conversation_code(conversation)
         client = conversation.external_conversation_id or "cliente"
 
+        order_context = self._order_alert_context(
+            db,
+            store_id=store_id,
+            conversation_id=conversation_id,
+            reason=reason,
+        )
+
         title = (
             f"⚠️ {store.name} — cliente ainda aguardando"
             if reminder
@@ -97,16 +265,27 @@ class HumanRelayService:
             else ""
         )
 
-        message = (
-            f"{title}\n\n"
-            f"{wait_note}"
-            f"Cliente: {client}\n"
-            f"Motivo: {reason}\n"
-            f"Código: {code}\n\n"
-            f"Responda:\n"
-            f"ASSUMIR {code}\n\n"
-            f"para atender esse cliente pelo WhatsApp."
-        )
+        if order_context:
+            message = (
+                f"{title}\n\n"
+                f"{wait_note}"
+                f"WhatsApp: {client}\n"
+                f"{order_context}\n\n"
+                f"Código: {code}\n\n"
+                f"Responda:\n"
+                f"ASSUMIR {code}"
+            )
+        else:
+            message = (
+                f"{title}\n\n"
+                f"{wait_note}"
+                f"Cliente: {client}\n"
+                f"Motivo: {reason}\n"
+                f"Código: {code}\n\n"
+                f"Responda:\n"
+                f"ASSUMIR {code}\n\n"
+                f"para atender esse cliente pelo WhatsApp."
+            )
 
         now = datetime.now(timezone.utc)
 
