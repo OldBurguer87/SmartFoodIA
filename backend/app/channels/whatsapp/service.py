@@ -225,7 +225,11 @@ class WhatsAppGatewayService:
                 external_conversation_id=sender,
             ),
         )
-        if conversation.status in {"WAITING_HUMAN", "HUMAN"}:
+        if conversation.status in {
+            "WAITING_HUMAN",
+            "RESUMING_OLIVIA",
+            "HUMAN",
+        }:
             self.conversations.add_message(
                 db,
                 conversation_id=conversation.id,

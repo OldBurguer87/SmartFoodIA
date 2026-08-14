@@ -8,6 +8,7 @@ from app.channels.whatsapp.client import WhatsAppCloudClient
 from app.channels.whatsapp.queue import WhatsAppQueueProcessor
 from app.core.config import settings
 from app.database.session import SessionLocal
+from app.services.handoff_monitor import HumanHandoffMonitor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,15 +41,25 @@ def main() -> None:
         client_factory=make_client,
         max_attempts=settings.channel_worker_max_attempts,
     )
+    handoff_monitor = HumanHandoffMonitor()
+
     logger.info("Worker de canais iniciado.")
 
     while _running:
         try:
             with SessionLocal() as db:
+                handoff = handoff_monitor.run_once(
+                    db,
+                    limit=settings.channel_worker_batch_size,
+                )
                 result = processor.run_once(
                     db,
                     limit=settings.channel_worker_batch_size,
                 )
+
+            if handoff.reminded or handoff.resumed or handoff.failed:
+                logger.info("Monitor de atendimento humano: %s", handoff)
+
             processed = (
                 result.events_processed
                 + result.events_retried

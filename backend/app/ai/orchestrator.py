@@ -243,20 +243,24 @@ class OliviaOrchestrator:
         conversation_id: UUID,
         customer_message: str,
         customer_phone: str | None = None,
+        record_customer_message: bool = True,
+        extra_instructions: str | None = None,
+        excluded_tools: set[str] | None = None,
     ) -> str:
         conversation = self.repository.get(db, conversation_id)
         if conversation is None or conversation.store_id != store_id:
             raise OliviaExecutionError("Conversa não encontrada para esta loja.")
 
-        self.conversations.add_message(
-            db,
-            conversation_id=conversation_id,
-            payload=MessageCreate(
-                direction="INBOUND",
-                sender_type="CUSTOMER",
-                content=customer_message,
-            ),
-        )
+        if record_customer_message:
+            self.conversations.add_message(
+                db,
+                conversation_id=conversation_id,
+                payload=MessageCreate(
+                    direction="INBOUND",
+                    sender_type="CUSTOMER",
+                    content=customer_message,
+                ),
+            )
 
         history = self.repository.list_messages(db, conversation_id, limit=30)
         input_items = [
@@ -289,6 +293,16 @@ class OliviaOrchestrator:
                 customer_phone=customer_phone,
             )
         )
+        if extra_instructions:
+            instructions += "\n\n" + extra_instructions
+
+        blocked_tools = excluded_tools or set()
+        available_tools = [
+            tool
+            for tool in self._provider_tools(registry)
+            if tool["name"] not in blocked_tools
+        ]
+
         previous_response_id = None
 
         for round_number in range(1, settings.olivia_max_tool_rounds + 1):
@@ -296,7 +310,7 @@ class OliviaOrchestrator:
             response = self.provider.respond(
                 instructions=instructions,
                 input_items=input_items,
-                tools=self._provider_tools(registry),
+                tools=available_tools,
                 previous_response_id=previous_response_id,
             )
             previous_response_id = response.response_id

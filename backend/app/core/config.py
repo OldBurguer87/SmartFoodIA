@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     channel_worker_poll_seconds: float = 2.0
     channel_worker_batch_size: int = 50
     channel_worker_max_attempts: int = 5
+    human_wait_reminder_seconds: int = 120
+    human_wait_timeout_seconds: int = 300
     frontend_origin: str = "http://localhost:3000"
     public_domain: str | None = None
     public_base_url: str | None = None

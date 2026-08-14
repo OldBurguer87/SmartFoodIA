@@ -25,7 +25,9 @@ class ConversationRepository:
         statement = select(Conversation).where(
             Conversation.store_id == store_id,
             Conversation.channel == channel,
-            Conversation.status.in_(["OPEN", "WAITING_HUMAN", "HUMAN"]),
+            Conversation.status.in_(
+                ["OPEN", "WAITING_HUMAN", "RESUMING_OLIVIA", "HUMAN"]
+            ),
         )
         if external_conversation_id is None:
             statement = statement.where(

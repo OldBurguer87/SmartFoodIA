@@ -152,6 +152,10 @@ class ConversationService:
             raise ConversationStateError(
                 "Conversa encerrada não pode ser assumida."
             )
+        if conversation.status == "RESUMING_OLIVIA":
+            raise ConversationStateError(
+                "A Olívia está retomando esta conversa neste momento."
+            )
         conversation.status = "HUMAN"
         db.add(
             AIEvent(

@@ -65,6 +65,7 @@ class HumanRelayService:
         store_id: UUID,
         conversation_id: UUID,
         reason: str,
+        reminder: bool = False,
     ) -> int:
         conversation = self.conversation_repository.get(db, conversation_id)
         store = db.get(Store, store_id)
@@ -84,8 +85,20 @@ class HumanRelayService:
         code = self.conversation_code(conversation)
         client = conversation.external_conversation_id or "cliente"
 
+        title = (
+            f"⚠️ {store.name} — cliente ainda aguardando"
+            if reminder
+            else f"🔔 {store.name} — atendimento solicitado"
+        )
+        wait_note = (
+            "A espera já passou de 2 minutos.\n\n"
+            if reminder
+            else ""
+        )
+
         message = (
-            f"🔔 {store.name} — atendimento solicitado\n\n"
+            f"{title}\n\n"
+            f"{wait_note}"
             f"Cliente: {client}\n"
             f"Motivo: {reason}\n"
             f"Código: {code}\n\n"
@@ -107,6 +120,50 @@ class HumanRelayService:
             member.last_notified_at = now
 
         db.commit()
+        return len(members)
+
+    def notify_timeout(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        conversation_id: UUID,
+    ) -> int:
+        conversation = self.conversation_repository.get(db, conversation_id)
+        store = db.get(Store, store_id)
+        account = self.channels.get_account_by_store(
+            db,
+            store_id=store_id,
+            provider="WHATSAPP_CLOUD",
+        )
+
+        if conversation is None or store is None or account is None:
+            return 0
+
+        members = self.staff.list_notifiable(db, store_id=store_id)
+        if not members:
+            return 0
+
+        code = self.conversation_code(conversation)
+
+        message = (
+            f"⏱️ {store.name} — tempo de espera encerrado\n\n"
+            f"Atendimento: {code}\n"
+            f"Cliente: {conversation.external_conversation_id or 'cliente'}\n\n"
+            "Ninguém assumiu dentro do tempo máximo. "
+            "A Olívia retomou automaticamente a conversa e está tentando "
+            "resolver por outra abordagem."
+        )
+
+        for member in members:
+            self.channels.create_outbound(
+                db,
+                account=account,
+                conversation_id=None,
+                recipient=member.phone,
+                content=message,
+            )
+
         return len(members)
 
     def _send_internal(
