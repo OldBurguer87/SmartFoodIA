@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.models.catalog import Store
 from app.models.channel import ChannelAccount
-from app.models.conversation import Conversation
+from app.models.conversation import Conversation, HumanTicket
+from app.schemas.conversation import MessageCreate
 from app.models.staff import StoreStaffMember
 from app.repositories.channel import ChannelRepository
 from app.repositories.conversation import ConversationRepository
@@ -206,6 +207,22 @@ class HumanRelayService:
 
         return list(db.scalars(statement).all())
 
+    def _active_ticket(
+        self,
+        db: Session,
+        *,
+        conversation_id: UUID,
+    ) -> HumanTicket | None:
+        return db.scalar(
+            select(HumanTicket)
+            .where(
+                HumanTicket.conversation_id == conversation_id,
+                HumanTicket.status.in_(["OPEN", "IN_PROGRESS"]),
+            )
+            .order_by(HumanTicket.created_at.desc())
+            .limit(1)
+        )
+
     def _current(
         self,
         db: Session,
@@ -289,11 +306,24 @@ class HumanRelayService:
 
         conversation = matches[0]
 
+        assigned_to = f"{staff.name} via WhatsApp"
+
         self.conversations.take_over(
             db,
             conversation_id=conversation.id,
-            assigned_to=f"{staff.name} via WhatsApp",
+            assigned_to=assigned_to,
         )
+
+        ticket = self._active_ticket(
+            db,
+            conversation_id=conversation.id,
+        )
+        if ticket is not None:
+            self.conversations.assign_ticket(
+                db,
+                ticket_id=ticket.id,
+                assigned_to=assigned_to,
+            )
 
         staff.current_conversation_id = conversation.id
         staff.last_seen_at = datetime.now(timezone.utc)
@@ -326,7 +356,115 @@ class HumanRelayService:
                 f"Cliente: {conversation.external_conversation_id}\n\n"
                 f"Últimas mensagens:\n{history_text}\n\n"
                 "Agora responda normalmente por aqui. "
-                "Quando terminar, envie DEVOLVER."
+                "Quando resolver o problema, envie RESOLVER + a solução. "
+                "Use DEVOLVER somente se quiser retornar para a Olívia "
+                "sem marcar o chamado como resolvido."
+            ),
+        )
+
+    def _resolve(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        staff: StoreStaffMember,
+        resolution: str,
+    ) -> None:
+        conversation = self._current(db, staff=staff)
+
+        if conversation is None or conversation.status != "HUMAN":
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    "Você não está com atendimento humano ativo. "
+                    "Use ASSUMIR + código antes de resolver um chamado."
+                ),
+            )
+            return
+
+        resolution = resolution.strip()
+
+        if len(resolution) < 3:
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    "Informe também a solução. Exemplo:\n\n"
+                    "RESOLVER pedido verificado, já saiu para entrega"
+                ),
+            )
+            return
+
+        ticket = self._active_ticket(
+            db,
+            conversation_id=conversation.id,
+        )
+
+        if ticket is None:
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    "Não encontrei chamado aberto para esta conversa. "
+                    "Se quiser apenas devolver o atendimento para a Olívia, "
+                    "envie DEVOLVER."
+                ),
+            )
+            return
+
+        assigned_to = f"{staff.name} via WhatsApp"
+
+        resolved = self.conversations.resolve_ticket(
+            db,
+            ticket_id=ticket.id,
+            resolution=resolution,
+            assigned_to=assigned_to,
+        )
+
+        # Contexto interno: fica no histórico para a Olívia saber exatamente
+        # o que o humano verificou, mas não é enviado como mensagem ao cliente.
+        self.conversations.add_message(
+            db,
+            conversation_id=conversation.id,
+            payload=MessageCreate(
+                direction="OUTBOUND",
+                sender_type="SYSTEM",
+                content=(
+                    "CONTEXTO INTERNO DO ATENDIMENTO HUMANO: "
+                    f"chamado {resolved.id} resolvido por {assigned_to}. "
+                    f"Solução informada: {resolution}"
+                ),
+                metadata_json={
+                    "type": "HUMAN_TICKET_RESOLUTION",
+                    "ticket_id": str(resolved.id),
+                    "assigned_to": assigned_to,
+                    "resolution": resolution,
+                },
+            ),
+        )
+
+        self.conversations.release_to_olivia(
+            db,
+            conversation_id=conversation.id,
+            assigned_to=assigned_to,
+        )
+
+        staff.current_conversation_id = None
+        db.commit()
+
+        self._send_internal(
+            db,
+            account=account,
+            staff=staff,
+            content=(
+                "✅ Chamado resolvido e registrado.\n\n"
+                f"Solução: {resolution}\n\n"
+                "A conversa foi devolvida para a Olívia e ela terá "
+                "esse resultado no contexto do atendimento."
             ),
         )
 
@@ -429,6 +567,21 @@ class HumanRelayService:
             )
             return
 
+        resolve_match = re.match(
+            r"^RESOLVER(?:\s+(.+))?$",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        if resolve_match:
+            self._resolve(
+                db,
+                account=account,
+                staff=staff,
+                resolution=resolve_match.group(1) or "",
+            )
+            return
+
         if upper in {"DEVOLVER", "FINALIZAR", "ENCERRAR"}:
             self._release(
                 db,
@@ -454,7 +607,8 @@ class HumanRelayService:
                     "Comandos do atendimento SmartFoodIA:\n\n"
                     "ASSUMIR código — assumir um cliente\n"
                     "STATUS — ver cliente atual\n"
-                    "DEVOLVER — devolver para a Olívia\n\n"
+                    "RESOLVER solução — resolver o chamado e devolver para a Olívia\n"
+                    "DEVOLVER — devolver sem marcar o chamado como resolvido\n\n"
                     "Com atendimento ativo, qualquer outra mensagem "
                     "é enviada diretamente ao cliente."
                 ),
