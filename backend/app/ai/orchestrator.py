@@ -1,6 +1,8 @@
 import json
 import time
 from copy import deepcopy
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any
 from uuid import UUID
 
@@ -119,6 +121,27 @@ def _store_context(db: Session, *, store_id: UUID) -> str:
     )
 
 
+def _local_time_context() -> str:
+    """Informa à Olívia a hora local de Coari/AM e a saudação adequada."""
+    now = datetime.now(ZoneInfo("America/Manaus"))
+
+    if 5 <= now.hour < 12:
+        greeting = "Bom dia"
+    elif 12 <= now.hour < 18:
+        greeting = "Boa tarde"
+    else:
+        greeting = "Boa noite"
+
+    return (
+        "CONTEXTO LOCAL DA OLD BURGUER 87: "
+        f"data e hora atual em Coari/AM: {now.strftime('%d/%m/%Y %H:%M')}. "
+        f"Saudação adequada neste momento: {greeting}. "
+        "Use essa saudação somente quando for natural, principalmente no início "
+        "da conversa ou quando o cliente cumprimentar. Não repita a saudação "
+        "desnecessariamente em todas as mensagens."
+    )
+
+
 def _customer_context(
     db: Session,
     *,
@@ -231,6 +254,8 @@ class OliviaOrchestrator:
             OLIVIA_INSTRUCTIONS
             + "\n\n"
             + CommercialContextService().build(db, store_id)
+            + "\n\n"
+            + _local_time_context()
             + "\n\n"
             + _customer_context(
                 db,
