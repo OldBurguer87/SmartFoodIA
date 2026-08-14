@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from openpyxl import load_workbook
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -73,6 +75,21 @@ async def read_upload(
         )
 
     return content
+
+
+def validate_xlsx(content: bytes, file_name: str) -> None:
+    try:
+        workbook = load_workbook(
+            BytesIO(content),
+            read_only=True,
+            data_only=True,
+        )
+        workbook.close()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Arquivo Excel inválido: {file_name}.",
+        ) from exc
 
 
 def active_counts(db: Session, store_id: UUID) -> tuple[int, int, int]:
@@ -202,7 +219,8 @@ def get_catalog_status(
 async def import_consumer_catalog(
     store_id: UUID,
     main_file: UploadFile = File(...),
-    prodcon_file: UploadFile | None = File(default=None),
+    complements_file: UploadFile | None = File(default=None),
+    prodcon_file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> dict:
     store = db.get(Store, store_id)
@@ -217,14 +235,27 @@ async def import_consumer_catalog(
         main_file,
         allowed_extensions={".xlsx"},
     )
+    validate_xlsx(
+        main_content,
+        main_file.filename or "cardapio-principal.xlsx",
+    )
 
-    prodcon_content: bytes | None = None
+    complements_content: bytes | None = None
 
-    if prodcon_file is not None:
-        prodcon_content = await read_upload(
-            prodcon_file,
-            allowed_extensions={".prodcon"},
+    if complements_file is not None:
+        complements_content = await read_upload(
+            complements_file,
+            allowed_extensions={".xlsx"},
         )
+        validate_xlsx(
+            complements_content,
+            complements_file.filename or "complementos.xlsx",
+        )
+
+    prodcon_content = await read_upload(
+        prodcon_file,
+        allowed_extensions={".prodcon"},
+    )
 
     config = versioning.get_or_create_config(
         db,
@@ -233,10 +264,12 @@ async def import_consumer_catalog(
     )
     config.provider = "CONSUMER"
     config.products_source = "XLSX"
-
-    if prodcon_content is not None:
-        config.complements_source = "PRODCON"
-        config.relations_source = "PRODCON"
+    config.complements_source = (
+        "XLSX+PRODCON"
+        if complements_content is not None
+        else "PRODCON"
+    )
+    config.relations_source = "PRODCON"
 
     version = versioning.create_version(
         db,
@@ -260,20 +293,40 @@ async def import_consumer_catalog(
         content=main_content,
     )
 
-    if prodcon_content is not None:
+    if complements_content is not None:
         versioning.save_source_file(
             db,
             store_id=store_id,
             catalog_version_id=version.id,
-            role="PRODCON",
-            source_format="PRODCON",
-            original_name=prodcon_file.filename or "cardapio.prodcon",
-            content_type=(
-                prodcon_file.content_type
-                or "application/octet-stream"
+            role="COMPLEMENTS",
+            source_format="XLSX",
+            original_name=(
+                complements_file.filename
+                if complements_file is not None
+                else "complementos.xlsx"
             ),
-            content=prodcon_content,
+            content_type=(
+                complements_file.content_type
+                if complements_file is not None
+                and complements_file.content_type
+                else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+            content=complements_content,
         )
+
+    versioning.save_source_file(
+        db,
+        store_id=store_id,
+        catalog_version_id=version.id,
+        role="PRODCON",
+        source_format="PRODCON",
+        original_name=prodcon_file.filename or "cardapio.prodcon",
+        content_type=(
+            prodcon_file.content_type
+            or "application/octet-stream"
+        ),
+        content=prodcon_content,
+    )
 
     # Salva a versão/importação antes de alterar o catálogo.
     # Assim, em caso de falha, conseguimos registrar FAILED.
@@ -314,18 +367,15 @@ async def import_consumer_catalog(
                     "agrupadores Pxx esperados."
                 )
 
-            prodcon_report = None
+            prodcon_path = Path(temp_dir) / "catalog.prodcon"
+            prodcon_path.write_bytes(prodcon_content)
 
-            if prodcon_content is not None:
-                prodcon_path = Path(temp_dir) / "catalog.prodcon"
-                prodcon_path.write_bytes(prodcon_content)
-
-                prodcon_report = prodcon_importer.import_file(
-                    db,
-                    store_id=store_id,
-                    file_path=prodcon_path,
-                    commit=False,
-                )
+            prodcon_report = prodcon_importer.import_file(
+                db,
+                store_id=store_id,
+                file_path=prodcon_path,
+                commit=False,
+            )
 
             products_count, modifiers_count, relations_count = (
                 active_counts(db, store_id)
@@ -381,6 +431,17 @@ async def import_consumer_catalog(
             "products_deactivated": main_report.products_deactivated,
             "invalid_rows": main_report.invalid_rows,
             "conflicts_skipped": main_report.conflicts_skipped,
+        },
+        "complements_excel": {
+            "provided": complements_content is not None,
+            "stored": complements_content is not None,
+            "imported": False,
+            "note": (
+                "Arquivo armazenado na versão; parser será ligado após "
+                "validarmos o formato real exportado pelo Consumer."
+                if complements_content is not None
+                else "Nenhum Excel de complementos enviado."
+            ),
         },
         "family_import": {
             "families_found": family_report.families_found,

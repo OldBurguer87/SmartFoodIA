@@ -5,6 +5,7 @@ import { getOperationalOverview, OperationalOverview } from "@/lib/api";
 import { LogoMark, RefreshIcon } from "@/components/icons";
 import { ConversationsConsole } from "@/components/conversations-console";
 import { CommercialRulesPanel } from "@/components/commercial-rules-panel";
+import { CatalogPanel } from "@/components/catalog-panel";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -95,6 +96,7 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
 
         <nav aria-label="Navegação principal">
           <a className="navItem active" href="#regras-comerciais">Regras comerciais</a>
+          <a className="navItem" href="#cardapios">Cardápios</a>
           <a className="navItem" href="#visao-geral">Visão geral</a>
           <a className="navItem" href="#conversas">Conversas</a>
           <a className="navItem" href="#pedidos">Pedidos</a>
@@ -176,6 +178,8 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
         {overview && (
           <>
             <CommercialRulesPanel storeId={storeId} />
+
+            <CatalogPanel storeId={storeId} />
 
             <section className="metricsGrid" id="visao-geral">
               <Metric
