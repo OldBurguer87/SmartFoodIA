@@ -16,11 +16,16 @@ export function ConversationsConsole({ storeId }: { storeId: string }) {
     try { setItems(await listConversations(storeId, filter || undefined)); }
     catch (e) { setError(e instanceof Error ? e.message : "Erro ao carregar conversas."); }
   }
-  async function open(id: string) {
-    setBusy(true); setError(null);
-    try { setSelected(await getConversation(id)); }
-    catch (e) { setError(e instanceof Error ? e.message : "Erro ao abrir conversa."); }
-    finally { setBusy(false); }
+  async function open(id: string, silent = false) {
+    if (!silent) setBusy(true);
+    setError(null);
+    try {
+      setSelected(await getConversation(id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao abrir conversa.");
+    } finally {
+      if (!silent) setBusy(false);
+    }
   }
   async function toggle() {
     if (!selected) return;
@@ -44,7 +49,7 @@ export function ConversationsConsole({ storeId }: { storeId: string }) {
   useEffect(() => { void loadList(); }, [storeId, filter]);
   useEffect(() => {
     if (!selected) return;
-    const timer = window.setInterval(() => void open(selected.id), 8000);
+    const timer = window.setInterval(() => void open(selected.id, true), 8000);
     return () => window.clearInterval(timer);
   }, [selected?.id]);
 
