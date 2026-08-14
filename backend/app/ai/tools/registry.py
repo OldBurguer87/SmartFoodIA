@@ -23,6 +23,7 @@ from app.ai.tools.customer import (
     ListCustomerAddressesTool,
 )
 from app.ai.tools.support import RequestHumanHelpTool
+from app.ai.tools.menu_document import SendMenuPdfTool
 from app.ai.tools.knowledge import SearchKnowledgeTool
 
 
@@ -46,6 +47,7 @@ class OliviaToolRegistry:
             RemoveCartItemTool(context),
             CheckoutCartTool(context),
             SearchKnowledgeTool(context),
+            SendMenuPdfTool(context),
             RequestHumanHelpTool(context),
         ]
         self._tools = {tool.definition.name: tool for tool in tools}

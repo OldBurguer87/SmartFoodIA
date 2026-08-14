@@ -15,6 +15,7 @@ from app.ai.tools.context import ToolContext
 from app.ai.tools.registry import OliviaToolRegistry
 from app.core.config import settings
 from app.models.catalog import Store
+from app.models.menu import StoreMenuDocument
 from app.models.order import Order
 from app.repositories.conversation import ConversationRepository
 from app.repositories.customer import CustomerRepository
@@ -118,6 +119,29 @@ def _store_context(db: Session, *, store_id: UUID) -> str:
     return (
         f"REGRAS DA LOJA {store.name}: use somente regras comerciais fornecidas por ferramentas ou contexto; "
         "não invente pedido mínimo nem taxa de entrega."
+    )
+
+
+def _menu_pdf_context(db: Session, *, store_id: UUID) -> str:
+    document = db.scalar(
+        select(StoreMenuDocument).where(
+            StoreMenuDocument.store_id == store_id
+        )
+    )
+
+    if document is None:
+        return (
+            "CONTEXTO DO CARDÁPIO PDF: não existe PDF cadastrado neste momento. "
+            "Se o cliente pedir PDF, use send_menu_pdf mesmo assim para confirmar "
+            "a indisponibilidade pela ferramenta oficial."
+        )
+
+    return (
+        "CONTEXTO DO CARDÁPIO PDF: existe PDF oficial cadastrado e disponível "
+        f"para envio pelo WhatsApp. Arquivo: {document.original_name}. "
+        "Quando o cliente pedir explicitamente o cardápio em PDF, use "
+        "send_menu_pdf imediatamente. Não use search_knowledge nem "
+        "request_human_help antes dessa ferramenta."
     )
 
 
@@ -254,6 +278,8 @@ class OliviaOrchestrator:
             OLIVIA_INSTRUCTIONS
             + "\n\n"
             + CommercialContextService().build(db, store_id)
+            + "\n\n"
+            + _menu_pdf_context(db, store_id=store_id)
             + "\n\n"
             + _local_time_context()
             + "\n\n"

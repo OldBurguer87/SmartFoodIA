@@ -117,6 +117,30 @@ class ChannelRepository:
         db.refresh(message)
         return message
 
+    def create_document_outbound(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        conversation_id: UUID | None,
+        recipient: str,
+        content: str,
+    ) -> OutboundChannelMessage:
+        message = OutboundChannelMessage(
+            channel_account_id=account.id,
+            conversation_id=conversation_id,
+            provider=account.provider,
+            recipient=recipient,
+            content_type="DOCUMENT",
+            content=content,
+            status="PENDING",
+            attempts=0,
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return message
+
     def list_due_events(
         self,
         db: Session,

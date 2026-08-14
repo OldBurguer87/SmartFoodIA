@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -47,7 +48,17 @@ class WhatsAppQueueProcessor:
                 account=self.repository.get_account(db,msg.channel_account_id)
                 try:
                     msg.attempts += 1
-                    msg.external_message_id=client.send_text(phone_number_id=account.external_account_id,recipient=msg.recipient,text=msg.content)
+                    if msg.content_type == "DOCUMENT":
+                        document = json.loads(msg.content)
+                        msg.external_message_id = client.send_document(
+                            phone_number_id=account.external_account_id,
+                            recipient=msg.recipient,
+                            document_url=document["url"],
+                            filename=document["filename"],
+                            caption=document.get("caption"),
+                        )
+                    else:
+                        msg.external_message_id=client.send_text(phone_number_id=account.external_account_id,recipient=msg.recipient,text=msg.content)
                     msg.status='SENT';msg.sent_at=now;msg.error_message=None;osent+=1
                 except Exception as exc:
                     msg.error_message=str(exc)
