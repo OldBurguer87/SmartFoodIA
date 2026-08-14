@@ -7,7 +7,7 @@
 
     # Endpoints que precisam permanecer públicos para integrações externas.
     @public_api {
-        path /live /ready /api/v1/channels/whatsapp/webhook /api/v1/integrations/consumer/*
+        path /live /ready /api/v1/channels/whatsapp/webhook /api/v1/integrations/consumer/* /api/v1/public/menu/*
     }
 
     handle @public_api {

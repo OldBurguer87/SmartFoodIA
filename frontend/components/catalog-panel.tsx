@@ -4,8 +4,13 @@ import { useEffect, useState } from "react";
 import {
   CatalogImportResponse,
   CatalogStatusResponse,
+  MenuPdfStatusResponse,
+  deleteMenuPdf,
   getCatalogStatus,
+  getMenuPdfStatus,
+  getPublicMenuUrl,
   importConsumerCatalog,
+  uploadMenuPdf,
 } from "@/lib/catalog-api";
 
 function formatDate(value?: string | null) {
@@ -20,14 +25,19 @@ export function CatalogPanel({
   storeId: string;
 }) {
   const [data, setData] = useState<CatalogStatusResponse | null>(null);
+  const [menuPdf, setMenuPdf] =
+    useState<MenuPdfStatusResponse | null>(null);
 
   const [mainFile, setMainFile] = useState<File | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfInputKey, setPdfInputKey] = useState(0);
   const [complementsFile, setComplementsFile] =
     useState<File | null>(null);
   const [prodconFile, setProdconFile] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const [message, setMessage] = useState("");
   const [lastImport, setLastImport] =
@@ -37,9 +47,13 @@ export function CatalogPanel({
     setLoading(true);
 
     try {
-      const result = await getCatalogStatus(storeId);
+      const [result, pdfStatus] = await Promise.all([
+        getCatalogStatus(storeId),
+        getMenuPdfStatus(storeId),
+      ]);
 
       setData(result);
+      setMenuPdf(pdfStatus);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -109,6 +123,72 @@ export function CatalogPanel({
       );
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function savePdf() {
+    if (!pdfFile) {
+      setMessage("Selecione o arquivo PDF do cardápio.");
+      return;
+    }
+
+    setPdfBusy(true);
+    setMessage("");
+
+    try {
+      const result = await uploadMenuPdf(
+        storeId,
+        pdfFile,
+      );
+
+      setMenuPdf(result);
+      setPdfFile(null);
+      setPdfInputKey((value) => value + 1);
+
+      setMessage(
+        `PDF vinculado à versão ${
+          result.active_version_code ?? "ativa"
+        } com sucesso.`,
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Erro ao enviar PDF.",
+      );
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
+  async function removePdf() {
+    const confirmed = window.confirm(
+      "Remover o cardápio PDF desta loja?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPdfBusy(true);
+    setMessage("");
+
+    try {
+      await deleteMenuPdf(storeId);
+
+      const status = await getMenuPdfStatus(storeId);
+
+      setMenuPdf(status);
+      setPdfFile(null);
+      setMessage("Cardápio PDF removido.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Erro ao remover PDF.",
+      );
+    } finally {
+      setPdfBusy(false);
     }
   }
 
@@ -535,18 +615,194 @@ export function CatalogPanel({
         style={{
           marginTop: 28,
           padding: 18,
-          border: "1px dashed #cbd2ca",
+          border: "1px solid #dfe4de",
           borderRadius: 12,
         }}
       >
-        <strong>Cardápio visual em PDF</strong>
-
-        <p
-          className="muted"
-          style={{ marginTop: 5 }}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
         >
-          Será ligado à versão ativa do catálogo na próxima etapa.
-        </p>
+          <div>
+            <strong>Cardápio visual em PDF</strong>
+
+            <p
+              className="muted"
+              style={{ marginTop: 5 }}
+            >
+              Arquivo que poderá ser enviado ao cliente pelo WhatsApp.
+            </p>
+          </div>
+
+          {menuPdf?.exists && (
+            <div
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                fontWeight: 800,
+                background: menuPdf.synchronized
+                  ? "#e9f6ed"
+                  : "#fff3d6",
+                color: menuPdf.synchronized
+                  ? "#22633b"
+                  : "#8a5a00",
+              }}
+            >
+              {menuPdf.synchronized
+                ? `● SINCRONIZADO COM ${
+                    menuPdf.active_version_code ?? "CATÁLOGO"
+                  }`
+                : "● PDF DESATUALIZADO"}
+            </div>
+          )}
+        </div>
+
+        {menuPdf?.document ? (
+          <div
+            style={{
+              marginTop: 16,
+              padding: 16,
+              background: "#f8f8f6",
+              borderRadius: 12,
+            }}
+          >
+            <strong>{menuPdf.document.original_name}</strong>
+
+            <p
+              className="muted"
+              style={{ marginTop: 5 }}
+            >
+              Vinculado a{" "}
+              {menuPdf.document.catalog_version_code ?? "versão desconhecida"}
+              {" · "}
+              Atualizado em {formatDate(menuPdf.document.updated_at)}
+            </p>
+
+            {!menuPdf.synchronized && (
+              <p
+                style={{
+                  marginTop: 10,
+                  fontWeight: 700,
+                  color: "#8a5a00",
+                }}
+              >
+                O catálogo operacional mudou depois deste PDF.
+                Envie uma versão visual atualizada antes de oferecê-lo
+                aos clientes.
+              </p>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                marginTop: 14,
+                flexWrap: "wrap",
+              }}
+            >
+              <a
+                className="refreshButton"
+                href={getPublicMenuUrl(
+                  menuPdf.document.public_path,
+                )}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  textDecoration: "none",
+                }}
+              >
+                Abrir PDF
+              </a>
+
+              <button
+                type="button"
+                className="refreshButton"
+                disabled={pdfBusy}
+                onClick={() => void removePdf()}
+              >
+                Remover PDF
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: 16,
+              padding: 14,
+              background: "#fff8e7",
+              borderRadius: 10,
+            }}
+          >
+            Nenhum PDF cadastrado.
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 18,
+            paddingTop: 18,
+            borderTop: "1px solid #e4e7e1",
+          }}
+        >
+          <strong>
+            {menuPdf?.exists
+              ? "Substituir PDF"
+              : "Enviar PDF"}
+          </strong>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+              marginTop: 12,
+            }}
+          >
+            <input
+              key={pdfInputKey}
+              type="file"
+              accept=".pdf,application/pdf"
+              disabled={pdfBusy}
+              onChange={(event) =>
+                setPdfFile(
+                  event.target.files?.[0] ?? null,
+                )
+              }
+            />
+
+            <button
+              type="button"
+              className="refreshButton"
+              disabled={pdfBusy || !pdfFile}
+              onClick={() => void savePdf()}
+              style={{
+                background: "#244c36",
+                color: "white",
+              }}
+            >
+              {pdfBusy
+                ? "Enviando..."
+                : menuPdf?.exists
+                  ? "Atualizar PDF"
+                  : "Enviar PDF"}
+            </button>
+          </div>
+
+          {pdfFile && (
+            <p
+              className="muted"
+              style={{ marginTop: 8 }}
+            >
+              ✓ {pdfFile.name}
+            </p>
+          )}
+        </div>
       </div>
     </section>
   );

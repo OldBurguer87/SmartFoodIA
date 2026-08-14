@@ -146,3 +146,85 @@ export async function importConsumerCatalog(
 
   return response.json();
 }
+
+export type MenuPdfStatusResponse = {
+  store_id: string;
+  exists: boolean;
+  synchronized: boolean;
+  active_version_code: string | null;
+  document: {
+    id: string;
+    original_name: string;
+    content_type: string;
+    catalog_version_id: string | null;
+    catalog_version_code: string | null;
+    public_path: string;
+    updated_at: string;
+  } | null;
+};
+
+export async function getMenuPdfStatus(
+  storeId: string,
+): Promise<MenuPdfStatusResponse> {
+  const response = await fetch(
+    `${API}/api/v1/operations/stores/${storeId}/menu-pdf`,
+    {
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    return apiError(response);
+  }
+
+  return response.json();
+}
+
+export async function uploadMenuPdf(
+  storeId: string,
+  pdfFile: File,
+): Promise<MenuPdfStatusResponse> {
+  const form = new FormData();
+
+  form.append("pdf_file", pdfFile);
+
+  const response = await fetch(
+    `${API}/api/v1/operations/stores/${storeId}/menu-pdf`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
+
+  if (!response.ok) {
+    return apiError(response);
+  }
+
+  return response.json();
+}
+
+export async function deleteMenuPdf(
+  storeId: string,
+): Promise<{
+  ok: boolean;
+  deleted: boolean;
+}> {
+  const response = await fetch(
+    `${API}/api/v1/operations/stores/${storeId}/menu-pdf`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    return apiError(response);
+  }
+
+  return response.json();
+}
+
+export function getPublicMenuUrl(
+  publicPath: string,
+): string {
+  return `${API}${publicPath}`;
+}
