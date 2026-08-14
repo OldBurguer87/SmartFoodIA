@@ -42,6 +42,8 @@ class ProdconImportReport:
     products_with_complements: int = 0
     products_not_found: int = 0
     complement_details_not_found: int = 0
+    product_status_checked: int = 0
+    products_disabled_from_source: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -132,6 +134,51 @@ class ConsumerProdconImportService:
                 select(Modifier).where(Modifier.store_id == store_id)
             ).all()
         }
+
+        # O Excel continua sendo a fonte de nome, preço e disponibilidade
+        # comercial base. O .prodcon complementa essa informação com o status
+        # operacional real do Consumer.
+        #
+        # Importante: aqui apenas DESATIVAMOS quando o Consumer informa pausa,
+        # exclusão ou descontinuação. Não reativamos produtos diretamente pelo
+        # .prodcon, porque a reativação deve respeitar primeiro o estado vindo
+        # do Excel principal.
+        for detail_code, detail in detail_by_code.items():
+            product = current_products.get(str(detail_code))
+            if product is None:
+                continue
+
+            report.product_status_checked += 1
+
+            master_code = self._as_int(detail.get("CODIGOPRODUTO"))
+            master = product_master_by_code.get(master_code)
+
+            discontinued = (
+                master is not None
+                and str(master.get("DESCONTINUADO") or "N").upper() == "S"
+            )
+
+            unavailable = (
+                discontinued
+                or detail.get("DATADELETE") is not None
+                or detail.get("DATAPAUSADO") is not None
+            )
+
+            if not unavailable:
+                continue
+
+            was_available = (
+                product.active
+                or product.available_for_delivery
+                or product.available_for_takeout
+            )
+
+            product.active = False
+            product.available_for_delivery = False
+            product.available_for_takeout = False
+
+            if was_available:
+                report.products_disabled_from_source += 1
 
         # Remove somente grupos gerenciados por este importador. Isso torna a
         # sincronização idempotente e não toca em grupos criados manualmente.
