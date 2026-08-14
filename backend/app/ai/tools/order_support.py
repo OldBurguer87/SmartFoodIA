@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
 from app.models.commercial import StoreCommercialRules
+from app.models.conversation import Conversation, HumanTicket
 from app.models.order import Order, OrderItem
 from app.schemas.conversation import HumanTicketCreate
 from app.services.conversation import ConversationService
@@ -191,6 +192,36 @@ def order_payload(context: ToolContext, order: Order) -> dict[str, Any]:
     }
 
 
+def find_active_order_issue_ticket(
+    context: ToolContext,
+    *,
+    order: Order | None,
+    issue_type: str,
+) -> HumanTicket | None:
+    if context.conversation_id is None:
+        return None
+
+    order_label = (
+        f"Pedido #{order.display_id}"
+        if order is not None
+        else "Pedido não localizado automaticamente"
+    )
+
+    reason_prefix = f"{order_label} | tipo={issue_type} |"
+
+    return context.db.scalar(
+        select(HumanTicket)
+        .where(
+            HumanTicket.store_id == context.store_id,
+            HumanTicket.conversation_id == context.conversation_id,
+            HumanTicket.status.in_(["OPEN", "IN_PROGRESS"]),
+            HumanTicket.reason.startswith(reason_prefix),
+        )
+        .order_by(HumanTicket.created_at.desc())
+        .limit(1)
+    )
+
+
 class GetOrderStatusTool:
     definition = ToolDefinition(
         name="get_order_status",
@@ -361,39 +392,74 @@ class ReportOrderIssueTool:
         # Limite do campo reason do ticket.
         reason = reason[:500]
 
-        ticket = self.conversations.create_ticket(
-            self.context.db,
-            store_id=self.context.store_id,
-            payload=HumanTicketCreate(
-                conversation_id=self.context.conversation_id,
-                customer_id=(
-                    order.customer_id
-                    if order is not None
-                    else None
-                ),
-                category=category,
-                priority=priority,
-                reason=reason,
-                customer_message=customer_message,
-            ),
+        existing_ticket = find_active_order_issue_ticket(
+            self.context,
+            order=order,
+            issue_type=issue_type,
         )
 
-        staff_notified = 0
+        reused_ticket = existing_ticket is not None
 
-        if self.context.conversation_id is not None:
-            self.conversations.wait_for_human(
-                self.context.db,
-                conversation_id=self.context.conversation_id,
-                reason=reason,
-                ticket_id=ticket.id,
-            )
-
-            staff_notified = self.relay.notify_waiting(
+        if existing_ticket is not None:
+            # Registra a mensagem mais recente no mesmo chamado,
+            # em vez de abrir outro ticket para a mesma ocorrência.
+            existing_ticket.customer_message = customer_message
+            existing_ticket.priority = priority
+            self.context.db.commit()
+            self.context.db.refresh(existing_ticket)
+            ticket = existing_ticket
+        else:
+            ticket = self.conversations.create_ticket(
                 self.context.db,
                 store_id=self.context.store_id,
-                conversation_id=self.context.conversation_id,
-                reason=reason,
+                payload=HumanTicketCreate(
+                    conversation_id=self.context.conversation_id,
+                    customer_id=(
+                        order.customer_id
+                        if order is not None
+                        else None
+                    ),
+                    category=category,
+                    priority=priority,
+                    reason=reason,
+                    customer_message=customer_message,
+                ),
             )
+
+        staff_notified = 0
+        escalation_already_active = False
+
+        if self.context.conversation_id is not None:
+            conversation = self.context.db.get(
+                Conversation,
+                self.context.conversation_id,
+            )
+
+            if conversation is not None and conversation.status in {
+                "WAITING_HUMAN",
+                "HUMAN",
+                "RESUMING_OLIVIA",
+            }:
+                # Já existe atendimento humano em curso/espera.
+                # Não cria novo HUMAN_WAITING nem dispara outro alerta.
+                escalation_already_active = True
+
+            elif conversation is not None and conversation.status != "CLOSED":
+                # Se o mesmo ticket ainda estiver aberto, mas a conversa já
+                # voltou para a Olívia, reutiliza o ticket e reabre a espera.
+                self.conversations.wait_for_human(
+                    self.context.db,
+                    conversation_id=self.context.conversation_id,
+                    reason=reason,
+                    ticket_id=ticket.id,
+                )
+
+                staff_notified = self.relay.notify_waiting(
+                    self.context.db,
+                    store_id=self.context.store_id,
+                    conversation_id=self.context.conversation_id,
+                    reason=reason,
+                )
 
         return ToolResult(
             ok=True,
@@ -424,5 +490,7 @@ class ReportOrderIssueTool:
                     else None
                 ),
                 "staff_notified": staff_notified,
+                "reused_ticket": reused_ticket,
+                "escalation_already_active": escalation_already_active,
             },
         )

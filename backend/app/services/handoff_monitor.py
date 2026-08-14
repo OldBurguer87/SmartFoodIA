@@ -167,8 +167,9 @@ class HumanHandoffMonitor:
             "aguardava. Avise brevemente que não conseguiu contato com alguém "
             "da equipe a tempo e que você voltou para continuar ajudando. "
             "Tente resolver por outra estratégia usando as ferramentas e os "
-            "dados reais disponíveis. NÃO use request_human_help nesta rodada "
-            "e não encaminhe novamente a conversa imediatamente. "
+            "dados reais disponíveis. NÃO use request_human_help nem "
+            "report_order_issue nesta rodada e não encaminhe novamente "
+            "a conversa imediatamente. "
             "Não invente informação, prazo, estorno, desconto ou status. "
             "Se ainda não puder resolver com segurança, explique o limite de "
             "forma curta e faça no máximo uma pergunta útil para avançar."
@@ -183,7 +184,10 @@ class HumanHandoffMonitor:
                 customer_phone=conversation.external_conversation_id,
                 record_customer_message=False,
                 extra_instructions=instructions,
-                excluded_tools={"request_human_help"},
+                excluded_tools={
+                    "request_human_help",
+                    "report_order_issue",
+                },
             )
         except Exception:
             latest = db.get(Conversation, conversation.id)
