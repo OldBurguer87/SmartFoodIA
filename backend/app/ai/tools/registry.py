@@ -9,7 +9,11 @@ from app.ai.tools.cart import (
     RemoveCartItemTool,
     UpdateCartItemTool,
 )
-from app.ai.tools.catalog import GetProductTool, SearchCatalogTool
+from app.ai.tools.catalog import (
+    BrowseCatalogTool,
+    GetProductTool,
+    SearchCatalogTool,
+)
 from app.ai.tools.checkout import CheckoutCartTool
 from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
@@ -29,6 +33,7 @@ class UnknownToolError(LookupError):
 class OliviaToolRegistry:
     def __init__(self, context: ToolContext) -> None:
         tools = [
+            BrowseCatalogTool(context),
             SearchCatalogTool(context),
             GetProductTool(context),
             FindOrCreateCustomerTool(context),

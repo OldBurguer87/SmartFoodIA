@@ -10,7 +10,7 @@ from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
 from app.models.catalog import ProductFamily
 from app.services.catalog.exceptions import ProductNotFoundError
-from app.services.catalog.search import relevance_score
+from app.services.catalog.search import normalize_text, relevance_score
 from app.services.catalog.service import CatalogService
 
 
@@ -22,6 +22,217 @@ def availability(product, service_mode: str) -> bool:
     if service_mode == "TAKEOUT":
         return product.available_for_takeout
     return product.available_for_delivery
+
+
+
+CATALOG_SECTION_TERMS = {
+    "MEALS": (
+        "prato",
+        "pratos",
+        "executivo",
+        "executivos",
+        "refeicao",
+        "refeicoes",
+        "almoco",
+        "jantar",
+        "marmita",
+    ),
+    "BURGERS": (
+        "hamburguer",
+        "hamburgueres",
+        "burger",
+        "burguer",
+        "lanche",
+        "lanches",
+        "sanduiche",
+    ),
+    "DRINKS": (
+        "bebida",
+        "bebidas",
+        "refrigerante",
+        "refrigerantes",
+        "suco",
+        "sucos",
+        "agua",
+        "cerveja",
+        "chopp",
+    ),
+    "SIDES": (
+        "acompanhamento",
+        "acompanhamentos",
+        "porcao",
+        "porcoes",
+        "batata",
+        "fritas",
+    ),
+    "DESSERTS": (
+        "sobremesa",
+        "sobremesas",
+        "doce",
+        "doces",
+    ),
+}
+
+
+def product_matches_section(product, section: str) -> bool:
+    if section == "ALL":
+        return True
+
+    terms = CATALOG_SECTION_TERMS.get(section, ())
+
+    if not terms:
+        return False
+
+    category = normalize_text(product.category)
+    name = normalize_text(product.name)
+    description = normalize_text(product.description)
+
+    # Categoria tem prioridade. Nome e descrição servem como fallback
+    # para catálogos que não possuem categorização perfeita.
+    for term in terms:
+        normalized_term = normalize_text(term)
+
+        if normalized_term and normalized_term in category:
+            return True
+
+    for term in terms:
+        normalized_term = normalize_text(term)
+
+        if (
+            normalized_term
+            and (
+                normalized_term in name
+                or normalized_term in description
+            )
+        ):
+            return True
+
+    return False
+
+
+class BrowseCatalogTool:
+    definition = ToolDefinition(
+        name="browse_catalog",
+        description=(
+            "Navega pelo cardápio real e disponível da loja, agrupando produtos "
+            "por categoria. Use para perguntas amplas como 'o que vocês têm?', "
+            "'tem comida?', 'tem almoço?', 'quais bebidas?', 'quais lanches?' "
+            "ou quando o cliente quiser ver o cardápio no próprio WhatsApp. "
+            "MEALS significa pratos/refeições; BURGERS lanches/hambúrgueres; "
+            "DRINKS bebidas; SIDES acompanhamentos/porções; DESSERTS sobremesas; "
+            "ALL mostra todas as categorias. Nunca inventa produtos."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "section": {
+                    "type": "string",
+                    "enum": [
+                        "ALL",
+                        "MEALS",
+                        "BURGERS",
+                        "DRINKS",
+                        "SIDES",
+                        "DESSERTS",
+                    ],
+                },
+                "service_mode": {
+                    "type": "string",
+                    "enum": ["DELIVERY", "TAKEOUT"],
+                },
+                "max_items_per_category": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12,
+                },
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    )
+
+    def __init__(self, context: ToolContext) -> None:
+        self.context = context
+        self.service = CatalogService()
+
+    def execute(
+        self,
+        *,
+        section: str = "ALL",
+        service_mode: str = "DELIVERY",
+        max_items_per_category: int = 6,
+        **_: Any,
+    ) -> ToolResult:
+        section = (section or "ALL").upper()
+        service_mode = service_mode or "DELIVERY"
+        max_items_per_category = max_items_per_category or 6
+
+        products = self.service.list_available_products(
+            self.context.db,
+            store_id=self.context.store_id,
+            delivery=True if service_mode == "DELIVERY" else None,
+            takeout=True if service_mode == "TAKEOUT" else None,
+        )
+
+        filtered = [
+            product
+            for product in products
+            if product_matches_section(product, section)
+        ]
+
+        grouped: dict[str, list] = {}
+
+        for product in filtered:
+            category = product.category or "Outros"
+            grouped.setdefault(category, []).append(product)
+
+        categories = []
+
+        for category_name in sorted(
+            grouped,
+            key=lambda value: normalize_text(value),
+        ):
+            category_products = sorted(
+                grouped[category_name],
+                key=lambda product: (
+                    product.price,
+                    product.name.casefold(),
+                ),
+            )
+
+            visible = category_products[:max_items_per_category]
+
+            categories.append(
+                {
+                    "name": category_name,
+                    "product_count": len(category_products),
+                    "truncated": (
+                        len(category_products)
+                        > max_items_per_category
+                    ),
+                    "products": [
+                        {
+                            "external_code": product.external_code,
+                            "name": product.name,
+                            "description": product.description,
+                            "price": decimal_to_float(product.price),
+                            "available": True,
+                        }
+                        for product in visible
+                    ],
+                }
+            )
+
+        return ToolResult(
+            ok=True,
+            data={
+                "section": section,
+                "service_mode": service_mode,
+                "total_products": len(filtered),
+                "category_count": len(categories),
+                "categories": categories,
+            },
+        )
 
 
 class SearchCatalogTool:
