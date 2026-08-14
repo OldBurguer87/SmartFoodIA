@@ -132,6 +132,7 @@ class OperationalDashboardService:
             "conversations": {
                 "total": sum(conversation_counts.values()),
                 "open": conversation_counts.get("OPEN", 0),
+                "waiting_human": conversation_counts.get("WAITING_HUMAN", 0),
                 "human": conversation_counts.get("HUMAN", 0),
                 "closed": conversation_counts.get("CLOSED", 0),
             },

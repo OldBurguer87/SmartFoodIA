@@ -11,6 +11,7 @@ export type OperationalOverview = {
   conversations: {
     total: number;
     open: number;
+    waiting_human: number;
     human: number;
     closed: number;
   };
@@ -145,7 +146,7 @@ export type ConversationSummary = {
   customer_id: string | null;
   channel: string;
   external_conversation_id: string | null;
-  status: "OPEN" | "HUMAN" | "CLOSED";
+  status: "OPEN" | "WAITING_HUMAN" | "HUMAN" | "CLOSED";
   last_message_at: string;
   last_message: { sender_type: string; content: string; created_at: string } | null;
 };

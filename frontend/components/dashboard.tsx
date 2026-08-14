@@ -184,8 +184,12 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
             <section className="metricsGrid" id="visao-geral">
               <Metric
                 label="Conversas ativas"
-                value={overview.conversations.open + overview.conversations.human}
-                detail={`${overview.conversations.human} com atendente`}
+                value={
+                  overview.conversations.open +
+                  overview.conversations.waiting_human +
+                  overview.conversations.human
+                }
+                detail={`${overview.conversations.waiting_human} aguardando • ${overview.conversations.human} com atendente`}
               />
               <Metric
                 label="Pedidos"
@@ -215,6 +219,11 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
                   <Progress
                     label="Olívia"
                     value={overview.conversations.open}
+                    total={Math.max(overview.conversations.total, 1)}
+                  />
+                  <Progress
+                    label="Aguardando atendente"
+                    value={overview.conversations.waiting_human}
                     total={Math.max(overview.conversations.total, 1)}
                   />
                   <Progress

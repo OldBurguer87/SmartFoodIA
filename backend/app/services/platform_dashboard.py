@@ -78,7 +78,7 @@ class PlatformDashboardService:
         active_conversations = db.scalar(
             select(func.count(Conversation.id)).where(
                 Conversation.store_id == store.id,
-                Conversation.status.in_(["OPEN", "HUMAN"]),
+                Conversation.status.in_(["OPEN", "WAITING_HUMAN", "HUMAN"]),
             )
         ) or 0
         urgent_tickets = db.scalar(

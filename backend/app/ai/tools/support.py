@@ -88,10 +88,11 @@ class RequestHumanHelpTool:
         )
 
         if conversation_uuid is not None:
-            self.service.take_over(
+            self.service.wait_for_human(
                 self.context.db,
                 conversation_id=conversation_uuid,
-                assigned_to="fila-humana",
+                reason=reason,
+                ticket_id=ticket.id,
             )
 
         gap_id = None

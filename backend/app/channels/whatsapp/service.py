@@ -208,7 +208,7 @@ class WhatsAppGatewayService:
                 external_conversation_id=sender,
             ),
         )
-        if conversation.status == "HUMAN":
+        if conversation.status in {"WAITING_HUMAN", "HUMAN"}:
             self.conversations.add_message(
                 db,
                 conversation_id=conversation.id,

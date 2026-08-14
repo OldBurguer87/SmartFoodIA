@@ -102,6 +102,40 @@ class ConversationService:
         db.refresh(message)
         return message
 
+    def wait_for_human(
+        self,
+        db: Session,
+        *,
+        conversation_id: UUID,
+        reason: str,
+        ticket_id: UUID | None = None,
+    ) -> Conversation:
+        conversation = self.repository.get(db, conversation_id)
+        if conversation is None:
+            raise ConversationNotFoundError(str(conversation_id))
+        if conversation.status == "CLOSED":
+            raise ConversationStateError(
+                "Conversa encerrada não pode aguardar atendimento humano."
+            )
+
+        conversation.status = "WAITING_HUMAN"
+        db.add(
+            AIEvent(
+                store_id=conversation.store_id,
+                conversation_id=conversation.id,
+                event_type="HUMAN_WAITING",
+                success=True,
+                payload_json={
+                    "assigned_to": "fila-humana",
+                    "reason": reason,
+                    "ticket_id": str(ticket_id) if ticket_id else None,
+                },
+            )
+        )
+        db.commit()
+        db.refresh(conversation)
+        return conversation
+
     def take_over(
         self,
         db: Session,
