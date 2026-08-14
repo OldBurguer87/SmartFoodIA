@@ -57,7 +57,7 @@ export function ConversationsConsole({ storeId }: { storeId: string }) {
     return () => window.clearInterval(timer);
   }, [selected?.id]);
 
-  return <section className="conversationsConsole">
+  return <section className="conversationsConsole" id="conversas">
     <header className="consoleHeader">
       <div><p className="eyebrow">CENTRAL DE CONVERSAS</p><h2>Atendimento em tempo real</h2></div>
       <div className="consoleControls">

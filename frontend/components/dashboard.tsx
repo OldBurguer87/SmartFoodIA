@@ -210,7 +210,7 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
             </section>
 
             <section className="dashboardGrid">
-              <article className="panel wide" id="conversas">
+              <article className="panel wide" id="visao-conversas">
                 <PanelHeader
                   title="Atendimento"
                   description="Distribuição das conversas no período"

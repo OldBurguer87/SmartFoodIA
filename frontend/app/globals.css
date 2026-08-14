@@ -607,3 +607,89 @@ h1 {
   color: var(--warning);
   font-weight: 800;
 }
+
+
+/* ==========================================================
+   CENTRAL DE CONVERSAS - LAYOUT OPERACIONAL
+   Cabeçalho e resposta sempre visíveis.
+   Apenas histórico e lista possuem rolagem interna.
+   ========================================================== */
+
+.conversationsConsole {
+  height: calc(100vh - 32px);
+  min-height: 620px;
+  max-height: 900px;
+  display: flex;
+  flex-direction: column;
+  scroll-margin-top: 16px;
+}
+
+.conversationsConsole .consoleHeader {
+  flex: 0 0 auto;
+  background: var(--surface);
+  z-index: 5;
+}
+
+.conversationsConsole .conversationWorkspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+}
+
+.conversationsConsole .conversationList {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.conversationsConsole .chatPanel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.conversationsConsole .chatHeader {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 4;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.conversationsConsole .messageTimeline {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.conversationsConsole .replyComposer {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 4;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.conversationsConsole .replyComposer textarea {
+  max-height: 130px;
+  resize: vertical;
+}
+
+@media (max-width: 760px) {
+  .conversationsConsole {
+    height: calc(100vh - 16px);
+    min-height: 560px;
+    max-height: none;
+  }
+
+  .conversationsConsole .conversationWorkspace {
+    min-height: 0;
+  }
+}
