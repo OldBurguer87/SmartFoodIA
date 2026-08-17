@@ -94,12 +94,138 @@ export type PlatformOverview = {
   clients: ClientSummary[];
 };
 
+
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
   "http://localhost:8000";
 
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+) {
+  return fetch(input, {
+    ...init,
+    credentials: "include",
+  });
+}
+
+export type AuthStore = {
+  id: string;
+  name: string;
+  slug: string;
+  city: string;
+  state: string;
+  timezone: string;
+};
+
+export type AuthCompany = {
+  id: string;
+  name: string;
+  role: string;
+  stores: AuthStore[];
+};
+
+export type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  is_platform_admin: boolean;
+};
+
+export type AuthState = {
+  authenticated: true;
+  user: AuthUser;
+  companies: AuthCompany[];
+};
+
+async function authError(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const payload = await response.json();
+    if (
+      payload &&
+      typeof payload.detail === "string"
+    ) {
+      return payload.detail;
+    }
+  } catch {
+    // Resposta sem JSON.
+  }
+
+  return fallback;
+}
+
+export async function getCurrentAuth(): Promise<AuthState | null> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/auth/me`,
+    { cache: "no-store" },
+  );
+
+  if (response.status === 401) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível verificar sua sessão.",
+      ),
+    );
+  }
+
+  return response.json() as Promise<AuthState>;
+}
+
+export async function login(
+  email: string,
+  password: string,
+): Promise<AuthState> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/auth/login`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível entrar.",
+      ),
+    );
+  }
+
+  return response.json() as Promise<AuthState>;
+}
+
+export async function logout(): Promise<void> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/auth/logout`,
+    {
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      "Não foi possível encerrar a sessão.",
+    );
+  }
+}
+
 export async function getPlatformOverview(hours: number): Promise<PlatformOverview> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/v1/operations/overview?hours=${hours}`,
     { cache: "no-store" },
   );
@@ -114,7 +240,7 @@ export async function getOperationalOverview(
   storeId: string,
   hours: number,
 ): Promise<OperationalOverview> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_URL}/api/v1/operations/stores/${storeId}/overview?hours=${hours}`,
     { cache: "no-store" },
   );
@@ -155,19 +281,19 @@ export type ConversationDetail = ConversationSummary & { messages: ConversationM
 
 export async function listConversations(storeId: string, status?: string): Promise<ConversationSummary[]> {
   const params = status ? `?status=${encodeURIComponent(status)}` : "";
-  const response = await fetch(`${API_URL}/api/v1/operations/stores/${storeId}/conversations${params}`, { cache: "no-store" });
+  const response = await apiFetch(`${API_URL}/api/v1/operations/stores/${storeId}/conversations${params}`, { cache: "no-store" });
   if (!response.ok) throw new Error("Não foi possível carregar as conversas.");
   return response.json();
 }
 
 export async function getConversation(conversationId: string): Promise<ConversationDetail> {
-  const response = await fetch(`${API_URL}/api/v1/operations/conversations/${conversationId}`, { cache: "no-store" });
+  const response = await apiFetch(`${API_URL}/api/v1/operations/conversations/${conversationId}`, { cache: "no-store" });
   if (!response.ok) throw new Error("Não foi possível carregar a conversa.");
   return response.json();
 }
 
 async function postConversationAction(conversationId: string, action: "takeover" | "release", body: Record<string, unknown>): Promise<ConversationSummary> {
-  const response = await fetch(`${API_URL}/api/v1/operations/conversations/${conversationId}/${action}`, {
+  const response = await apiFetch(`${API_URL}/api/v1/operations/conversations/${conversationId}/${action}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error((await response.text()) || "Não foi possível alterar o atendimento.");
@@ -183,7 +309,7 @@ export function releaseConversation(conversationId: string, assignedTo: string) 
 }
 
 export async function sendHumanReply(conversationId: string, assignedTo: string, content: string) {
-  const response = await fetch(`${API_URL}/api/v1/operations/conversations/${conversationId}/reply`, {
+  const response = await apiFetch(`${API_URL}/api/v1/operations/conversations/${conversationId}/reply`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ assigned_to: assignedTo, content }),
   });

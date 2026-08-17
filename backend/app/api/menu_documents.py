@@ -10,7 +10,9 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_store_access, require_store_write_access
 from app.database.session import get_db
+from app.services.auth import StoreAccess
 from app.models.catalog import Store
 from app.models.catalog_version import CatalogVersion
 from app.models.menu import StoreMenuDocument
@@ -103,6 +105,7 @@ def serialize_document(
 @router.get("/{store_id}/menu-pdf")
 def get_menu_pdf_status(
     store_id: UUID,
+    _access: StoreAccess = Depends(require_store_access),
     db: Session = Depends(get_db),
 ) -> dict:
     store = db.get(Store, store_id)
@@ -130,6 +133,7 @@ def get_menu_pdf_status(
 async def upload_menu_pdf(
     store_id: UUID,
     pdf_file: UploadFile = File(...),
+    _access: StoreAccess = Depends(require_store_write_access),
     db: Session = Depends(get_db),
 ) -> dict:
     store = db.get(Store, store_id)
@@ -214,6 +218,7 @@ async def upload_menu_pdf(
 @router.delete("/{store_id}/menu-pdf")
 def delete_menu_pdf(
     store_id: UUID,
+    _access: StoreAccess = Depends(require_store_write_access),
     db: Session = Depends(get_db),
 ) -> dict:
     store = db.get(Store, store_id)

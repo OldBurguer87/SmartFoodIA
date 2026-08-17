@@ -55,7 +55,11 @@ export function PlatformDashboard() {
         >
           ← Voltar para clientes
         </button>
-        <Dashboard initialStoreId={selectedClient.store_id} />
+        <Dashboard
+          initialStoreId={selectedClient.store_id}
+          lockStore
+          storeLabel={selectedClient.name}
+        />
       </div>
     );
   }

@@ -9,6 +9,9 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.auth import router as auth_router
 from app.api.commercial_rules import router as commercial_router
+from app.api.catalog_operations import router as catalog_operations_router
+from app.api.menu_documents import router as menu_documents_router
+from app.api.operations import router as operations_router
 from app.api.operational_dashboard import router as operational_dashboard_router
 from app.core.config import settings
 from app.core.security import hash_password, hash_session_token
@@ -16,6 +19,7 @@ from app.database.base import Base
 from app.database.session import get_db
 from app.models.auth import AuthSession, CompanyUser, User
 from app.models.catalog import Company, Store
+from app.models.conversation import Conversation
 
 
 @pytest.fixture()
@@ -43,6 +47,9 @@ def environment():
     app = FastAPI()
     app.include_router(auth_router)
     app.include_router(commercial_router)
+    app.include_router(catalog_operations_router)
+    app.include_router(menu_documents_router)
+    app.include_router(operations_router)
     app.include_router(operational_dashboard_router)
     app.dependency_overrides[get_db] = override_get_db
 
@@ -115,6 +122,15 @@ def environment():
     )
     db.flush()
 
+    conversation_b = Conversation(
+        store_id=store_b.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999990000",
+        status="OPEN",
+    )
+    db.add(conversation_b)
+    db.flush()
+
     db.add_all(
         [
             CompanyUser(
@@ -179,6 +195,7 @@ def environment():
         "viewer": viewer,
         "manager": manager,
         "platform_admin": platform_admin,
+        "conversation_b": conversation_b,
         "tokens": tokens,
     }
 
@@ -424,3 +441,134 @@ def test_company_a_can_access_own_dashboard(
     assert response.json()["store_id"] == str(
         environment["store_a"].id
     )
+
+
+def test_company_a_cannot_access_company_b_catalog(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/catalog"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_can_access_own_catalog(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/catalog"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_a"].id
+    )
+
+
+def test_company_a_cannot_access_company_b_menu_admin(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/menu-pdf"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_can_access_own_menu_admin(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/menu-pdf"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_a"].id
+    )
+
+
+def test_company_a_cannot_list_company_b_conversations(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/conversations"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_can_list_own_conversations(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/conversations"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+
+
+def test_company_a_cannot_open_company_b_conversation_by_id(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/conversations/"
+            f"{environment['conversation_b'].id}"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_without_session_cannot_access_catalog(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/catalog"
+        ),
+    )
+
+    assert response.status_code == 401

@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api";
+
 export type CommercialRules = {
   manual_paused: boolean;
   pause_reason: string | null;
@@ -58,7 +60,7 @@ async function result(response: Response): Promise<CommercialResponse> {
 }
 
 export function getCommercialRules(storeId: string) {
-  return fetch(
+  return apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/commercial-rules`,
     { cache: "no-store" },
   ).then(result);
@@ -68,7 +70,7 @@ export function saveCommercialRules(
   storeId: string,
   rules: CommercialRules,
 ) {
-  return fetch(
+  return apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/commercial-rules`,
     {
       method: "PUT",
@@ -83,7 +85,7 @@ export function saveBusinessHour(
   weekday: number,
   hour: Omit<BusinessHour, "weekday">,
 ) {
-  return fetch(
+  return apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/commercial-rules/hours/${weekday}`,
     {
       method: "PUT",
@@ -102,7 +104,7 @@ export function saveDeliveryZone(
     active: boolean;
   },
 ) {
-  return fetch(
+  return apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/commercial-rules/zones`,
     {
       method: "POST",
@@ -116,7 +118,7 @@ export function removeDeliveryZone(
   storeId: string,
   zoneId: string,
 ) {
-  return fetch(
+  return apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/commercial-rules/zones/${zoneId}`,
     { method: "DELETE" },
   ).then(result);

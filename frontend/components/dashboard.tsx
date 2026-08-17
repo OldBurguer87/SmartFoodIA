@@ -16,9 +16,15 @@ const number = new Intl.NumberFormat("pt-BR");
 
 type DashboardProps = {
   initialStoreId?: string;
+  lockStore?: boolean;
+  storeLabel?: string;
 };
 
-export function Dashboard({ initialStoreId = "" }: DashboardProps) {
+export function Dashboard({
+  initialStoreId = "",
+  lockStore = false,
+  storeLabel,
+}: DashboardProps) {
   const [storeId, setStoreId] = useState(initialStoreId);
   const [draftStoreId, setDraftStoreId] = useState(initialStoreId);
   const [hours, setHours] = useState(24);
@@ -37,7 +43,12 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
     try {
       const result = await getOperationalOverview(nextStoreId.trim(), hours);
       setOverview(result);
-      localStorage.setItem("smartfoodia.storeId", nextStoreId.trim());
+      if (!lockStore) {
+        localStorage.setItem(
+          "smartfoodia.storeId",
+          nextStoreId.trim(),
+        );
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -50,6 +61,19 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
   }
 
   useEffect(() => {
+    if (!lockStore) {
+      return;
+    }
+
+    setStoreId(initialStoreId);
+    setDraftStoreId(initialStoreId);
+  }, [initialStoreId, lockStore]);
+
+  useEffect(() => {
+    if (lockStore) {
+      return;
+    }
+
     const saved = localStorage.getItem("smartfoodia.storeId");
     if (saved && !storeId) {
       setStoreId(saved);
@@ -117,7 +141,9 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
       <main className="main">
         <header className="topbar">
           <div>
-            <p className="eyebrow">OLD BURGUER 87</p>
+            <p className="eyebrow">
+              {(storeLabel ?? "OPERAÇÃO").toUpperCase()}
+            </p>
             <h1>Painel operacional</h1>
             <p className="subtitle">
               Acompanhe atendimento, pedidos e saúde do sistema.
@@ -133,31 +159,45 @@ export function Dashboard({ initialStoreId = "" }: DashboardProps) {
           </button>
         </header>
 
-        <section className="connectionPanel">
-          <form onSubmit={submitStore}>
-            <label htmlFor="storeId">ID da loja</label>
-            <div className="storeInputRow">
-              <input
-                id="storeId"
-                value={draftStoreId}
-                onChange={(event) => setDraftStoreId(event.target.value)}
-                placeholder="Cole aqui o UUID da Old Burguer 87"
-              />
-              <select
-                value={hours}
-                onChange={(event) => setHours(Number(event.target.value))}
-                aria-label="Período do painel"
-              >
-                <option value={24}>Últimas 24 horas</option>
-                <option value={168}>Últimos 7 dias</option>
-                <option value={720}>Últimos 30 dias</option>
-              </select>
-              <button type="submit">Carregar</button>
-            </div>
-          </form>
-        </section>
+        {!lockStore && (
+          <section className="connectionPanel">
+            <form onSubmit={submitStore}>
+              <label htmlFor="storeId">ID da loja</label>
+              <div className="storeInputRow">
+                <input
+                  id="storeId"
+                  value={draftStoreId}
+                  onChange={(event) =>
+                    setDraftStoreId(event.target.value)
+                  }
+                  placeholder="Cole aqui o UUID da loja"
+                />
+                <select
+                  value={hours}
+                  onChange={(event) =>
+                    setHours(Number(event.target.value))
+                  }
+                  aria-label="Período do painel"
+                >
+                  <option value={24}>
+                    Últimas 24 horas
+                  </option>
+                  <option value={168}>
+                    Últimos 7 dias
+                  </option>
+                  <option value={720}>
+                    Últimos 30 dias
+                  </option>
+                </select>
+                <button type="submit">
+                  Carregar
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
 
-        {!storeId && (
+        {!lockStore && !storeId && (
           <section className="emptyState">
             <LogoMark size={52} />
             <h2>Conecte a loja ao painel</h2>

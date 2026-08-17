@@ -3,12 +3,19 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.api.auth import current_auth
+from app.api.deps import require_store_access
 from app.database.session import get_db
 from app.repositories.channel import ChannelRepository
 from app.repositories.conversation import ConversationRepository
 from app.schemas.conversation import (
     ConversationTakeoverRequest,
     HumanReplyRequest,
+)
+from app.services.auth import (
+    AuthenticatedUser,
+    StoreAccess,
+    resolve_store_access,
 )
 from app.services.conversation import (
     ConversationNotFoundError,
@@ -20,6 +27,51 @@ router = APIRouter(prefix="/api/v1/operations", tags=["operations"])
 conversations = ConversationService()
 conversation_repository = ConversationRepository()
 channel_repository = ChannelRepository()
+
+
+def require_conversation_access(
+    conversation_id: UUID,
+    authenticated: AuthenticatedUser = Depends(current_auth),
+    db: Session = Depends(get_db),
+) -> StoreAccess:
+    conversation = conversation_repository.get(
+        db,
+        conversation_id,
+    )
+
+    if conversation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversa não encontrada.",
+        )
+
+    access = resolve_store_access(
+        db,
+        authenticated.user,
+        conversation.store_id,
+    )
+
+    if access is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Você não tem acesso a esta loja.",
+        )
+
+    return access
+
+
+def require_conversation_write_access(
+    access: StoreAccess = Depends(
+        require_conversation_access,
+    ),
+) -> StoreAccess:
+    if not access.can_write:
+        raise HTTPException(
+            status_code=403,
+            detail="Seu usuário não pode alterar esta loja.",
+        )
+
+    return access
 
 
 def conversation_to_dict(conversation) -> dict:
@@ -51,6 +103,7 @@ def list_conversations(
     store_id: UUID,
     status: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
+    _access: StoreAccess = Depends(require_store_access),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     return [
@@ -69,6 +122,9 @@ def list_conversations(
 def get_conversation(
     conversation_id: UUID,
     db: Session = Depends(get_db),
+    _access: StoreAccess = Depends(
+        require_conversation_access,
+    ),
 ) -> dict:
     conversation = conversation_repository.get(db, conversation_id)
     if conversation is None:
@@ -93,6 +149,9 @@ def get_conversation(
 def take_over(
     conversation_id: UUID,
     payload: ConversationTakeoverRequest,
+    _access: StoreAccess = Depends(
+        require_conversation_write_access,
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
@@ -112,6 +171,9 @@ def take_over(
 def release_to_olivia(
     conversation_id: UUID,
     payload: ConversationTakeoverRequest,
+    _access: StoreAccess = Depends(
+        require_conversation_write_access,
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
@@ -131,6 +193,9 @@ def release_to_olivia(
 def human_reply(
     conversation_id: UUID,
     payload: HumanReplyRequest,
+    _access: StoreAccess = Depends(
+        require_conversation_write_access,
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     conversation = conversation_repository.get(db, conversation_id)

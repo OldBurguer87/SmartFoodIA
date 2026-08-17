@@ -1,5 +1,5 @@
-import { PlatformDashboard } from "@/components/platform-dashboard";
+import { AuthenticatedApp } from "@/components/authenticated-app";
 
 export default function Home() {
-  return <PlatformDashboard />;
+  return <AuthenticatedApp />;
 }

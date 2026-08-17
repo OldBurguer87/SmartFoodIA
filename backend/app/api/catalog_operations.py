@@ -10,7 +10,9 @@ from openpyxl import load_workbook
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_store_access, require_store_write_access
 from app.database.session import get_db
+from app.services.auth import StoreAccess
 from app.models.catalog import (
     Modifier,
     ModifierGroup,
@@ -134,6 +136,7 @@ def active_counts(db: Session, store_id: UUID) -> tuple[int, int, int]:
 @router.get("/{store_id}/catalog")
 def get_catalog_status(
     store_id: UUID,
+    _access: StoreAccess = Depends(require_store_access),
     db: Session = Depends(get_db),
 ) -> dict:
     store = db.get(Store, store_id)
@@ -221,6 +224,7 @@ async def import_consumer_catalog(
     main_file: UploadFile = File(...),
     complements_file: UploadFile | None = File(default=None),
     prodcon_file: UploadFile = File(...),
+    _access: StoreAccess = Depends(require_store_write_access),
     db: Session = Depends(get_db),
 ) -> dict:
     store = db.get(Store, store_id)

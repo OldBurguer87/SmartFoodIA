@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api";
+
 export type CatalogSourceFile = {
   role: "MAIN" | "COMPLEMENTS" | "PRODCON" | string;
   format: "XLSX" | "PRODCON" | string;
@@ -100,7 +102,7 @@ async function apiError(response: Response): Promise<never> {
 export async function getCatalogStatus(
   storeId: string,
 ): Promise<CatalogStatusResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/catalog`,
     {
       cache: "no-store",
@@ -132,7 +134,7 @@ export async function importConsumerCatalog(
 
   form.append("prodcon_file", files.prodconFile);
 
-  const response = await fetch(
+  const response = await apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/catalog/import/consumer`,
     {
       method: "POST",
@@ -166,7 +168,7 @@ export type MenuPdfStatusResponse = {
 export async function getMenuPdfStatus(
   storeId: string,
 ): Promise<MenuPdfStatusResponse> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/menu-pdf`,
     {
       cache: "no-store",
@@ -188,7 +190,7 @@ export async function uploadMenuPdf(
 
   form.append("pdf_file", pdfFile);
 
-  const response = await fetch(
+  const response = await apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/menu-pdf`,
     {
       method: "POST",
@@ -209,7 +211,7 @@ export async function deleteMenuPdf(
   ok: boolean;
   deleted: boolean;
 }> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API}/api/v1/operations/stores/${storeId}/menu-pdf`,
     {
       method: "DELETE",
