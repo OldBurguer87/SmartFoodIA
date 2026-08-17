@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.auth import router as auth_router
 from app.api.commercial_rules import router as commercial_router
+from app.api.operational_dashboard import router as operational_dashboard_router
 from app.core.config import settings
 from app.core.security import hash_password, hash_session_token
 from app.database.base import Base
@@ -42,6 +43,7 @@ def environment():
     app = FastAPI()
     app.include_router(auth_router)
     app.include_router(commercial_router)
+    app.include_router(operational_dashboard_router)
     app.dependency_overrides[get_db] = override_get_db
 
     client = TestClient(
@@ -349,3 +351,76 @@ def test_wrong_password_is_rejected(
     )
 
     assert response.status_code == 401
+
+
+def dashboard_url(store: Store) -> str:
+    return (
+        f"/api/v1/operations/stores/"
+        f"{store.id}/overview"
+    )
+
+
+def test_platform_dashboard_requires_session(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        "/api/v1/operations/overview",
+    )
+
+    assert response.status_code == 401
+
+
+def test_company_user_cannot_access_platform_dashboard(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        "/api/v1/operations/overview",
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_platform_admin_can_access_platform_dashboard(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        "/api/v1/operations/overview",
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["clients_total"] == 2
+
+
+def test_company_a_cannot_access_company_b_dashboard(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        dashboard_url(environment["store_b"]),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_can_access_own_dashboard(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        dashboard_url(environment["store_a"]),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_a"].id
+    )

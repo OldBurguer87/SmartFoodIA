@@ -46,3 +46,16 @@ def require_store_write_access(
         )
 
     return access
+
+def require_platform_admin(
+    authenticated: AuthenticatedUser = Depends(
+        current_auth,
+    ),
+) -> AuthenticatedUser:
+    if not authenticated.user.is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito ao administrador da plataforma.",
+        )
+
+    return authenticated
