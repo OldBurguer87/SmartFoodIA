@@ -390,6 +390,204 @@ export function CommercialRulesPanel({
         ))}
       </div>
 
+      {rules.accepts_pix && (
+        <>
+          <h3 style={{ marginTop: 28 }}>Configuração PIX</h3>
+
+          <p className="muted" style={{ marginBottom: 14 }}>
+            Dados oficiais usados pela Olívia para informar e validar
+            pagamentos PIX desta empresa.
+          </p>
+
+          <div className="miniGrid">
+            <label className="miniValue">
+              <span>Nome do recebedor</span>
+              <input
+                value={rules.pix_receiver_name ?? ""}
+                onChange={(event) =>
+                  setRules({
+                    ...rules,
+                    pix_receiver_name: event.target.value || null,
+                  })
+                }
+                placeholder="Nome oficial do recebedor"
+              />
+            </label>
+
+            <label className="miniValue">
+              <span>CPF/CNPJ do recebedor</span>
+              <input
+                value={rules.pix_receiver_document ?? ""}
+                onChange={(event) =>
+                  setRules({
+                    ...rules,
+                    pix_receiver_document: event.target.value || null,
+                  })
+                }
+                placeholder="Somente números ou formato cadastrado"
+              />
+            </label>
+
+            <label className="miniValue">
+              <span>Chave PIX</span>
+              <input
+                value={rules.pix_key ?? ""}
+                onChange={(event) =>
+                  setRules({
+                    ...rules,
+                    pix_key: event.target.value || null,
+                  })
+                }
+                placeholder="E-mail, telefone, CPF/CNPJ ou chave aleatória"
+              />
+            </label>
+
+            <label className="miniValue">
+              <span>Instituição recebedora</span>
+              <input
+                value={rules.pix_receiver_institution ?? ""}
+                onChange={(event) =>
+                  setRules({
+                    ...rules,
+                    pix_receiver_institution: event.target.value || null,
+                  })
+                }
+                placeholder="Ex.: MERCADO PAGO IP LTDA"
+              />
+            </label>
+
+            <label className="miniValue">
+              <span>Verificação automática de comprovante</span>
+              <input
+                type="checkbox"
+                checked={rules.pix_auto_verify_enabled}
+                onChange={(event) =>
+                  setRules({
+                    ...rules,
+                    pix_auto_verify_enabled: event.target.checked,
+                  })
+                }
+              />
+            </label>
+
+            <label className="miniValue">
+              <span>Validade máxima do comprovante (min)</span>
+              <input
+                type="number"
+                min="1"
+                max="10080"
+                value={rules.pix_receipt_max_age_minutes}
+                onChange={(event) =>
+                  setRules({
+                    ...rules,
+                    pix_receipt_max_age_minutes: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+
+            <label className="miniValue">
+              <span>Tolerância de valor (R$)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                value={rules.pix_amount_tolerance}
+                onChange={(event) =>
+                  setRules({
+                    ...rules,
+                    pix_amount_tolerance: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+        </>
+      )}
+
+      <h3 style={{ marginTop: 28 }}>Pedidos agendados</h3>
+
+      <p className="muted" style={{ marginBottom: 14 }}>
+        Defina como a empresa aceita pedidos programados para outro horário.
+      </p>
+
+      <div className="miniGrid">
+        <label className="miniValue">
+          <span>Aceitar pedidos agendados</span>
+          <input
+            type="checkbox"
+            checked={rules.allow_scheduled_orders}
+            onChange={(event) =>
+              setRules({
+                ...rules,
+                allow_scheduled_orders: event.target.checked,
+              })
+            }
+          />
+        </label>
+
+        <label className="miniValue">
+          <span>Aceitar agendamento com a loja fechada</span>
+          <input
+            type="checkbox"
+            disabled={!rules.allow_scheduled_orders}
+            checked={rules.allow_scheduled_when_closed}
+            onChange={(event) =>
+              setRules({
+                ...rules,
+                allow_scheduled_when_closed: event.target.checked,
+              })
+            }
+          />
+        </label>
+
+        <label className="miniValue">
+          <span>Antecedência mínima (min)</span>
+          <input
+            type="number"
+            min="0"
+            max="10080"
+            disabled={!rules.allow_scheduled_orders}
+            value={rules.scheduled_min_notice_minutes ?? ""}
+            onChange={(event) =>
+              setRules({
+                ...rules,
+                scheduled_min_notice_minutes: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+              })
+            }
+            placeholder="Usar tempo de preparo"
+          />
+        </label>
+
+        <label className="miniValue">
+          <span>Máximo de dias para agendar</span>
+          <input
+            type="number"
+            min="0"
+            max="365"
+            disabled={!rules.allow_scheduled_orders}
+            value={rules.scheduled_max_days_ahead ?? ""}
+            onChange={(event) =>
+              setRules({
+                ...rules,
+                scheduled_max_days_ahead: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+              })
+            }
+            placeholder="Sem limite"
+          />
+        </label>
+      </div>
+
+      <p className="muted" style={{ marginTop: 10 }}>
+        O horário escolhido continua sujeito ao funcionamento da loja,
+        modalidade de entrega ou retirada e tempo médio de preparo.
+      </p>
+
       <h3 style={{ marginTop: 28 }}>Horário de funcionamento</h3>
 
       <div style={{ overflowX: "auto" }}>

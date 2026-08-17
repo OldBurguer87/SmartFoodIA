@@ -9,11 +9,26 @@ export type CommercialRules = {
   delivery_fee_mode: "FIXED" | "ZONE";
   fixed_delivery_fee: number;
   accepts_pix: boolean;
+  pix_receiver_name: string | null;
+  pix_receiver_document: string | null;
+  pix_key: string | null;
+  pix_receiver_institution: string | null;
+  pix_auto_verify_enabled: boolean;
+  pix_receipt_max_age_minutes: number;
+  pix_amount_tolerance: number;
+
   accepts_credit: boolean;
   accepts_debit: boolean;
   accepts_cash: boolean;
   allow_change: boolean;
+
   average_prep_minutes: number | null;
+
+  allow_scheduled_orders: boolean;
+  allow_scheduled_when_closed: boolean;
+  scheduled_min_notice_minutes: number | null;
+  scheduled_max_days_ahead: number | null;
+
   general_notes: string | null;
 };
 
