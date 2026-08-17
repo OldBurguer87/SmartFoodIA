@@ -6,6 +6,7 @@ import { LogoMark, RefreshIcon } from "@/components/icons";
 import { ConversationsConsole } from "@/components/conversations-console";
 import { CommercialRulesPanel } from "@/components/commercial-rules-panel";
 import { CatalogPanel } from "@/components/catalog-panel";
+import { CustomerWalletPanel } from "@/components/customer-wallet-panel";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -122,6 +123,7 @@ export function Dashboard({
           <a className="navItem active" href="#regras-comerciais">Regras comerciais</a>
           <a className="navItem" href="#cardapios">Cardápios</a>
           <a className="navItem" href="#visao-geral">Visão geral</a>
+          <a className="navItem" href="#clientes">Clientes</a>
           <a className="navItem" href="#conversas">Conversas</a>
           <a className="navItem" href="#pedidos">Pedidos</a>
           <a className="navItem" href="#tickets">Tickets</a>
@@ -220,6 +222,8 @@ export function Dashboard({
             <CommercialRulesPanel storeId={storeId} />
 
             <CatalogPanel storeId={storeId} />
+
+            <CustomerWalletPanel storeId={storeId} />
 
             <section className="metricsGrid" id="visao-geral">
               <Metric

@@ -950,3 +950,323 @@ h1 {
     max-width: none;
   }
 }
+
+/* Customer wallet */
+
+.customerWallet {
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.customerWalletHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+
+.customerWalletHeader h2 {
+  margin: 4px 0 7px;
+  font-size: 26px;
+}
+
+.customerWalletHeader p:last-child {
+  margin: 0;
+  color: var(--muted);
+}
+
+.customerWalletCount {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: rgba(36, 76, 54, 0.08);
+  color: var(--green);
+  font-size: 12px;
+}
+
+.customerSearch {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.customerSearch input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--text);
+  outline: none;
+}
+
+.customerSearch input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(36, 76, 54, 0.1);
+}
+
+.customerSearch button {
+  padding: 10px 15px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--green);
+  color: white;
+  font-weight: 800;
+}
+
+.customerSearch button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.customerSearch .secondaryButton {
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--text);
+}
+
+.customerWalletGrid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.5fr);
+  gap: 18px;
+}
+
+.customerList,
+.customerDetail {
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: white;
+}
+
+.customerList {
+  overflow: hidden;
+}
+
+.customerRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: white;
+  color: var(--text);
+  text-align: left;
+}
+
+.customerRow:last-child {
+  border-bottom: 0;
+}
+
+.customerRow:hover,
+.customerRow.selected {
+  background: rgba(36, 76, 54, 0.06);
+}
+
+.customerRow.selected {
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.customerRow > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.customerRow strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customerRow span,
+.customerRow small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.customerRow small {
+  flex: 0 0 auto;
+}
+
+.customerDetail {
+  padding: 20px;
+}
+
+.customerDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.customerDetailHeader > div {
+  min-width: 0;
+}
+
+.customerDetailHeader > div > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.customerDetailHeader h3 {
+  margin: 5px 0;
+  font-size: 23px;
+}
+
+.customerDetailHeader p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.customerStatus {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(36, 76, 54, 0.1);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.customerSection {
+  padding-top: 20px;
+}
+
+.customerSection + .customerSection {
+  margin-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.customerSection h4 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.addressList {
+  display: grid;
+  gap: 10px;
+}
+
+.addressCard {
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--background);
+}
+
+.addressCard > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.addressCard > div span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(36, 76, 54, 0.09);
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.addressCard p {
+  margin: 3px 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.addressCard small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.customerOrders {
+  display: grid;
+  gap: 8px;
+}
+
+.customerOrderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.customerOrderRow > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.customerOrderRow > div:last-child {
+  text-align: right;
+}
+
+.customerOrderRow span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.customerEmpty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  padding: 26px;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .customerWalletGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .customerList,
+  .customerDetail {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .customerWallet {
+    padding: 18px;
+  }
+
+  .customerWalletHeader {
+    flex-direction: column;
+  }
+
+  .customerSearch {
+    flex-direction: column;
+  }
+
+  .customerSearch button {
+    width: 100%;
+  }
+
+  .customerOrderRow {
+    align-items: flex-start;
+  }
+}

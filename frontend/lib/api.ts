@@ -316,3 +316,99 @@ export async function sendHumanReply(conversationId: string, assignedTo: string,
   if (!response.ok) throw new Error((await response.text()) || "Não foi possível enviar a mensagem.");
   return response.json();
 }
+
+
+export type CustomerSummary = {
+  id: string;
+  store_id: string;
+  name: string;
+  phone: string;
+  active: boolean;
+  addresses_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CustomerAddress = {
+  id: string;
+  label: string;
+  street: string;
+  number: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  postal_code: string | null;
+  complement: string | null;
+  reference: string | null;
+  is_default: boolean;
+  active: boolean;
+};
+
+export type CustomerOrder = {
+  id: string;
+  display_id: string;
+  status: string;
+  service_mode: string;
+  payment_method: string;
+  total: number | string;
+  scheduled_for: string | null;
+  created_at: string;
+};
+
+export type CustomerDetail = CustomerSummary & {
+  addresses: CustomerAddress[];
+  orders: CustomerOrder[];
+};
+
+export type CustomerListResponse = {
+  store_id: string;
+  total: number;
+  limit: number;
+  offset: number;
+  customers: CustomerSummary[];
+};
+
+export async function listCustomers(
+  storeId: string,
+  search = "",
+): Promise<CustomerListResponse> {
+  const params = new URLSearchParams({
+    limit: "100",
+    offset: "0",
+  });
+
+  if (search.trim()) {
+    params.set("search", search.trim());
+  }
+
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/stores/${storeId}/customers?${params}`,
+    { cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      "Não foi possível carregar a carteira de clientes.",
+    );
+  }
+
+  return response.json();
+}
+
+export async function getCustomerDetail(
+  storeId: string,
+  customerId: string,
+): Promise<CustomerDetail> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/stores/${storeId}/customers/${customerId}`,
+    { cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      "Não foi possível carregar a ficha do cliente.",
+    );
+  }
+
+  return response.json();
+}
