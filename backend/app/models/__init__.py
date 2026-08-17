@@ -5,6 +5,7 @@ from app.models.catalog import (
     ModifierGroup,
     ModifierGroupItem,
     Product,
+    ProductFamily,
     ProductModifierGroup,
     Store,
 )
@@ -19,16 +20,40 @@ from app.models.conversation import (
     KnowledgeGap,
     Message,
 )
+from app.models.channel import (
+    ChannelAccount,
+    ChannelEvent,
+    OutboundChannelMessage,
+)
+from app.models.commercial import (
+    StoreBusinessHours,
+    StoreCommercialRules,
+    StoreDeliveryZone,
+)
+from app.models.menu import StoreMenuDocument
+from app.models.staff import StoreStaffMember
+from app.models.payment import PaymentReceipt
+from app.models.catalog_version import (
+    CatalogSourceFile,
+    CatalogVersion,
+    StoreCatalogConfig,
+)
+from app.models.auth import AuthSession, CompanyUser, User
+
 
 __all__ = [
     "AIEvent",
+    "AuthSession",
     "Cart",
-    "ChannelAccount",
-    "ChannelEvent",
     "CartItem",
     "CartItemModifier",
+    "CatalogSourceFile",
+    "CatalogVersion",
     "Category",
+    "ChannelAccount",
+    "ChannelEvent",
     "Company",
+    "CompanyUser",
     "Conversation",
     "Customer",
     "CustomerAddress",
@@ -43,10 +68,17 @@ __all__ = [
     "OrderItem",
     "OrderItemModifier",
     "OutboundChannelMessage",
+    "PaymentReceipt",
     "Product",
+    "ProductFamily",
     "ProductModifierGroup",
     "Store",
+    "StoreBusinessHours",
+    "StoreCatalogConfig",
+    "StoreCommercialRules",
+    "StoreDeliveryZone",
     "StoreIntegration",
+    "StoreMenuDocument",
+    "StoreStaffMember",
+    "User",
 ]
-
-from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage

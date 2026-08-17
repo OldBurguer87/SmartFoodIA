@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.api.deps import require_store_access, require_store_write_access
 from app.models.catalog import Store
 from app.models.commercial import StoreBusinessHours, StoreDeliveryZone
 from app.services.commercial_status import CommercialStatusService, normalize_zone_name
@@ -91,14 +92,23 @@ def rules_dict(db: Session, store_id: UUID) -> dict:
 
 
 @router.get("/{store_id}/commercial-rules")
-def get_rules(store_id: UUID, db: Session = Depends(get_db)) -> dict:
+def get_rules(
+    store_id: UUID,
+    db: Session = Depends(get_db),
+    _access=Depends(require_store_access),
+) -> dict:
     if db.get(Store, store_id) is None:
         raise HTTPException(status_code=404, detail="Loja não encontrada.")
     return rules_dict(db, store_id)
 
 
 @router.put("/{store_id}/commercial-rules")
-def update_rules(store_id: UUID, payload: RulesUpdate, db: Session = Depends(get_db)) -> dict:
+def update_rules(
+    store_id: UUID,
+    payload: RulesUpdate,
+    db: Session = Depends(get_db),
+    _access=Depends(require_store_write_access),
+) -> dict:
     rules = service.get_or_create_rules(db, store_id)
     for key, value in payload.model_dump().items():
         setattr(rules, key, value)
@@ -107,7 +117,13 @@ def update_rules(store_id: UUID, payload: RulesUpdate, db: Session = Depends(get
 
 
 @router.put("/{store_id}/commercial-rules/hours/{weekday}")
-def update_hours(store_id: UUID, weekday: int, payload: HoursUpdate, db: Session = Depends(get_db)) -> dict:
+def update_hours(
+    store_id: UUID,
+    weekday: int,
+    payload: HoursUpdate,
+    db: Session = Depends(get_db),
+    _access=Depends(require_store_write_access),
+) -> dict:
     if weekday < 0 or weekday > 6:
         raise HTTPException(status_code=422, detail="Dia da semana deve estar entre 0 e 6.")
     item = db.scalar(select(StoreBusinessHours).where(StoreBusinessHours.store_id == store_id, StoreBusinessHours.weekday == weekday))
@@ -121,7 +137,12 @@ def update_hours(store_id: UUID, weekday: int, payload: HoursUpdate, db: Session
 
 
 @router.post("/{store_id}/commercial-rules/zones")
-def create_zone(store_id: UUID, payload: ZoneCreate, db: Session = Depends(get_db)) -> dict:
+def create_zone(
+    store_id: UUID,
+    payload: ZoneCreate,
+    db: Session = Depends(get_db),
+    _access=Depends(require_store_write_access),
+) -> dict:
     normalized = normalize_zone_name(payload.name)
     item = db.scalar(select(StoreDeliveryZone).where(StoreDeliveryZone.store_id == store_id, StoreDeliveryZone.normalized_name == normalized))
     if item is None:
@@ -137,7 +158,12 @@ def create_zone(store_id: UUID, payload: ZoneCreate, db: Session = Depends(get_d
 
 
 @router.delete("/{store_id}/commercial-rules/zones/{zone_id}")
-def delete_zone(store_id: UUID, zone_id: UUID, db: Session = Depends(get_db)) -> dict:
+def delete_zone(
+    store_id: UUID,
+    zone_id: UUID,
+    db: Session = Depends(get_db),
+    _access=Depends(require_store_write_access),
+) -> dict:
     item = db.scalar(select(StoreDeliveryZone).where(StoreDeliveryZone.id == zone_id, StoreDeliveryZone.store_id == store_id))
     if item is None:
         raise HTTPException(status_code=404, detail="Zona não encontrada.")
