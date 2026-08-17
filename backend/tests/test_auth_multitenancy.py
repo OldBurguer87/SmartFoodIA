@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.auth import router as auth_router
 from app.api.commercial_rules import router as commercial_router
+from app.api.customer_operations import router as customer_operations_router
 from app.api.catalog_operations import router as catalog_operations_router
 from app.api.menu_documents import router as menu_documents_router
 from app.api.operations import router as operations_router
@@ -20,6 +21,7 @@ from app.database.base import Base
 from app.database.session import get_db
 from app.models.auth import AuthSession, CompanyUser, User
 from app.models.catalog import Company, Store
+from app.models.customer import Customer
 from app.models.conversation import (
     Conversation,
     HumanTicket,
@@ -52,6 +54,7 @@ def environment():
     app = FastAPI()
     app.include_router(auth_router)
     app.include_router(commercial_router)
+    app.include_router(customer_operations_router)
     app.include_router(catalog_operations_router)
     app.include_router(menu_documents_router)
     app.include_router(operations_router)
@@ -95,6 +98,23 @@ def environment():
     )
 
     db.add_all([store_a, store_b])
+    db.flush()
+
+    customer_a = Customer(
+        store_id=store_a.id,
+        name="Cliente Empresa A",
+        phone="5597981111111",
+        active=True,
+    )
+
+    customer_b = Customer(
+        store_id=store_b.id,
+        name="Cliente Empresa B",
+        phone="5597982222222",
+        active=True,
+    )
+
+    db.add_all([customer_a, customer_b])
     db.flush()
 
     viewer = User(
@@ -215,6 +235,8 @@ def environment():
         "db": db,
         "store_a": store_a,
         "store_b": store_b,
+        "customer_a": customer_a,
+        "customer_b": customer_b,
         "viewer": viewer,
         "manager": manager,
         "platform_admin": platform_admin,
@@ -717,3 +739,110 @@ def test_company_a_can_list_own_support_resources(
 
     assert gaps.status_code == 200
     assert gaps.json() == []
+
+
+def test_customer_wallet_requires_session(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/customers"
+        ),
+    )
+
+    assert response.status_code == 401
+
+
+def test_company_a_can_list_only_own_customers(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/customers"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+
+    ids = {
+        item["id"]
+        for item in response.json()["customers"]
+    }
+
+    assert str(environment["customer_a"].id) in ids
+    assert str(environment["customer_b"].id) not in ids
+
+
+def test_company_a_cannot_list_company_b_customers(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/customers"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_can_open_own_customer(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/customers/"
+            f"{environment['customer_a'].id}"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(
+        environment["customer_a"].id
+    )
+
+
+def test_company_a_cannot_open_company_b_customer(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/customers/"
+            f"{environment['customer_b'].id}"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_customer_id_from_other_store_is_not_exposed(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/customers/"
+            f"{environment['customer_b'].id}"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 404
