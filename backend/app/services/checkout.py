@@ -70,15 +70,33 @@ class CheckoutService:
         commercial = CommercialStatusService()
         rules = commercial.get_or_create_rules(db, cart.store_id)
 
-        current_status = commercial.current_status(
-            db,
-            cart.store_id,
-            service_mode=cart.service_mode,
-        )
-        if not current_status["open"]:
-            raise CheckoutValidationError(
-                f"Não é possível finalizar agora: {current_status['reason']}"
+        scheduled_for = None
+        release_at = None
+
+        if payload.scheduled_for is None:
+            current_status = commercial.current_status(
+                db,
+                cart.store_id,
+                service_mode=cart.service_mode,
             )
+            if not current_status["open"]:
+                raise CheckoutValidationError(
+                    f"Não é possível finalizar agora: "
+                    f"{current_status['reason']}"
+                )
+        else:
+            try:
+                schedule = commercial.validate_scheduled_time(
+                    db,
+                    cart.store_id,
+                    scheduled_for=payload.scheduled_for,
+                    service_mode=cart.service_mode,
+                )
+            except ValueError as exc:
+                raise CheckoutValidationError(str(exc)) from exc
+
+            scheduled_for = schedule["scheduled_for"]
+            release_at = schedule["release_at"]
 
         minimum_delivery = Decimal(rules.minimum_delivery_subtotal)
 
@@ -138,6 +156,8 @@ class CheckoutService:
             display_id=display_id,
             status="READY_FOR_INTEGRATION",
             service_mode=cart.service_mode,
+            scheduled_for=scheduled_for,
+            release_at=release_at,
             payment_method=payload.payment_method,
             payment_type=payload.payment_type,
             change_for=payload.change_for,
@@ -266,6 +286,7 @@ class CheckoutService:
             display_id=order.display_id,
             status=order.status,
             service_mode=order.service_mode,
+            scheduled_for=order.scheduled_for,
             payment_method=order.payment_method,
             payment_type=order.payment_type,
             change_for=order.change_for,

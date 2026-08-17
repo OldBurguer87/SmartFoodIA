@@ -9,6 +9,7 @@ from app.channels.whatsapp.queue import WhatsAppQueueProcessor
 from app.core.config import settings
 from app.database.session import SessionLocal
 from app.services.handoff_monitor import HumanHandoffMonitor
+from app.services.pix_review_monitor import PixReviewMonitor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,6 +43,7 @@ def main() -> None:
         max_attempts=settings.channel_worker_max_attempts,
     )
     handoff_monitor = HumanHandoffMonitor()
+    pix_review_monitor = PixReviewMonitor()
 
     logger.info("Worker de canais iniciado.")
 
@@ -52,6 +54,10 @@ def main() -> None:
                     db,
                     limit=settings.channel_worker_batch_size,
                 )
+                pix_review = pix_review_monitor.run_once(
+                    db,
+                    limit=settings.channel_worker_batch_size,
+                )
                 result = processor.run_once(
                     db,
                     limit=settings.channel_worker_batch_size,
@@ -59,6 +65,15 @@ def main() -> None:
 
             if handoff.reminded or handoff.resumed or handoff.failed:
                 logger.info("Monitor de atendimento humano: %s", handoff)
+
+            if (
+                pix_review.notified_receipts
+                or pix_review.notified_staff
+            ):
+                logger.info(
+                    "Monitor de revisão PIX: %s",
+                    pix_review,
+                )
 
             processed = (
                 result.events_processed

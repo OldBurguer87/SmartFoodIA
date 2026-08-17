@@ -70,6 +70,21 @@ class ChannelRepository:
             )
         )
 
+    def get_outbound_by_external_message_id(
+        self,
+        db: Session,
+        *,
+        provider: str,
+        external_message_id: str,
+    ) -> OutboundChannelMessage | None:
+        return db.scalar(
+            select(OutboundChannelMessage).where(
+                OutboundChannelMessage.provider == provider,
+                OutboundChannelMessage.external_message_id
+                == external_message_id,
+            )
+        )
+
     def create_event(
         self,
         db: Session,
@@ -132,6 +147,54 @@ class ChannelRepository:
             provider=account.provider,
             recipient=recipient,
             content_type="DOCUMENT",
+            content=content,
+            status="PENDING",
+            attempts=0,
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return message
+
+    def create_media_file_outbound(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        conversation_id: UUID | None,
+        recipient: str,
+        content: str,
+    ) -> OutboundChannelMessage:
+        message = OutboundChannelMessage(
+            channel_account_id=account.id,
+            conversation_id=conversation_id,
+            provider=account.provider,
+            recipient=recipient,
+            content_type="MEDIA_FILE",
+            content=content,
+            status="PENDING",
+            attempts=0,
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return message
+
+    def create_template_outbound(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        conversation_id: UUID | None,
+        recipient: str,
+        content: str,
+    ) -> OutboundChannelMessage:
+        message = OutboundChannelMessage(
+            channel_account_id=account.id,
+            conversation_id=conversation_id,
+            provider=account.provider,
+            recipient=recipient,
+            content_type="TEMPLATE",
             content=content,
             status="PENDING",
             attempts=0,

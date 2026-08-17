@@ -72,8 +72,78 @@ class HumanHandoffMonitor:
                 if wait_event is None:
                     continue
 
+                reason = str(
+                    (wait_event.payload_json or {}).get("reason")
+                    or "solicitação de atendimento"
+                )
+
+                staff_available = self.relay.staff_is_available_now(
+                    db,
+                    store_id=conversation.store_id,
+                    now=current_time,
+                )
+
+                start_event = db.scalar(
+                    select(AIEvent)
+                    .where(
+                        AIEvent.conversation_id == conversation.id,
+                        AIEvent.event_type == "HUMAN_WAIT_STARTED",
+                        AIEvent.created_at >= wait_event.created_at,
+                    )
+                    .order_by(AIEvent.created_at.desc())
+                    .limit(1)
+                )
+
+                pause_event = db.scalar(
+                    select(AIEvent)
+                    .where(
+                        AIEvent.conversation_id == conversation.id,
+                        AIEvent.event_type == "HUMAN_WAIT_PAUSED",
+                        AIEvent.created_at >= wait_event.created_at,
+                    )
+                    .order_by(AIEvent.created_at.desc())
+                    .limit(1)
+                )
+
+                active_start = (
+                    start_event is not None
+                    and (
+                        pause_event is None
+                        or start_event.created_at > pause_event.created_at
+                    )
+                )
+
+                if not staff_available:
+                    if active_start:
+                        db.add(
+                            AIEvent(
+                                store_id=conversation.store_id,
+                                conversation_id=conversation.id,
+                                event_type="HUMAN_WAIT_PAUSED",
+                                success=True,
+                                payload_json={
+                                    "wait_event_id": str(wait_event.id),
+                                    "start_event_id": str(start_event.id),
+                                    "reason": reason,
+                                },
+                            )
+                        )
+                        db.commit()
+                    continue
+
+                if not active_start:
+                    self.relay.notify_waiting(
+                        db,
+                        store_id=conversation.store_id,
+                        conversation_id=conversation.id,
+                        reason=reason,
+                        reminder=False,
+                        now=current_time,
+                    )
+                    continue
+
                 age_seconds = (
-                    current_time - wait_event.created_at
+                    current_time - start_event.created_at
                 ).total_seconds()
 
                 if age_seconds >= settings.human_wait_timeout_seconds:
@@ -91,7 +161,7 @@ class HumanHandoffMonitor:
                         .where(
                             AIEvent.conversation_id == conversation.id,
                             AIEvent.event_type == "HUMAN_WAITING_REMINDER",
-                            AIEvent.created_at >= wait_event.created_at,
+                            AIEvent.created_at >= start_event.created_at,
                         )
                         .limit(1)
                     )
@@ -107,6 +177,7 @@ class HumanHandoffMonitor:
                             conversation_id=conversation.id,
                             reason=reason,
                             reminder=True,
+                            now=current_time,
                         )
 
                         db.add(

@@ -21,6 +21,30 @@ class StoreCommercialRules(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     delivery_fee_mode: Mapped[str] = mapped_column(String(20), default="FIXED", nullable=False)
     fixed_delivery_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
     accepts_pix: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Dados oficiais usados para validar comprovantes PIX.
+    pix_receiver_name: Mapped[str | None] = mapped_column(String(180))
+    pix_receiver_document: Mapped[str | None] = mapped_column(String(40))
+    pix_key: Mapped[str | None] = mapped_column(String(200))
+    pix_receiver_institution: Mapped[str | None] = mapped_column(String(180))
+
+    pix_auto_verify_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    pix_receipt_max_age_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=360,
+        nullable=False,
+    )
+
+    pix_amount_tolerance: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        default=Decimal("0.01"),
+        nullable=False,
+    )
     accepts_credit: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     accepts_debit: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     accepts_cash: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

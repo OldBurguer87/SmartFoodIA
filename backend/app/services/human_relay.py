@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from uuid import UUID
 
 from sqlalchemy import select
@@ -9,7 +10,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.catalog import Store
 from app.models.channel import ChannelAccount
-from app.models.conversation import Conversation, HumanTicket
+from app.models.commercial import StoreBusinessHours
+from app.models.conversation import AIEvent, Conversation, HumanTicket
 from app.models.order import Order
 from app.schemas.conversation import MessageCreate
 from app.models.staff import StoreStaffMember
@@ -17,6 +19,7 @@ from app.repositories.channel import ChannelRepository
 from app.repositories.conversation import ConversationRepository
 from app.repositories.staff import StaffRepository
 from app.services.conversation import ConversationService
+from app.services.pix_receipt_review import PixReceiptReviewService
 
 
 def normalize_phone(value: str) -> str:
@@ -38,6 +41,7 @@ class HumanRelayService:
         self.channels = ChannelRepository()
         self.conversations = ConversationService()
         self.conversation_repository = ConversationRepository()
+        self.pix_review = PixReceiptReviewService()
 
     @staticmethod
     def conversation_code(conversation: Conversation) -> str:
@@ -220,6 +224,67 @@ class HumanRelayService:
 
         return "\n".join(lines)
 
+    def staff_is_available_now(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        now: datetime | None = None,
+    ) -> bool:
+        """Disponibilidade operacional da equipe pelo horário da loja."""
+        store = db.get(Store, store_id)
+        if store is None:
+            return False
+
+        local_tz = ZoneInfo(store.timezone)
+        current = now or datetime.now(timezone.utc)
+
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+
+        local_now = current.astimezone(local_tz)
+        local_time = local_now.time().replace(tzinfo=None)
+        weekday = local_now.weekday()
+
+        today = db.scalar(
+            select(StoreBusinessHours).where(
+                StoreBusinessHours.store_id == store_id,
+                StoreBusinessHours.weekday == weekday,
+            )
+        )
+
+        if (
+            today is not None
+            and not today.closed
+            and today.open_time is not None
+            and today.close_time is not None
+        ):
+            if today.open_time <= today.close_time:
+                if today.open_time <= local_time <= today.close_time:
+                    return True
+            elif local_time >= today.open_time:
+                return True
+
+        # Trata expediente que atravessa a meia-noite.
+        previous = db.scalar(
+            select(StoreBusinessHours).where(
+                StoreBusinessHours.store_id == store_id,
+                StoreBusinessHours.weekday == ((weekday - 1) % 7),
+            )
+        )
+
+        if (
+            previous is not None
+            and not previous.closed
+            and previous.open_time is not None
+            and previous.close_time is not None
+            and previous.open_time > previous.close_time
+            and local_time <= previous.close_time
+        ):
+            return True
+
+        return False
+
     def notify_waiting(
         self,
         db: Session,
@@ -228,6 +293,7 @@ class HumanRelayService:
         conversation_id: UUID,
         reason: str,
         reminder: bool = False,
+        now: datetime | None = None,
     ) -> int:
         conversation = self.conversation_repository.get(db, conversation_id)
         store = db.get(Store, store_id)
@@ -238,6 +304,13 @@ class HumanRelayService:
         )
 
         if conversation is None or store is None or account is None:
+            return 0
+
+        if not self.staff_is_available_now(
+            db,
+            store_id=store_id,
+            now=now,
+        ):
             return 0
 
         members = self.staff.list_notifiable(db, store_id=store_id)
@@ -287,7 +360,7 @@ class HumanRelayService:
                 f"para atender esse cliente pelo WhatsApp."
             )
 
-        now = datetime.now(timezone.utc)
+        current_time = now or datetime.now(timezone.utc)
 
         for member in members:
             self.channels.create_outbound(
@@ -297,7 +370,63 @@ class HumanRelayService:
                 recipient=member.phone,
                 content=message,
             )
-            member.last_notified_at = now
+            member.last_notified_at = current_time
+
+        if not reminder:
+            wait_event = db.scalar(
+                select(AIEvent)
+                .where(
+                    AIEvent.conversation_id == conversation_id,
+                    AIEvent.event_type == "HUMAN_WAITING",
+                )
+                .order_by(AIEvent.created_at.desc())
+                .limit(1)
+            )
+
+            if wait_event is not None:
+                last_start = db.scalar(
+                    select(AIEvent)
+                    .where(
+                        AIEvent.conversation_id == conversation_id,
+                        AIEvent.event_type == "HUMAN_WAIT_STARTED",
+                        AIEvent.created_at >= wait_event.created_at,
+                    )
+                    .order_by(AIEvent.created_at.desc())
+                    .limit(1)
+                )
+
+                last_pause = db.scalar(
+                    select(AIEvent)
+                    .where(
+                        AIEvent.conversation_id == conversation_id,
+                        AIEvent.event_type == "HUMAN_WAIT_PAUSED",
+                        AIEvent.created_at >= wait_event.created_at,
+                    )
+                    .order_by(AIEvent.created_at.desc())
+                    .limit(1)
+                )
+
+                needs_start = (
+                    last_start is None
+                    or (
+                        last_pause is not None
+                        and last_pause.created_at >= last_start.created_at
+                    )
+                )
+
+                if needs_start:
+                    db.add(
+                        AIEvent(
+                            store_id=store_id,
+                            conversation_id=conversation_id,
+                            event_type="HUMAN_WAIT_STARTED",
+                            success=True,
+                            payload_json={
+                                "wait_event_id": str(wait_event.id),
+                                "notified": len(members),
+                            },
+                        )
+                    )
 
         db.commit()
         return len(members)
@@ -318,6 +447,12 @@ class HumanRelayService:
         )
 
         if conversation is None or store is None or account is None:
+            return 0
+
+        if not self.staff_is_available_now(
+            db,
+            store_id=store_id,
+        ):
             return 0
 
         members = self.staff.list_notifiable(db, store_id=store_id)
@@ -732,6 +867,73 @@ class HumanRelayService:
         text = body.strip()
         upper = text.upper()
 
+        open_pix_match = re.fullmatch(
+            r"PIX_REVIEW_OPEN:#?([0-9]{1,10})",
+            upper,
+        )
+
+        if open_pix_match:
+            error = self.pix_review.open_review(
+                db,
+                account=account,
+                staff=staff,
+                display_id=open_pix_match.group(1),
+            )
+
+            if error:
+                self._send_internal(
+                    db,
+                    account=account,
+                    staff=staff,
+                    content=error,
+                )
+
+            return
+
+        confirm_pix_match = re.fullmatch(
+            r"CONFIRMAR\s+PIX\s+#?([0-9]{1,10})",
+            upper,
+        )
+
+        if confirm_pix_match:
+            result = self.pix_review.confirm(
+                db,
+                account=account,
+                staff=staff,
+                display_id=confirm_pix_match.group(1),
+            )
+
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=result,
+            )
+            return
+
+        reject_pix_match = re.match(
+            r"^RECUSAR\s+PIX\s+#?([0-9]{1,10})(?:\s+(.+))?$",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        if reject_pix_match:
+            result = self.pix_review.reject(
+                db,
+                account=account,
+                staff=staff,
+                display_id=reject_pix_match.group(1),
+                reason=reject_pix_match.group(2),
+            )
+
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=result,
+            )
+            return
+
         assume_match = re.fullmatch(
             r"ASSUMIR(?:\s+([0-9]{3,15}))?",
             upper,
@@ -787,7 +989,9 @@ class HumanRelayService:
                     "ASSUMIR código — assumir um cliente\n"
                     "STATUS — ver cliente atual\n"
                     "RESOLVER solução — resolver o chamado e devolver para a Olívia\n"
-                    "DEVOLVER — devolver sem marcar o chamado como resolvido\n\n"
+                    "DEVOLVER — devolver sem marcar o chamado como resolvido\n"
+                    "CONFIRMAR PIX pedido — confirmar comprovante pendente\n"
+                    "RECUSAR PIX pedido — solicitar novo comprovante\n\n"
                     "Com atendimento ativo, qualquer outra mensagem "
                     "é enviada diretamente ao cliente."
                 ),

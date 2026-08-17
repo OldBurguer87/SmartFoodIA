@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     whatsapp_app_secret_previous: str | None = None
     whatsapp_graph_api_version: str = "v23.0"
     whatsapp_timeout_seconds: float = 30.0
+    payment_receipt_storage_path: str = "/data/receipts"
+    payment_receipt_max_bytes: int = 10_485_760
+    pix_receipt_min_ai_confidence: float = 0.90
     channel_worker_poll_seconds: float = 2.0
     channel_worker_batch_size: int = 50
     channel_worker_max_attempts: int = 5

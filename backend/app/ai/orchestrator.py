@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from copy import deepcopy
 from datetime import datetime
@@ -15,6 +16,7 @@ from app.ai.tools.context import ToolContext
 from app.ai.tools.registry import OliviaToolRegistry
 from app.core.config import settings
 from app.models.catalog import Store
+from app.models.commercial import StoreCommercialRules
 from app.models.menu import StoreMenuDocument
 from app.models.order import Order
 from app.repositories.conversation import ConversationRepository
@@ -145,16 +147,74 @@ def _menu_pdf_context(db: Session, *, store_id: UUID) -> str:
     )
 
 
+def _local_greeting() -> str:
+    now = datetime.now(ZoneInfo("America/Manaus"))
+
+    if 5 <= now.hour < 12:
+        return "Bom dia"
+
+    if 12 <= now.hour < 18:
+        return "Boa tarde"
+
+    return "Boa noite"
+
+
+def _customer_greeted(message: str) -> bool:
+    value = message.strip().lower()
+
+    return bool(
+        re.match(
+            r"^(oi\b|ol[aá]\b|opa\b|bom dia\b|boa tarde\b|boa noite\b)",
+            value,
+        )
+    )
+
+
+def _should_force_greeting(
+    *,
+    history,
+    customer_message: str,
+) -> bool:
+    customer_messages = sum(
+        1
+        for message in history
+        if message.sender_type == "CUSTOMER"
+    )
+
+    # Primeira mensagem da conversa ou cliente cumprimentou.
+    return (
+        customer_messages <= 1
+        or _customer_greeted(customer_message)
+    )
+
+
+def _ensure_local_greeting(text: str) -> str:
+    greeting = _local_greeting()
+    result = text.strip()
+
+    if result.lower().startswith(greeting.lower()):
+        return result
+
+    # Se o modelo usou uma saudação de período errada,
+    # remove antes de colocar a correta.
+    result = re.sub(
+        r"^(bom dia|boa tarde|boa noite)\b[!,.:\-\s]*",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    if not result:
+        return f"{greeting}!"
+
+    return f"{greeting}! {result}"
+
+
 def _local_time_context() -> str:
     """Informa à Olívia a hora local de Coari/AM e a saudação adequada."""
     now = datetime.now(ZoneInfo("America/Manaus"))
 
-    if 5 <= now.hour < 12:
-        greeting = "Bom dia"
-    elif 12 <= now.hour < 18:
-        greeting = "Boa tarde"
-    else:
-        greeting = "Boa noite"
+    greeting = _local_greeting()
 
     return (
         "CONTEXTO LOCAL DA OLD BURGUER 87: "
@@ -163,6 +223,168 @@ def _local_time_context() -> str:
         "Use essa saudação somente quando for natural, principalmente no início "
         "da conversa ou quando o cliente cumprimentar. Não repita a saudação "
         "desnecessariamente em todas as mensagens."
+    )
+
+
+def _format_brl(value) -> str:
+    try:
+        formatted = f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "valor do pedido"
+
+    formatted = (
+        formatted
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+    return f"R$ {formatted}"
+
+
+def _pix_payment_instructions(
+    db: Session,
+    *,
+    store_id: UUID,
+    order_data: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    rules = db.scalar(
+        select(StoreCommercialRules).where(
+            StoreCommercialRules.store_id == store_id
+        )
+    )
+
+    if (
+        rules is None
+        or not rules.pix_key
+        or not rules.pix_receiver_name
+    ):
+        return None, None
+
+    lines = [
+        "Para pagar via PIX:",
+        f"Chave PIX: {rules.pix_key}",
+        f"Recebedor: {rules.pix_receiver_name}",
+    ]
+
+    if rules.pix_receiver_institution:
+        lines.append(
+            f"Instituição: {rules.pix_receiver_institution}"
+        )
+
+    total = order_data.get("total")
+
+    if total is not None:
+        lines.append(
+            f"Valor: {_format_brl(total)}"
+        )
+
+    lines.extend(
+        [
+            "",
+            "Depois de pagar, envie o comprovante aqui no "
+            "WhatsApp para eu conferir. 😊",
+        ]
+    )
+
+    return "\n".join(lines), str(rules.pix_key)
+
+
+def _ensure_pix_payment_instructions(
+    text: str,
+    *,
+    instructions: str,
+    pix_key: str,
+) -> str:
+    result = text.strip()
+    lower = result.lower()
+
+    key_present = pix_key.lower() in lower
+    receipt_requested = "comprovante" in lower
+
+    if key_present and receipt_requested:
+        return result
+
+    if key_present:
+        return (
+            result
+            + "\n\n"
+            + "Depois de pagar, envie o comprovante aqui no "
+            "WhatsApp para eu conferir. 😊"
+        )
+
+    return result + "\n\n" + instructions
+
+
+def _normalize_confirmation_text(value: str) -> str:
+    value = value.strip().lower()
+    value = re.sub(r"[^\w\sáàâãéêíóôõúç]", " ", value)
+    return " ".join(value.split())
+
+
+def _customer_confirms_order(value: str) -> bool:
+    normalized = _normalize_confirmation_text(value)
+
+    exact = {
+        "sim",
+        "sim pode",
+        "pode",
+        "confirmo",
+        "confirmar",
+        "pode confirmar",
+        "pode confirmar sim",
+        "sim confirma",
+        "sim confirmar",
+        "isso",
+        "isso mesmo",
+        "correto",
+        "pode fechar",
+        "fechar pedido",
+        "pode finalizar",
+    }
+
+    return normalized in exact
+
+
+def _assistant_was_asking_order_confirmation(history) -> bool:
+    last_assistant = None
+
+    for message in reversed(history):
+        if message.sender_type == "OLIVIA":
+            last_assistant = message.content
+            break
+
+    if not last_assistant:
+        return False
+
+    normalized = _normalize_confirmation_text(
+        last_assistant
+    )
+
+    confirmation_phrases = (
+        "pode confirmar o pedido",
+        "posso confirmar o pedido",
+        "confirma o pedido",
+        "confirmar o pedido assim",
+        "pode confirmar assim",
+        "pode finalizar o pedido",
+        "posso finalizar o pedido",
+    )
+
+    return any(
+        phrase in normalized
+        for phrase in confirmation_phrases
+    )
+
+
+def _checkout_required_by_customer(
+    *,
+    history,
+    customer_message: str,
+) -> bool:
+    return (
+        _customer_confirms_order(customer_message)
+        and _assistant_was_asking_order_confirmation(history)
     )
 
 
@@ -263,6 +485,17 @@ class OliviaOrchestrator:
             )
 
         history = self.repository.list_messages(db, conversation_id, limit=30)
+
+        checkout_required = _checkout_required_by_customer(
+            history=history,
+            customer_message=customer_message,
+        )
+
+        force_greeting = _should_force_greeting(
+            history=history,
+            customer_message=customer_message,
+        )
+
         input_items = [
             {
                 "role": "user" if message.sender_type == "CUSTOMER" else "assistant",
@@ -296,6 +529,19 @@ class OliviaOrchestrator:
         if extra_instructions:
             instructions += "\n\n" + extra_instructions
 
+        if checkout_required:
+            instructions += (
+                "\n\nCONTROLE TRANSACIONAL OBRIGATÓRIO: "
+                "o cliente acabou de confirmar explicitamente o resumo final "
+                "do pedido. Você DEVE executar checkout_cart antes de dizer "
+                "que o pedido foi confirmado, antes de informar número de "
+                "pedido e antes de agradecer como se a compra estivesse "
+                "registrada. O número do pedido só pode vir do resultado "
+                "bem-sucedido de checkout_cart. Nunca invente ou estime "
+                "display_id."
+            )
+
+
         blocked_tools = excluded_tools or set()
         available_tools = [
             tool
@@ -304,6 +550,12 @@ class OliviaOrchestrator:
         ]
 
         previous_response_id = None
+
+        pix_checkout_instructions: str | None = None
+        pix_checkout_key: str | None = None
+
+        checkout_succeeded_this_reply = False
+        checkout_retry_forced = False
 
         for round_number in range(1, settings.olivia_max_tool_rounds + 1):
             started = time.perf_counter()
@@ -343,6 +595,28 @@ class OliviaOrchestrator:
                             "requires_human": result.requires_human,
                         }
                         success = result.ok
+
+                        if (
+                            call.name == "checkout_cart"
+                            and result.ok
+                        ):
+                            checkout_succeeded_this_reply = True
+
+                        if (
+                            call.name == "checkout_cart"
+                            and result.ok
+                            and isinstance(result.data, dict)
+                            and result.data.get("payment_method") == "PIX"
+                        ):
+                            (
+                                pix_checkout_instructions,
+                                pix_checkout_key,
+                            ) = _pix_payment_instructions(
+                                db,
+                                store_id=store_id,
+                                order_data=result.data,
+                            )
+
                     except Exception as error:
                         payload = {
                             "ok": False,
@@ -384,16 +658,68 @@ class OliviaOrchestrator:
                 continue
 
             if response.text:
+                if (
+                    checkout_required
+                    and not checkout_succeeded_this_reply
+                ):
+                    if (
+                        not checkout_retry_forced
+                        and round_number
+                        < settings.olivia_max_tool_rounds
+                    ):
+                        checkout_retry_forced = True
+
+                        input_items = [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "CONTROLE INTERNO: você tentou responder "
+                                    "sem registrar o pedido. Não envie texto "
+                                    "ao cliente ainda. Execute checkout_cart "
+                                    "agora usando os dados já confirmados. "
+                                    "Somente após resultado ok=true você pode "
+                                    "informar que o pedido foi confirmado e "
+                                    "usar o display_id devolvido pela ferramenta."
+                                ),
+                            }
+                        ]
+                        continue
+
+                    final_text = (
+                        "Não consegui registrar seu pedido no sistema ainda. "
+                        "Ele não foi confirmado. Vou precisar tentar a "
+                        "finalização novamente antes de te passar um número "
+                        "de pedido."
+                    )
+                else:
+                    final_text = response.text.strip()
+
+                if force_greeting:
+                    final_text = _ensure_local_greeting(
+                        final_text
+                    )
+
+                if (
+                    pix_checkout_instructions
+                    and pix_checkout_key
+                ):
+                    final_text = _ensure_pix_payment_instructions(
+                        final_text,
+                        instructions=pix_checkout_instructions,
+                        pix_key=pix_checkout_key,
+                    )
+
                 self.conversations.add_message(
                     db,
                     conversation_id=conversation_id,
                     payload=MessageCreate(
                         direction="OUTBOUND",
                         sender_type="OLIVIA",
-                        content=response.text,
+                        content=final_text,
                     ),
                 )
-                return response.text
+
+                return final_text
 
             raise OliviaExecutionError(
                 "O provedor não retornou texto nem chamada de ferramenta."

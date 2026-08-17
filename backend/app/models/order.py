@@ -1,7 +1,8 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -48,6 +49,16 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     address_complement: Mapped[str | None] = mapped_column(String(180))
     address_reference: Mapped[str | None] = mapped_column(String(240))
     consumer_order_id: Mapped[str | None] = mapped_column(String(80))
+
+    # Horário prometido ao cliente em pedidos agendados.
+    scheduled_for: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+
+    # Momento a partir do qual o Consumer pode receber o pedido.
+    release_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
 
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order",

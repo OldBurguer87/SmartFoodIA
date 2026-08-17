@@ -29,7 +29,7 @@ class WhatsAppQueueProcessor:
     def run_once(self, db: Session, *, limit:int=50) -> QueueRunResult:
         now=datetime.now(timezone.utc)
         ep=er=ed=osent=orr=od=0
-        gateway=WhatsAppGatewayService(repository=self.repository, orchestrator_factory=self.orchestrator_factory, client_factory=None)
+        gateway=WhatsAppGatewayService(repository=self.repository, orchestrator_factory=self.orchestrator_factory, client_factory=self.client_factory)
         for event in self.repository.list_due_events(db, now=now, limit=limit):
             account=self.repository.get_account(db,event.channel_account_id)
             try:
@@ -57,9 +57,42 @@ class WhatsAppQueueProcessor:
                             filename=document["filename"],
                             caption=document.get("caption"),
                         )
+
+                    elif msg.content_type == "MEDIA_FILE":
+                        media = json.loads(msg.content)
+
+                        media_id = client.upload_media(
+                            phone_number_id=account.external_account_id,
+                            file_path=media["path"],
+                            mime_type=media["mime_type"],
+                            filename=media["filename"],
+                        )
+
+                        msg.external_message_id = client.send_media_by_id(
+                            phone_number_id=account.external_account_id,
+                            recipient=msg.recipient,
+                            media_id=media_id,
+                            media_type=media["media_type"],
+                            filename=media.get("filename"),
+                            caption=media.get("caption"),
+                        )
+
+                    elif msg.content_type == "TEMPLATE":
+                        template = json.loads(msg.content)
+
+                        msg.external_message_id = client.send_template(
+                            phone_number_id=account.external_account_id,
+                            recipient=msg.recipient,
+                            template=template,
+                        )
+
                     else:
-                        msg.external_message_id=client.send_text(phone_number_id=account.external_account_id,recipient=msg.recipient,text=msg.content)
-                    msg.status='SENT';msg.sent_at=now;msg.error_message=None;osent+=1
+                        msg.external_message_id=client.send_text(
+                            phone_number_id=account.external_account_id,
+                            recipient=msg.recipient,
+                            text=msg.content,
+                        )
+                    msg.status='SENT_TO_META';msg.sent_at=now;msg.error_message=None;osent+=1
                 except Exception as exc:
                     msg.error_message=str(exc)
                     if msg.attempts >= self.max_attempts:

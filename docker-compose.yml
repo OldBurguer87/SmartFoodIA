@@ -68,3 +68,4 @@ services:
 
 volumes:
   smartfoodia_pgdata:
+  smartfoodia_receipts:

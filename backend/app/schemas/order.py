@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -16,6 +17,8 @@ class CheckoutRequest(BaseModel):
     change_for: Decimal | None = Field(default=None, ge=0)
     delivery_fee: Decimal = Field(default=Decimal("0.00"), ge=0)
     discount: Decimal = Field(default=Decimal("0.00"), ge=0)
+
+    scheduled_for: datetime | None = None
 
     @model_validator(mode="after")
     def validate_cash(self):
@@ -60,6 +63,7 @@ class OrderRead(BaseModel):
     display_id: str
     status: str
     service_mode: str
+    scheduled_for: datetime | None = None
     payment_method: str
     payment_type: str
     change_for: Decimal | None

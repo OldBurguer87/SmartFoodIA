@@ -30,6 +30,37 @@ class CommercialContextService:
         if rules.accepts_cash:
             payments.append("CASH")
 
+        pix_context = ""
+
+        if rules.accepts_pix:
+            if rules.pix_key and rules.pix_receiver_name:
+                pix_parts = [
+                    f"chave PIX={rules.pix_key}",
+                    f"recebedor={rules.pix_receiver_name}",
+                ]
+
+                if rules.pix_receiver_institution:
+                    pix_parts.append(
+                        f"instituição={rules.pix_receiver_institution}"
+                    )
+
+                pix_context = (
+                    " DADOS OFICIAIS PARA RECEBIMENTO PIX: "
+                    + "; ".join(pix_parts)
+                    + ". Quando o cliente escolher PIX ou pedir a chave, "
+                    "informe estes dados diretamente. "
+                    "Não solicite atendimento humano para fornecer a chave PIX. "
+                    "Não pergunte se o cliente quer a chave: quando o pagamento "
+                    "for PIX, envie-a diretamente. "
+                    "Após o pedido PIX ser confirmado, solicite que o cliente "
+                    "envie o comprovante pelo próprio WhatsApp."
+                )
+            else:
+                pix_context = (
+                    " PIX está habilitado, mas os dados de recebimento "
+                    "não estão completos; nesse caso não invente dados."
+                )
+
         hours_text = "não cadastrado"
         if hours:
             parts = []
@@ -57,7 +88,7 @@ class CommercialContextService:
             "REGRAS COMERCIAIS DA LOJA %s. "
             "Situação atual: %s. Motivo: %s. "
             "Delivery: %s. Retirada: %s. Pedido mínimo delivery: R$ %.2f. %s. "
-            "Pagamentos: %s. Troco: %s. Tempo médio: %s min. Horários: %s. Observações: %s. "
+            "Pagamentos: %s. Troco: %s. Tempo médio: %s min. Horários: %s. Observações: %s.%s "
             "Consulte estas regras antes de iniciar e novamente antes de finalizar pedido. Não invente exceções."
         ) % (
             store.name,
@@ -72,4 +103,5 @@ class CommercialContextService:
             rules.average_prep_minutes or "não cadastrado",
             hours_text,
             rules.general_notes or "nenhuma",
+            pix_context,
         )

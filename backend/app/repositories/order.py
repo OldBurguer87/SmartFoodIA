@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.order import Order, OrderEvent, OrderItem
@@ -65,6 +65,10 @@ class OrderRepository:
             .where(
                 OrderEvent.status == "PENDING",
                 Order.store_id == store_id,
+                or_(
+                    Order.release_at.is_(None),
+                    Order.release_at <= func.now(),
+                ),
             )
             .order_by(OrderEvent.created_at)
             .limit(limit)

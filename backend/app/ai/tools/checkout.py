@@ -15,6 +15,11 @@ def order_to_dict(order) -> dict[str, Any]:
         "display_id": order.display_id,
         "status": order.status,
         "service_mode": order.service_mode,
+        "scheduled_for": (
+            order.scheduled_for.isoformat()
+            if order.scheduled_for is not None
+            else None
+        ),
         "payment_method": order.payment_method,
         "payment_type": order.payment_type,
         "change_for": float(order.change_for) if order.change_for is not None else None,
@@ -89,6 +94,14 @@ class CheckoutCartTool:
                 "change_for": {"type": ["number", "null"], "minimum": 0},
                 "delivery_fee": {"type": "number", "minimum": 0},
                 "discount": {"type": "number", "minimum": 0},
+                "scheduled_for": {
+                    "type": ["string", "null"],
+                    "format": "date-time",
+                    "description": (
+                        "Data e hora agendada em ISO 8601. "
+                        "Use null para pedido imediato."
+                    ),
+                },
                 "customer_confirmed": {"type": "boolean"},
             },
             "required": [
@@ -115,6 +128,7 @@ class CheckoutCartTool:
         change_for: float | None = None,
         delivery_fee: float = 0,
         discount: float = 0,
+        scheduled_for: str | None = None,
         **_: Any,
     ) -> ToolResult:
         if not customer_confirmed:
@@ -134,6 +148,7 @@ class CheckoutCartTool:
                     change_for=change_for,
                     delivery_fee=delivery_fee,
                     discount=discount,
+                    scheduled_for=scheduled_for,
                 ),
             )
         except CheckoutValidationError as error:

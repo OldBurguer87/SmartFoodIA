@@ -13,6 +13,7 @@ from app.repositories.channel import ChannelRepository
 from app.schemas.conversation import ConversationCreate, MessageCreate
 from app.services.conversation import ConversationService
 from app.services.human_relay import HumanRelayService
+from app.services.pix_receipt import PixReceiptService
 
 
 class WhatsAppWebhookError(ValueError):
@@ -77,6 +78,7 @@ class WhatsAppGatewayService:
         self.client_factory = client_factory
         self.process_inline = process_inline
         self.human_relay = HumanRelayService()
+        self.pix_receipts = PixReceiptService()
 
     def process_payload(self, db: Session, payload: dict[str, Any]) -> WebhookProcessingResult:
         received = processed = duplicated = ignored = failed = 0
@@ -101,7 +103,11 @@ class WhatsAppGatewayService:
 
                 for status in value.get("statuses", []) or []:
                     received += 1
-                    event_id = f"status:{status.get('id')}:{status.get('status')}"
+                    event_id = (
+                        f"status:{status.get('id')}:"
+                        f"{status.get('status')}"
+                    )
+
                     if self.repository.get_event(
                         db,
                         provider=account.provider,
@@ -109,6 +115,7 @@ class WhatsAppGatewayService:
                     ):
                         duplicated += 1
                         continue
+
                     event = self.repository.create_event(
                         db,
                         account=account,
@@ -116,9 +123,36 @@ class WhatsAppGatewayService:
                         event_type="MESSAGE_STATUS",
                         payload=status,
                     )
-                    event.status = "PROCESSED"
+
+                    event.status = "RECEIVED"
+                    event.next_attempt_at = None
                     db.commit()
-                    processed += 1
+
+                    if not self.process_inline:
+                        processed += 1
+                        continue
+
+                    try:
+                        self.process_event(
+                            db,
+                            account,
+                            event,
+                        )
+                        event.attempts += 1
+
+                        if event.status == "IGNORED":
+                            ignored += 1
+                        else:
+                            event.status = "PROCESSED"
+                            processed += 1
+
+                    except Exception as error:
+                        event.status = "FAILED"
+                        event.attempts += 1
+                        event.error_message = str(error)
+                        failed += 1
+
+                    db.commit()
 
                 for message in value.get("messages", []) or []:
                     received += 1
@@ -177,11 +211,144 @@ class WhatsAppGatewayService:
             failed=failed,
         )
 
-    def process_event(self, db: Session, account: ChannelAccount, event: ChannelEvent) -> None:
+    def process_event(
+        self,
+        db: Session,
+        account: ChannelAccount,
+        event: ChannelEvent,
+    ) -> None:
+        if event.event_type == "MESSAGE_STATUS":
+            self._process_message_status(
+                db,
+                account,
+                event,
+                event.payload_json,
+            )
+            return
+
         if event.event_type != "INBOUND_MESSAGE":
             event.status = "IGNORED"
             return
-        self._process_message(db, account, event, event.payload_json)
+
+        self._process_message(
+            db,
+            account,
+            event,
+            event.payload_json,
+        )
+
+    def _process_message_status(
+        self,
+        db: Session,
+        account: ChannelAccount,
+        event: ChannelEvent,
+        status: dict[str, Any],
+    ) -> None:
+        external_message_id = str(
+            status.get("id") or ""
+        ).strip()
+
+        if not external_message_id:
+            raise WhatsAppWebhookError(
+                "MESSAGE_STATUS sem ID da mensagem."
+            )
+
+        outbound = (
+            self.repository
+            .get_outbound_by_external_message_id(
+                db,
+                provider=account.provider,
+                external_message_id=external_message_id,
+            )
+        )
+
+        if outbound is None:
+            event.status = "IGNORED"
+            event.error_message = (
+                "Mensagem de saída não localizada para "
+                f"external_message_id={external_message_id}"
+            )
+            return
+
+        meta_status = str(
+            status.get("status") or ""
+        ).strip().lower()
+
+        status_map = {
+            "sent": "SENT_TO_META",
+            "delivered": "DELIVERED",
+            "read": "READ",
+            "failed": "FAILED",
+        }
+
+        target_status = status_map.get(meta_status)
+
+        if target_status is None:
+            event.status = "IGNORED"
+            event.error_message = (
+                f"Status WhatsApp não tratado: {meta_status!r}"
+            )
+            return
+
+        # Evita regressão caso webhooks cheguem fora de ordem.
+        progress = {
+            "SENT": 1,          # legado
+            "SENT_TO_META": 1,
+            "DELIVERED": 2,
+            "READ": 3,
+        }
+
+        if target_status == "FAILED":
+            outbound.status = "FAILED"
+
+            errors = status.get("errors") or []
+            messages: list[str] = []
+
+            for error in errors[:3]:
+                if not isinstance(error, dict):
+                    continue
+
+                code = error.get("code")
+                title = (
+                    error.get("title")
+                    or error.get("message")
+                    or "WhatsApp error"
+                )
+
+                error_data = error.get("error_data") or {}
+                details = (
+                    error_data.get("details")
+                    if isinstance(error_data, dict)
+                    else None
+                )
+
+                part = (
+                    f"{code}: {title}"
+                    if code is not None
+                    else str(title)
+                )
+
+                if details:
+                    part += f" | {details}"
+
+                messages.append(part)
+
+            outbound.error_message = (
+                " | ".join(messages)
+                or "WhatsApp informou falha na entrega."
+            )
+
+        else:
+            current_rank = progress.get(
+                outbound.status,
+                0,
+            )
+            target_rank = progress[target_status]
+
+            if target_rank >= current_rank:
+                outbound.status = target_status
+
+            outbound.error_message = None
 
     def _process_message(
         self,
@@ -192,22 +359,90 @@ class WhatsAppGatewayService:
     ) -> None:
         raw_sender = str(message.get("from") or "")
         sender = normalize_whatsapp_recipient(raw_sender)
-        message_type = str(message.get("type") or "")
+        message_type = str(message.get("type") or "").lower()
+
         if not sender:
             raise WhatsAppWebhookError("Mensagem sem remetente.")
-        if message_type != "text":
-            event.status = "IGNORED"
-            event.error_message = f"Tipo ainda não suportado: {message_type or 'desconhecido'}"
-            return
-        body = str((message.get("text") or {}).get("body") or "").strip()
-        if not body:
-            raise WhatsAppWebhookError("Mensagem de texto vazia.")
 
         staff = self.human_relay.get_staff_sender(
             db,
             store_id=account.store_id,
             phone=sender,
         )
+
+        if message_type in {"image", "document"}:
+            if staff is not None:
+                event.status = "IGNORED"
+                event.error_message = (
+                    "Mídia enviada por membro da equipe ainda não "
+                    "é tratada como comando."
+                )
+                return
+
+            conversation = self.conversations.get_or_create(
+                db,
+                ConversationCreate(
+                    store_id=account.store_id,
+                    channel="WHATSAPP",
+                    external_conversation_id=sender,
+                ),
+            )
+
+            if self.client_factory is None:
+                raise WhatsAppWebhookError(
+                    "Cliente WhatsApp não disponível para baixar mídia."
+                )
+
+            self.pix_receipts.receive_whatsapp_media(
+                db,
+                account=account,
+                event=event,
+                conversation=conversation,
+                sender=sender,
+                message=message,
+                client=self.client_factory(),
+                allow_customer_reply=(
+                    conversation.status == "OPEN"
+                ),
+            )
+            return
+
+        if message_type == "button":
+            button = message.get("button") or {}
+
+            button_payload = str(
+                button.get("payload") or ""
+            ).strip()
+
+            button_text = str(
+                button.get("text") or ""
+            ).strip()
+
+            # Para membros da equipe usamos o payload interno,
+            # que é estável mesmo se o texto visível do botão mudar.
+            if staff is not None and button_payload:
+                body = button_payload
+            else:
+                body = button_text or button_payload
+
+        elif message_type == "text":
+            body = str(
+                (message.get("text") or {}).get("body") or ""
+            ).strip()
+
+        else:
+            event.status = "IGNORED"
+            event.error_message = (
+                f"Tipo ainda não suportado: "
+                f"{message_type or 'desconhecido'}"
+            )
+            return
+
+        if not body:
+            raise WhatsAppWebhookError(
+                "Mensagem recebida sem conteúdo utilizável."
+            )
+
         if staff is not None:
             self.human_relay.handle_staff_message(
                 db,
