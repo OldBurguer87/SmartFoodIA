@@ -3,13 +3,21 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.api.auth import current_auth
+from app.api.deps import require_store_access
 from app.database.session import get_db
+from app.models.conversation import HumanTicket, KnowledgeGap
 from app.repositories.conversation import ConversationRepository
 from app.schemas.conversation import (
     HumanTicketAssign,
     HumanTicketResolve,
     KnowledgeGapResolve,
     KnowledgeSearchRequest,
+)
+from app.services.auth import (
+    AuthenticatedUser,
+    StoreAccess,
+    resolve_store_access,
 )
 from app.services.conversation import (
     ConversationNotFoundError,
@@ -20,6 +28,86 @@ from app.services.conversation import (
 router = APIRouter(prefix="/api/v1/operations", tags=["support-operations"])
 service = ConversationService()
 repository = ConversationRepository()
+
+
+def require_ticket_access(
+    ticket_id: UUID,
+    authenticated: AuthenticatedUser = Depends(current_auth),
+    db: Session = Depends(get_db),
+) -> StoreAccess:
+    ticket = repository.get_ticket(db, ticket_id)
+
+    if ticket is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket não encontrado.",
+        )
+
+    access = resolve_store_access(
+        db,
+        authenticated.user,
+        ticket.store_id,
+    )
+
+    if access is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Você não tem acesso a esta loja.",
+        )
+
+    return access
+
+
+def require_ticket_write_access(
+    access: StoreAccess = Depends(require_ticket_access),
+) -> StoreAccess:
+    if not access.can_write:
+        raise HTTPException(
+            status_code=403,
+            detail="Seu usuário não pode alterar esta loja.",
+        )
+
+    return access
+
+
+def require_gap_access(
+    gap_id: UUID,
+    authenticated: AuthenticatedUser = Depends(current_auth),
+    db: Session = Depends(get_db),
+) -> StoreAccess:
+    gap = db.get(KnowledgeGap, gap_id)
+
+    if gap is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Lacuna de conhecimento não encontrada.",
+        )
+
+    access = resolve_store_access(
+        db,
+        authenticated.user,
+        gap.store_id,
+    )
+
+    if access is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Você não tem acesso a esta loja.",
+        )
+
+    return access
+
+
+def require_gap_write_access(
+    access: StoreAccess = Depends(require_gap_access),
+) -> StoreAccess:
+    if not access.can_write:
+        raise HTTPException(
+            status_code=403,
+            detail="Seu usuário não pode alterar esta loja.",
+        )
+
+    return access
 
 
 def ticket_to_dict(ticket) -> dict:
@@ -66,6 +154,7 @@ def list_tickets(
     priority: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
+    _access: StoreAccess = Depends(require_store_access),
 ) -> list[dict]:
     return [
         ticket_to_dict(ticket)
@@ -84,6 +173,9 @@ def assign_ticket(
     ticket_id: UUID,
     payload: HumanTicketAssign,
     db: Session = Depends(get_db),
+    _access: StoreAccess = Depends(
+        require_ticket_write_access,
+    ),
 ) -> dict:
     try:
         ticket = service.assign_ticket(
@@ -103,6 +195,9 @@ def resolve_ticket(
     ticket_id: UUID,
     payload: HumanTicketResolve,
     db: Session = Depends(get_db),
+    _access: StoreAccess = Depends(
+        require_ticket_write_access,
+    ),
 ) -> dict:
     try:
         ticket = service.resolve_ticket(
@@ -122,6 +217,7 @@ def list_knowledge_gaps(
     status: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
+    _access: StoreAccess = Depends(require_store_access),
 ) -> list[dict]:
     return [
         gap_to_dict(gap)
@@ -139,6 +235,9 @@ def resolve_gap(
     gap_id: UUID,
     payload: KnowledgeGapResolve,
     db: Session = Depends(get_db),
+    _access: StoreAccess = Depends(
+        require_gap_write_access,
+    ),
 ) -> dict:
     try:
         gap = service.resolve_gap(db, gap_id=gap_id, payload=payload)
@@ -155,6 +254,7 @@ def search_knowledge(
     store_id: UUID,
     payload: KnowledgeSearchRequest,
     db: Session = Depends(get_db),
+    _access: StoreAccess = Depends(require_store_access),
 ) -> dict:
     gap = service.find_knowledge_answer(
         db,

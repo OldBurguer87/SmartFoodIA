@@ -12,6 +12,7 @@ from app.api.commercial_rules import router as commercial_router
 from app.api.catalog_operations import router as catalog_operations_router
 from app.api.menu_documents import router as menu_documents_router
 from app.api.operations import router as operations_router
+from app.api.support_operations import router as support_operations_router
 from app.api.operational_dashboard import router as operational_dashboard_router
 from app.core.config import settings
 from app.core.security import hash_password, hash_session_token
@@ -19,7 +20,11 @@ from app.database.base import Base
 from app.database.session import get_db
 from app.models.auth import AuthSession, CompanyUser, User
 from app.models.catalog import Company, Store
-from app.models.conversation import Conversation
+from app.models.conversation import (
+    Conversation,
+    HumanTicket,
+    KnowledgeGap,
+)
 
 
 @pytest.fixture()
@@ -50,6 +55,7 @@ def environment():
     app.include_router(catalog_operations_router)
     app.include_router(menu_documents_router)
     app.include_router(operations_router)
+    app.include_router(support_operations_router)
     app.include_router(operational_dashboard_router)
     app.dependency_overrides[get_db] = override_get_db
 
@@ -131,6 +137,23 @@ def environment():
     db.add(conversation_b)
     db.flush()
 
+    ticket_b = HumanTicket(
+        store_id=store_b.id,
+        category="TESTE",
+        priority="NORMAL",
+        reason="Ticket da Empresa B",
+        customer_message="Mensagem de teste",
+    )
+
+    gap_b = KnowledgeGap(
+        store_id=store_b.id,
+        question="Pergunta da Empresa B?",
+        normalized_question="pergunta da empresa b",
+    )
+
+    db.add_all([ticket_b, gap_b])
+    db.flush()
+
     db.add_all(
         [
             CompanyUser(
@@ -196,6 +219,8 @@ def environment():
         "manager": manager,
         "platform_admin": platform_admin,
         "conversation_b": conversation_b,
+        "ticket_b": ticket_b,
+        "gap_b": gap_b,
         "tokens": tokens,
     }
 
@@ -572,3 +597,123 @@ def test_without_session_cannot_access_catalog(
     )
 
     assert response.status_code == 401
+
+
+def test_company_a_cannot_list_company_b_tickets(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/tickets"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_cannot_assign_company_b_ticket_by_id(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        (
+            "/api/v1/operations/tickets/"
+            f"{environment['ticket_b'].id}/assign"
+        ),
+        json={
+            "assigned_to": "Manager Empresa A",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_cannot_resolve_company_b_ticket_by_id(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        (
+            "/api/v1/operations/tickets/"
+            f"{environment['ticket_b'].id}/resolve"
+        ),
+        json={
+            "resolution": "Tentativa indevida",
+            "assigned_to": "Manager Empresa A",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_cannot_list_company_b_knowledge_gaps(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/knowledge-gaps"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_cannot_resolve_company_b_gap_by_id(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        (
+            "/api/v1/operations/knowledge-gaps/"
+            f"{environment['gap_b'].id}/resolve"
+        ),
+        json={
+            "answer": "Resposta indevida",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_company_a_can_list_own_support_resources(
+    environment,
+) -> None:
+    tickets = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/tickets"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    gaps = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/knowledge-gaps"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert tickets.status_code == 200
+    assert tickets.json() == []
+
+    assert gaps.status_code == 200
+    assert gaps.json() == []
