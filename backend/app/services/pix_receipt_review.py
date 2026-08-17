@@ -88,6 +88,7 @@ class PixReceiptReviewService:
                 PaymentReceipt.store_id == store_id,
                 PaymentReceipt.order_id == order.id,
                 PaymentReceipt.status == "NEEDS_REVIEW",
+                PaymentReceipt.retention_purged_at.is_(None),
             )
             .order_by(PaymentReceipt.created_at.desc())
             .limit(1)

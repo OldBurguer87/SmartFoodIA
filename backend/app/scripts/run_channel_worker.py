@@ -10,6 +10,9 @@ from app.core.config import settings
 from app.database.session import SessionLocal
 from app.services.handoff_monitor import HumanHandoffMonitor
 from app.services.pix_review_monitor import PixReviewMonitor
+from app.services.pix_receipt_retention import (
+    PixReceiptRetentionService,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +47,15 @@ def main() -> None:
     )
     handoff_monitor = HumanHandoffMonitor()
     pix_review_monitor = PixReviewMonitor()
+    pix_retention = PixReceiptRetentionService()
+
+    retention_interval = max(
+        60,
+        settings.payment_receipt_retention_interval_seconds,
+    )
+    next_retention_run = (
+        time.monotonic() + retention_interval
+    )
 
     logger.info("Worker de canais iniciado.")
 
@@ -58,6 +70,19 @@ def main() -> None:
                     db,
                     limit=settings.channel_worker_batch_size,
                 )
+
+                retention = None
+                now_monotonic = time.monotonic()
+
+                if now_monotonic >= next_retention_run:
+                    next_retention_run = (
+                        now_monotonic + retention_interval
+                    )
+                    retention = pix_retention.run_once(
+                        db,
+                        limit=settings.channel_worker_batch_size,
+                    )
+
                 result = processor.run_once(
                     db,
                     limit=settings.channel_worker_batch_size,
@@ -73,6 +98,20 @@ def main() -> None:
                 logger.info(
                     "Monitor de revisão PIX: %s",
                     pix_review,
+                )
+
+            if retention is not None and (
+                retention.purged
+                or retention.files_missing
+                or retention.skipped_missing_secret
+                or retention.skipped_invalid_path
+                or retention.file_delete_errors
+                or retention.file_restore_errors
+                or retention.db_errors
+            ):
+                logger.info(
+                    "Retenção de comprovantes PIX: %s",
+                    retention,
                 )
 
             processed = (

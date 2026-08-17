@@ -16,6 +16,9 @@ from app.core.config import settings
 from app.models.commercial import StoreCommercialRules
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
+from app.services.pix_receipt_fingerprint import (
+    find_duplicate_transaction_receipt,
+)
 
 
 MANAUS_TZ = ZoneInfo("America/Manaus")
@@ -891,23 +894,14 @@ class PixReceiptValidationService:
         ).strip()
 
         if transaction_id:
-            previous = db.scalar(
-                select(PaymentReceipt)
-                .where(
-                    PaymentReceipt.store_id
-                    == receipt.store_id,
-                    PaymentReceipt.id
-                    != receipt.id,
-                    PaymentReceipt.extracted_transaction_id
-                    == transaction_id,
-                    PaymentReceipt.status.in_(
-                        [
-                            "AUTO_CONFIRMED",
-                            "HUMAN_CONFIRMED",
-                        ]
-                    ),
-                )
-                .limit(1)
+            previous = find_duplicate_transaction_receipt(
+                db,
+                store_id=receipt.store_id,
+                receipt_id=receipt.id,
+                transaction_id=transaction_id,
+                fingerprint_secret=(
+                    settings.pix_receipt_fingerprint_secret
+                ),
             )
 
             duplicate_transaction = (

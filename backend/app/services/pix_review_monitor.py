@@ -37,6 +37,7 @@ class PixReviewMonitor:
                 .where(
                     PaymentReceipt.status == "NEEDS_REVIEW",
                     PaymentReceipt.order_id.is_not(None),
+                    PaymentReceipt.retention_purged_at.is_(None),
                     or_(
                         notified_flag.is_(None),
                         notified_flag != "true",

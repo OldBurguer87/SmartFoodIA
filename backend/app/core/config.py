@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     whatsapp_timeout_seconds: float = 30.0
     payment_receipt_storage_path: str = "/data/receipts"
     payment_receipt_max_bytes: int = 10_485_760
+    payment_receipt_retention_days: int = 15
+    payment_receipt_retention_interval_seconds: int = 3600
+    pix_receipt_fingerprint_secret: str | None = None
     pix_receipt_min_ai_confidence: float = 0.90
     channel_worker_poll_seconds: float = 2.0
     channel_worker_batch_size: int = 50

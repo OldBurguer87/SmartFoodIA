@@ -35,9 +35,9 @@ class PaymentReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         unique=True,
     )
 
-    external_media_id: Mapped[str] = mapped_column(
+    external_media_id: Mapped[str | None] = mapped_column(
         String(180),
-        nullable=False,
+        nullable=True,
     )
 
     media_type: Mapped[str] = mapped_column(
@@ -48,14 +48,24 @@ class PaymentReceipt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     mime_type: Mapped[str | None] = mapped_column(String(120))
     original_filename: Mapped[str | None] = mapped_column(String(240))
 
-    storage_path: Mapped[str] = mapped_column(
+    storage_path: Mapped[str | None] = mapped_column(
         String(500),
-        nullable=False,
+        nullable=True,
     )
 
     file_sha256: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
+        index=True,
+    )
+
+    transaction_fingerprint: Mapped[str | None] = mapped_column(
+        String(64),
+        index=True,
+    )
+
+    retention_purged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         index=True,
     )
 
