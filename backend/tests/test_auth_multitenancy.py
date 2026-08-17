@@ -846,3 +846,155 @@ def test_customer_id_from_other_store_is_not_exposed(
     )
 
     assert response.status_code == 404
+
+
+def test_manager_can_configure_pix_and_scheduling(
+    environment,
+) -> None:
+    response = environment["client"].put(
+        rules_url(environment["store_a"]),
+        json={
+            "pix_receiver_name": "Empresa A Recebedora",
+            "pix_receiver_document": "12345678901",
+            "pix_key": "pix@empresa-a.test",
+            "pix_receiver_institution": "BANCO TESTE",
+            "pix_auto_verify_enabled": True,
+            "pix_receipt_max_age_minutes": 480,
+            "pix_amount_tolerance": "0.02",
+            "allow_scheduled_orders": True,
+            "allow_scheduled_when_closed": False,
+            "scheduled_min_notice_minutes": 45,
+            "scheduled_max_days_ahead": 7,
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 200
+
+    rules = response.json()["rules"]
+
+    assert rules["pix_receiver_name"] == (
+        "Empresa A Recebedora"
+    )
+    assert rules["pix_receiver_document"] == "12345678901"
+    assert rules["pix_key"] == "pix@empresa-a.test"
+    assert rules["pix_receiver_institution"] == "BANCO TESTE"
+    assert rules["pix_auto_verify_enabled"] is True
+    assert rules["pix_receipt_max_age_minutes"] == 480
+    assert rules["pix_amount_tolerance"] == 0.02
+
+    assert rules["allow_scheduled_orders"] is True
+    assert rules["allow_scheduled_when_closed"] is False
+    assert rules["scheduled_min_notice_minutes"] == 45
+    assert rules["scheduled_max_days_ahead"] == 7
+
+
+def test_company_a_cannot_change_company_b_pix_or_scheduling(
+    environment,
+) -> None:
+    response = environment["client"].put(
+        rules_url(environment["store_b"]),
+        json={
+            "pix_key": "tentativa@empresa-b.test",
+            "allow_scheduled_orders": False,
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+    check = environment["client"].get(
+        rules_url(environment["store_b"]),
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert check.status_code == 200
+    rules = check.json()["rules"]
+
+    assert rules["pix_key"] is None
+    assert rules["allow_scheduled_orders"] is True
+
+
+def test_partial_rules_update_preserves_pix_configuration(
+    environment,
+) -> None:
+    client = environment["client"]
+    headers = auth_headers(
+        environment["tokens"]["manager"],
+    )
+
+    first = client.put(
+        rules_url(environment["store_a"]),
+        json={
+            "pix_receiver_name": "Recebedor Original",
+            "pix_key": "original@pix.test",
+            "pix_auto_verify_enabled": True,
+            "scheduled_max_days_ahead": 10,
+        },
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+
+    second = client.put(
+        rules_url(environment["store_a"]),
+        json={
+            "manual_paused": True,
+            "pause_reason": "Pausa de teste",
+        },
+        headers=headers,
+    )
+
+    assert second.status_code == 200
+
+    rules = second.json()["rules"]
+
+    assert rules["manual_paused"] is True
+    assert rules["pix_receiver_name"] == "Recebedor Original"
+    assert rules["pix_key"] == "original@pix.test"
+    assert rules["pix_auto_verify_enabled"] is True
+    assert rules["scheduled_max_days_ahead"] == 10
+
+
+def test_invalid_pix_and_scheduling_values_are_rejected(
+    environment,
+) -> None:
+    headers = auth_headers(
+        environment["tokens"]["manager"],
+    )
+
+    invalid_notice = environment["client"].put(
+        rules_url(environment["store_a"]),
+        json={
+            "scheduled_min_notice_minutes": -1,
+        },
+        headers=headers,
+    )
+
+    assert invalid_notice.status_code == 422
+
+    invalid_days = environment["client"].put(
+        rules_url(environment["store_a"]),
+        json={
+            "scheduled_max_days_ahead": 366,
+        },
+        headers=headers,
+    )
+
+    assert invalid_days.status_code == 422
+
+    invalid_tolerance = environment["client"].put(
+        rules_url(environment["store_a"]),
+        json={
+            "pix_amount_tolerance": -0.01,
+        },
+        headers=headers,
+    )
+
+    assert invalid_tolerance.status_code == 422

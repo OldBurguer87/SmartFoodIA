@@ -87,6 +87,11 @@ class CommercialStatusService:
         local_tz = ZoneInfo(store.timezone)
         now = datetime.now(local_tz)
 
+        if not rules.allow_scheduled_orders:
+            raise ValueError(
+                "Pedidos agendados estão desativados para esta loja."
+            )
+
         if scheduled_for.tzinfo is None:
             scheduled_local = scheduled_for.replace(tzinfo=local_tz)
         else:
@@ -114,6 +119,42 @@ class CommercialStatusService:
             raise ValueError(
                 "O horário do pedido agendado precisa estar no futuro."
             )
+
+        if not rules.allow_scheduled_when_closed:
+            current = self.current_status(
+                db,
+                store_id,
+                service_mode,
+            )
+            if not current["open"]:
+                raise ValueError(
+                    "Pedidos agendados não são aceitos "
+                    "enquanto a loja está fechada."
+                )
+
+        min_notice = rules.scheduled_min_notice_minutes
+        if (
+            min_notice is not None
+            and min_notice > 0
+            and scheduled_local
+            < now + timedelta(minutes=min_notice)
+        ):
+            raise ValueError(
+                "O pedido agendado exige antecedência mínima de "
+                f"{min_notice} minutos."
+            )
+
+        max_days = rules.scheduled_max_days_ahead
+        if max_days is not None and max_days >= 0:
+            days_ahead = (
+                scheduled_local.date() - now.date()
+            ).days
+
+            if days_ahead > max_days:
+                raise ValueError(
+                    "O pedido agendado só pode ser feito com até "
+                    f"{max_days} dias de antecedência."
+                )
 
         day = db.scalar(
             select(StoreBusinessHours).where(

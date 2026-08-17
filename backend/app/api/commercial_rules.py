@@ -25,12 +25,40 @@ class RulesUpdate(BaseModel):
     minimum_delivery_subtotal: Decimal = Decimal("0.00")
     delivery_fee_mode: str = Field(default="FIXED", pattern="^(FIXED|ZONE)$")
     fixed_delivery_fee: Decimal = Decimal("0.00")
+
     accepts_pix: bool = True
+    pix_receiver_name: str | None = Field(default=None, max_length=180)
+    pix_receiver_document: str | None = Field(default=None, max_length=40)
+    pix_key: str | None = Field(default=None, max_length=200)
+    pix_receiver_institution: str | None = Field(default=None, max_length=180)
+    pix_auto_verify_enabled: bool = False
+    pix_receipt_max_age_minutes: int = Field(default=360, ge=1, le=10080)
+    pix_amount_tolerance: Decimal = Field(
+        default=Decimal("0.01"),
+        ge=0,
+        le=100,
+    )
+
     accepts_credit: bool = True
     accepts_debit: bool = True
     accepts_cash: bool = True
     allow_change: bool = True
+
     average_prep_minutes: int | None = Field(default=None, ge=1, le=600)
+
+    allow_scheduled_orders: bool = True
+    allow_scheduled_when_closed: bool = True
+    scheduled_min_notice_minutes: int | None = Field(
+        default=None,
+        ge=0,
+        le=10080,
+    )
+    scheduled_max_days_ahead: int | None = Field(
+        default=None,
+        ge=0,
+        le=365,
+    )
+
     general_notes: str | None = None
 
 
@@ -66,11 +94,22 @@ def rules_dict(db: Session, store_id: UUID) -> dict:
             "delivery_fee_mode": rules.delivery_fee_mode,
             "fixed_delivery_fee": float(rules.fixed_delivery_fee),
             "accepts_pix": rules.accepts_pix,
+            "pix_receiver_name": rules.pix_receiver_name,
+            "pix_receiver_document": rules.pix_receiver_document,
+            "pix_key": rules.pix_key,
+            "pix_receiver_institution": rules.pix_receiver_institution,
+            "pix_auto_verify_enabled": rules.pix_auto_verify_enabled,
+            "pix_receipt_max_age_minutes": rules.pix_receipt_max_age_minutes,
+            "pix_amount_tolerance": float(rules.pix_amount_tolerance),
             "accepts_credit": rules.accepts_credit,
             "accepts_debit": rules.accepts_debit,
             "accepts_cash": rules.accepts_cash,
             "allow_change": rules.allow_change,
             "average_prep_minutes": rules.average_prep_minutes,
+            "allow_scheduled_orders": rules.allow_scheduled_orders,
+            "allow_scheduled_when_closed": rules.allow_scheduled_when_closed,
+            "scheduled_min_notice_minutes": rules.scheduled_min_notice_minutes,
+            "scheduled_max_days_ahead": rules.scheduled_max_days_ahead,
             "general_notes": rules.general_notes,
         },
         "hours": [
@@ -110,7 +149,7 @@ def update_rules(
     _access=Depends(require_store_write_access),
 ) -> dict:
     rules = service.get_or_create_rules(db, store_id)
-    for key, value in payload.model_dump().items():
+    for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(rules, key, value)
     db.commit()
     return rules_dict(db, store_id)

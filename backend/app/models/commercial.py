@@ -50,6 +50,26 @@ class StoreCommercialRules(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     accepts_cash: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_change: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     average_prep_minutes: Mapped[int | None] = mapped_column(Integer)
+
+    allow_scheduled_orders: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    allow_scheduled_when_closed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    scheduled_min_notice_minutes: Mapped[int | None] = mapped_column(
+        Integer,
+    )
+
+    scheduled_max_days_ahead: Mapped[int | None] = mapped_column(
+        Integer,
+    )
     general_notes: Mapped[str | None] = mapped_column(Text)
     menu_original_name: Mapped[str | None] = mapped_column(String(240))
     menu_storage_name: Mapped[str | None] = mapped_column(String(240))
