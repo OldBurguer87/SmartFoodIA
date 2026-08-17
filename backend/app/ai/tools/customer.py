@@ -211,10 +211,26 @@ class AddCustomerAddressTool:
     ) -> ToolResult:
         from uuid import UUID
 
+        customer_uuid = UUID(customer_id)
+
+        customer = CustomerRepository().get(
+            self.context.db,
+            customer_uuid,
+        )
+
+        if (
+            customer is None
+            or customer.store_id != self.context.store_id
+        ):
+            return ToolResult(
+                ok=False,
+                error="Cliente não encontrado.",
+            )
+
         try:
             address = self.service.add_address(
                 self.context.db,
-                customer_id=UUID(customer_id),
+                customer_id=customer_uuid,
                 payload=AddressCreate(
                     label=label,
                     street=street,
