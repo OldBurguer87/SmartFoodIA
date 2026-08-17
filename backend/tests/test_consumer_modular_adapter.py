@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.database.base import Base
+from tests_support import configure_store_open
 from app.integrations.consumer.adapter import ConsumerPartnerAdapter
 from app.integrations.consumer.mapper import ConsumerContractError
 from app.models.catalog import Company, Product, Store
@@ -18,7 +19,7 @@ from app.services.customer import CustomerService
 
 def setup(code='235'):
     db=Session(create_engine('sqlite+pysqlite:///:memory:')); Base.metadata.create_all(db.get_bind())
-    c=Company(name='Old'); db.add(c); db.flush(); s=Store(company_id=c.id,name='Old',slug=f'old-{uuid4()}',city='Coari',state='AM',timezone='America/Manaus'); db.add(s); db.flush(); integ=StoreIntegration(store_id=s.id,provider='CONSUMER',token_hash='x'*64,merchant_external_id='m1',merchant_name='Old',active=True); db.add(integ); p=Product(store_id=s.id,external_code=code,name='Monster',price=Decimal('60'),active=True,available_for_delivery=True,available_for_takeout=True); db.add(p); db.commit()
+    c=Company(name='Old'); db.add(c); db.flush(); s=Store(company_id=c.id,name='Old',slug=f'old-{uuid4()}',city='Coari',state='AM',timezone='America/Manaus'); db.add(s); db.flush(); configure_store_open(db, s); integ=StoreIntegration(store_id=s.id,provider='CONSUMER',token_hash='x'*64,merchant_external_id='m1',merchant_name='Old',active=True); db.add(integ); p=Product(store_id=s.id,external_code=code,name='Monster',price=Decimal('60'),active=True,available_for_delivery=True,available_for_takeout=True); db.add(p); db.commit()
     cust=CustomerService().find_or_create(db,CustomerCreate(store_id=s.id,name='Cliente',phone='97999999999')); addr=CustomerService().add_address(db,customer_id=cust.id,payload=AddressCreate(street='Rua',number='1',neighborhood='Centro',city='Coari',state='AM')); cart=CartService().create_or_get_open(db,store_id=s.id,customer_id=cust.id,service_mode='DELIVERY'); CartService().add_item(db,cart_id=cart.id,payload=CartItemAdd(product_external_code=code,quantity=1)); order=CheckoutService().checkout(db,cart_id=cart.id,payload=CheckoutRequest(address_id=addr.id,payment_method='PIX',delivery_fee=Decimal('5')))
     return db,s,integ,order
 

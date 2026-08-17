@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database.base import Base
+from tests_support import configure_store_open
 from app.integrations.consumer.adapter import IntegrationStatusError
 from app.models.catalog import Company, Product, Store
 from app.models.channel import ChannelAccount, OutboundChannelMessage
@@ -37,6 +38,7 @@ def setup_context(store_name: str = "Hamburgueria Teste"):
     )
     db.add(store)
     db.flush()
+    configure_store_open(db, store)
     db.add(
         StoreIntegration(
             store_id=store.id,

@@ -77,7 +77,12 @@ def test_orchestrator_executes_tool_then_returns_text():
         customer_message="Tem Monster?",
         customer_phone="97999999999",
     )
-    assert reply == "Temos o Old Monster por R$ 60,00."
+    assert reply.startswith(
+        ("Bom dia!", "Boa tarde!", "Boa noite!")
+    )
+    assert reply.endswith(
+        "Temos o Old Monster por R$ 60,00."
+    )
     assert provider.calls[1]["previous_response_id"] == "resp-1"
     assert provider.calls[1]["input_items"][0]["type"] == "function_call_output"
     messages = list(db.scalars(select(Message).where(
@@ -101,4 +106,9 @@ def test_orchestrator_returns_direct_response_without_tool():
         conversation_id=conversation.id,
         customer_message="Oi",
     )
-    assert reply == "Olá! Como posso ajudar?"
+    assert reply.startswith(
+        ("Bom dia!", "Boa tarde!", "Boa noite!")
+    )
+    assert reply.endswith(
+        "Olá! Como posso ajudar?"
+    )

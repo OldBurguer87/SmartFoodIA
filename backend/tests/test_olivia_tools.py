@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.ai.tools.context import ToolContext
 from app.ai.tools.registry import OliviaToolRegistry
 from app.database.base import Base
+from tests_support import configure_store_open
 from app.models.catalog import Company, Product, Store
 
 
@@ -28,6 +29,7 @@ def setup_registry():
     )
     db.add(store)
     db.flush()
+    configure_store_open(db, store)
     db.add(
         Product(
             store_id=store.id,

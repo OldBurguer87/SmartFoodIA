@@ -135,7 +135,7 @@ def test_inbound_text_creates_conversation_and_sends_reply():
     assert conversation.external_conversation_id == "5597999999999"
     assert len(list(db.scalars(select(Message)))) == 2
     outbound = db.scalar(select(OutboundChannelMessage))
-    assert outbound.status == "SENT"
+    assert outbound.status == "SENT_TO_META"
     assert outbound.external_message_id == "wamid.outbound-1"
     assert client.sent[0]["phone_number_id"] == account.external_account_id
 
@@ -159,19 +159,41 @@ def test_duplicate_webhook_does_not_reply_twice():
     assert len(list(db.scalars(select(ChannelEvent)))) == 1
 
 
-def test_unsupported_message_is_persisted_and_ignored():
+def test_image_without_recent_pix_order_is_processed():
     db, _, _ = setup_db()
     service = WhatsAppGatewayService(
         orchestrator_factory=lambda: FakeOrchestrator(),
         client_factory=lambda: FakeClient(),
     )
 
-    result = service.process_payload(db, inbound_payload(message_type="image"))
+    result = service.process_payload(
+        db,
+        inbound_payload(message_type="image"),
+    )
 
-    assert result.ignored == 1
+    assert result.received == 1
+    assert result.processed == 1
+    assert result.ignored == 0
+    assert result.failed == 0
+
     event = db.scalar(select(ChannelEvent))
-    assert event.status == "IGNORED"
-    assert "image" in event.error_message
+    assert event.status == "PROCESSED"
+    assert event.error_message is None
+
+    messages = list(
+        db.scalars(select(Message))
+    )
+    assert len(messages) == 1
+    assert messages[0].content == (
+        "[Imagem/arquivo recebido]"
+    )
+
+    outbound = db.scalar(
+        select(OutboundChannelMessage)
+    )
+    assert outbound is not None
+    assert "pedido PIX recente" in outbound.content
+    assert outbound.status == "SENT_TO_META"
 
 
 def test_signature_validation_uses_meta_hmac_format():

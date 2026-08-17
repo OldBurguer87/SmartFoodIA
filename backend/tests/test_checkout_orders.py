@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database.base import Base
+from tests_support import configure_store_open
 from app.models.catalog import Company, Product, Store
 from app.models.customer import CustomerAddress
 from app.models.order import OrderEvent
@@ -35,6 +36,7 @@ def setup_order_context(service_mode: str = "DELIVERY"):
     )
     db.add(store)
     db.flush()
+    configure_store_open(db, store)
     product = Product(
         store_id=store.id,
         external_code="235",

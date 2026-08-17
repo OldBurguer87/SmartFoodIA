@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database.base import Base
+from tests_support import configure_store_open
 from app.models.catalog import Company, Product, Store
 from app.models.integration import StoreIntegration
 from app.models.order import OrderEvent
@@ -47,6 +48,7 @@ def setup_context():
     )
     db.add(store)
     db.flush()
+    configure_store_open(db, store)
     db.add(
         StoreIntegration(
             store_id=store.id,
@@ -134,7 +136,17 @@ def test_authentication_uses_per_store_hashed_token() -> None:
 
 def test_polling_returns_pending_placed_event() -> None:
     db, store, order = setup_context()
-    response = ConsumerPartnerService().polling(db, store=store)
+    service = ConsumerPartnerService()
+    _, integration = service.authenticate(
+        db,
+        store_slug=store.slug,
+        authorization=f"Bearer {TOKEN}",
+    )
+    response = service.polling(
+        db,
+        store=store,
+        integration=integration,
+    )
 
     assert len(response.items) == 1
     assert response.items[0].orderId == order.id
