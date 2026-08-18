@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.auth import router as auth_router
 from app.api.carts import router as carts_router
 from app.api.catalog import router as catalog_router
+from app.api.modifiers import router as modifiers_router
 from app.api.customers import router as customers_router
 from app.api.orders import router as orders_router
 from app.api.commercial_rules import router as commercial_router
@@ -62,6 +63,7 @@ def environment():
     app.include_router(auth_router)
     app.include_router(carts_router)
     app.include_router(catalog_router)
+    app.include_router(modifiers_router)
     app.include_router(customers_router)
     app.include_router(orders_router)
     app.include_router(commercial_router)
@@ -1563,3 +1565,190 @@ def test_catalog_reads_remain_public(
         },
     )
     assert response.status_code == 404
+
+
+def test_modifier_writes_without_session_return_401(
+    environment,
+) -> None:
+    client = environment["client"]
+    store_id = str(environment["store_a"].id)
+
+    group_response = client.post(
+        "/api/v1/catalog/modifier-groups",
+        json={
+            "store_id": store_id,
+            "name": "Grupo Sem Sessao",
+        },
+    )
+
+    modifier_response = client.post(
+        "/api/v1/catalog/modifiers",
+        json={
+            "store_id": store_id,
+            "external_code": "MOD-SEM-SESSAO",
+            "name": "Adicional Sem Sessao",
+            "price": "2.00",
+        },
+    )
+
+    assert group_response.status_code == 401
+    assert modifier_response.status_code == 401
+
+
+def test_viewer_cannot_create_modifiers(
+    environment,
+) -> None:
+    client = environment["client"]
+    store_id = str(environment["store_a"].id)
+    headers = auth_headers(
+        environment["tokens"]["viewer"],
+    )
+
+    group_response = client.post(
+        "/api/v1/catalog/modifier-groups",
+        json={
+            "store_id": store_id,
+            "name": "Grupo Viewer",
+        },
+        headers=headers,
+    )
+
+    modifier_response = client.post(
+        "/api/v1/catalog/modifiers",
+        json={
+            "store_id": store_id,
+            "external_code": "MOD-VIEWER",
+            "name": "Adicional Viewer",
+            "price": "2.00",
+        },
+        headers=headers,
+    )
+
+    assert group_response.status_code == 403
+    assert modifier_response.status_code == 403
+
+
+def test_manager_can_create_modifiers_in_own_company(
+    environment,
+) -> None:
+    client = environment["client"]
+    store_id = str(environment["store_a"].id)
+    headers = auth_headers(
+        environment["tokens"]["manager"],
+    )
+
+    group_response = client.post(
+        "/api/v1/catalog/modifier-groups",
+        json={
+            "store_id": store_id,
+            "name": "Adicionais Empresa A",
+        },
+        headers=headers,
+    )
+
+    modifier_response = client.post(
+        "/api/v1/catalog/modifiers",
+        json={
+            "store_id": store_id,
+            "external_code": "MOD-A",
+            "name": "Queijo Extra A",
+            "price": "3.00",
+        },
+        headers=headers,
+    )
+
+    assert group_response.status_code == 201
+    assert modifier_response.status_code == 201
+
+    assert group_response.json()["store_id"] == store_id
+    assert modifier_response.json()["store_id"] == store_id
+
+
+def test_manager_cannot_create_modifiers_in_company_b(
+    environment,
+) -> None:
+    client = environment["client"]
+    store_id = str(environment["store_b"].id)
+    headers = auth_headers(
+        environment["tokens"]["manager"],
+    )
+
+    group_response = client.post(
+        "/api/v1/catalog/modifier-groups",
+        json={
+            "store_id": store_id,
+            "name": "Grupo Indevido B",
+        },
+        headers=headers,
+    )
+
+    modifier_response = client.post(
+        "/api/v1/catalog/modifiers",
+        json={
+            "store_id": store_id,
+            "external_code": "MOD-INDEVIDO-B",
+            "name": "Adicional Indevido B",
+            "price": "4.00",
+        },
+        headers=headers,
+    )
+
+    assert group_response.status_code == 403
+    assert modifier_response.status_code == 403
+
+
+def test_platform_admin_can_create_modifiers_in_company_b(
+    environment,
+) -> None:
+    client = environment["client"]
+    store_id = str(environment["store_b"].id)
+    headers = auth_headers(
+        environment["tokens"]["platform_admin"],
+    )
+
+    group_response = client.post(
+        "/api/v1/catalog/modifier-groups",
+        json={
+            "store_id": store_id,
+            "name": "Adicionais Empresa B",
+        },
+        headers=headers,
+    )
+
+    modifier_response = client.post(
+        "/api/v1/catalog/modifiers",
+        json={
+            "store_id": store_id,
+            "external_code": "MOD-B",
+            "name": "Queijo Extra B",
+            "price": "5.00",
+        },
+        headers=headers,
+    )
+
+    assert group_response.status_code == 201
+    assert modifier_response.status_code == 201
+
+
+def test_modifier_reads_remain_public(
+    environment,
+) -> None:
+    client = environment["client"]
+    store_id = str(environment["store_a"].id)
+
+    groups_response = client.get(
+        "/api/v1/catalog/modifier-groups",
+        params={
+            "store_id": store_id,
+        },
+    )
+
+    modifiers_response = client.get(
+        "/api/v1/catalog/modifiers",
+        params={
+            "store_id": store_id,
+        },
+    )
+
+    assert groups_response.status_code == 200
+    assert modifiers_response.status_code == 200
