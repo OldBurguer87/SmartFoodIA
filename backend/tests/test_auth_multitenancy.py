@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.auth import router as auth_router
 from app.api.carts import router as carts_router
+from app.api.orders import router as orders_router
 from app.api.commercial_rules import router as commercial_router
 from app.api.customer_operations import router as customer_operations_router
 from app.api.catalog_operations import router as catalog_operations_router
@@ -23,6 +25,7 @@ from app.database.session import get_db
 from app.models.auth import AuthSession, CompanyUser, User
 from app.models.catalog import Company, Store
 from app.models.cart import Cart
+from app.models.order import Order
 from app.models.customer import Customer
 from app.models.conversation import (
     Conversation,
@@ -56,6 +59,7 @@ def environment():
     app = FastAPI()
     app.include_router(auth_router)
     app.include_router(carts_router)
+    app.include_router(orders_router)
     app.include_router(commercial_router)
     app.include_router(customer_operations_router)
     app.include_router(catalog_operations_router)
@@ -135,6 +139,43 @@ def environment():
     )
 
     db.add_all([cart_a, cart_b])
+    db.flush()
+
+    order_a = Order(
+        store_id=store_a.id,
+        customer_id=customer_a.id,
+        cart_id=cart_a.id,
+        display_id="000001",
+        status="READY_FOR_INTEGRATION",
+        service_mode="DELIVERY",
+        payment_method="PIX",
+        payment_type="PENDING",
+        subtotal=Decimal("20.00"),
+        delivery_fee=Decimal("3.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("23.00"),
+        customer_name=customer_a.name,
+        customer_phone=customer_a.phone,
+    )
+
+    order_b = Order(
+        store_id=store_b.id,
+        customer_id=customer_b.id,
+        cart_id=cart_b.id,
+        display_id="000001",
+        status="READY_FOR_INTEGRATION",
+        service_mode="DELIVERY",
+        payment_method="PIX",
+        payment_type="PENDING",
+        subtotal=Decimal("20.00"),
+        delivery_fee=Decimal("3.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("23.00"),
+        customer_name=customer_b.name,
+        customer_phone=customer_b.phone,
+    )
+
+    db.add_all([order_a, order_b])
     db.flush()
 
     viewer = User(
@@ -259,6 +300,8 @@ def environment():
         "customer_b": customer_b,
         "cart_a": cart_a,
         "cart_b": cart_b,
+        "order_a": order_a,
+        "order_b": order_b,
         "viewer": viewer,
         "manager": manager,
         "platform_admin": platform_admin,
@@ -1137,4 +1180,110 @@ def test_platform_admin_can_read_company_b_cart(
     assert response.status_code == 200
     assert response.json()["store_id"] == str(
         environment["store_b"].id
+    )
+
+
+def test_order_without_session_returns_401(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        f"/api/v1/orders/{environment['order_a'].id}",
+    )
+
+    assert response.status_code == 401
+
+
+def test_viewer_can_read_order_from_own_company(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        f"/api/v1/orders/{environment['order_a'].id}",
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(
+        environment["order_a"].id
+    )
+
+
+def test_company_a_cannot_read_company_b_order(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        f"/api/v1/orders/{environment['order_b'].id}",
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_viewer_cannot_checkout_own_company_cart(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        f"/api/v1/orders/checkout/{environment['cart_a'].id}",
+        json={
+            "payment_method": "PIX",
+        },
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_manager_can_checkout_own_company_cart(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        f"/api/v1/orders/checkout/{environment['cart_a'].id}",
+        json={
+            "payment_method": "PIX",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(
+        environment["order_a"].id
+    )
+
+
+def test_manager_cannot_checkout_company_b_cart(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        f"/api/v1/orders/checkout/{environment['cart_b'].id}",
+        json={
+            "payment_method": "PIX",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_platform_admin_can_read_company_b_order(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        f"/api/v1/orders/{environment['order_b'].id}",
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(
+        environment["order_b"].id
     )
