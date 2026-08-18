@@ -1,10 +1,12 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.models.order import Order, OrderEvent
 from app.schemas.consumer import (
     ConsumerDiagnosticsResponse,
     ConsumerEventRead,
@@ -249,22 +251,40 @@ async def receive_order_details_without_path_id(
                 detail="Id do pedido inválido.",
             ) from error
 
-        db.execute(
-            text(
-                """
-                UPDATE order_events
-                SET status = 'DELIVERED', updated_at = now()
-                WHERE order_id = :order_id
-                  AND status = 'PENDING'
-                  AND (
-                        (code = 'ODR' AND full_code = 'ORDER_DETAILS_REQUESTED')
-                        OR code = 'PLC'
-                  )
-                """
-            ),
-            {"order_id": parsed_order_id},
+        owned_order = db.scalar(
+            select(Order).where(
+                Order.id == parsed_order_id,
+                Order.store_id == store.id,
+            )
         )
-        db.commit()
+
+        if owned_order is not None:
+            events = db.scalars(
+                select(OrderEvent).where(
+                    OrderEvent.order_id
+                    == parsed_order_id,
+                    OrderEvent.status
+                    == "PENDING",
+                )
+            ).all()
+
+            updated_at = datetime.now(
+                timezone.utc
+            )
+
+            for event in events:
+                if (
+                    (
+                        event.code == "ODR"
+                        and event.full_code
+                        == "ORDER_DETAILS_REQUESTED"
+                    )
+                    or event.code == "PLC"
+                ):
+                    event.status = "DELIVERED"
+                    event.updated_at = updated_at
+
+            db.commit()
 
     return ConsumerStatusResponse(
         statusCode=0,
