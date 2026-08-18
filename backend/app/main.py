@@ -13,6 +13,7 @@ from app.api.system import router as system_router
 from app.api.operations import router as operations_router
 from app.api.support_operations import router as support_operations_router
 from app.api.operational_dashboard import router as operational_dashboard_router
+from app.api.analytics import router as analytics_router
 from app.api.commercial_rules import router as commercial_rules_router
 from app.api.customer_operations import router as customer_operations_router
 from app.api.catalog_operations import router as catalog_operations_router
@@ -49,6 +50,7 @@ app.include_router(system_router)
 app.include_router(operations_router)
 app.include_router(support_operations_router)
 app.include_router(operational_dashboard_router)
+app.include_router(analytics_router)
 app.include_router(commercial_rules_router)
 app.include_router(customer_operations_router)
 app.include_router(catalog_operations_router)

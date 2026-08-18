@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.auth import router as auth_router
+from app.api.analytics import router as analytics_router
 from app.api.carts import router as carts_router
 from app.api.catalog import router as catalog_router
 from app.api.modifiers import router as modifiers_router
@@ -61,6 +62,7 @@ def environment():
 
     app = FastAPI()
     app.include_router(auth_router)
+    app.include_router(analytics_router)
     app.include_router(carts_router)
     app.include_router(catalog_router)
     app.include_router(modifiers_router)
@@ -1752,3 +1754,73 @@ def test_modifier_reads_remain_public(
 
     assert groups_response.status_code == 200
     assert modifiers_response.status_code == 200
+
+
+def test_store_analytics_without_session_returns_401(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/analytics"
+        ),
+    )
+
+    assert response.status_code == 401
+
+
+def test_viewer_can_read_own_store_analytics(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_a'].id}/analytics"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_a"].id
+    )
+    assert response.json()["summary"]["orders_total"] == 1
+    assert response.json()["summary"]["revenue"] == 23.0
+
+
+def test_company_a_cannot_read_company_b_analytics(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/analytics"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_platform_admin_can_read_company_b_analytics(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        (
+            "/api/v1/operations/stores/"
+            f"{environment['store_b'].id}/analytics"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_b"].id
+    )
+    assert response.json()["summary"]["orders_total"] == 1
