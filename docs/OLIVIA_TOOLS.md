@@ -51,13 +51,15 @@ Essa ferramenta consulta somente respostas aprovadas/resolvidas na base de conhe
 
 Essa ferramenta persiste um `HumanTicket` e pode criar/incrementar uma `KnowledgeGap` associada à conversa.
 
-## Endpoints
+## Acesso
 
-```text
-GET  /api/v1/olivia/stores/{store_slug}/tools
-POST /api/v1/olivia/stores/{store_slug}/tools/execute
-POST /api/v1/olivia/reply
-```
+As ferramentas e o runtime da Olívia são executados internamente pelo
+SmartFoodIA.
+
+As rotas HTTP legadas em `/api/v1/olivia` não fazem mais parte da
+superfície pública da aplicação. O canal WhatsApp aciona o runtime interno
+sem depender desses endpoints.
+
 
 ## Integração OpenAI — estado atual
 
@@ -68,7 +70,7 @@ Validações executadas:
 - `OPENAI_API_KEY` configurada na VPS;
 - modelo configurado: `gpt-5.5`;
 - chamada direta à OpenAI respondeu com sucesso;
-- `/api/v1/olivia/reply` respondeu pelo runtime real;
+- o runtime real da Olívia respondeu com sucesso;
 - 13 tools carregadas;
 - `search_catalog` validado com catálogo real;
 - `get_product` validado com complementos reais;

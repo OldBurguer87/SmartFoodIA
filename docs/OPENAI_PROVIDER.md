@@ -42,11 +42,13 @@ Portanto, a integração existe no projeto, mas ainda não estava ativa na VPS c
 6. A resposta final é persistida.
 7. Chamadas, duração e erros ficam em `ai_events`.
 
-## Endpoint
+## Acesso
 
-```text
-POST /api/v1/olivia/reply
-```
+O provedor OpenAI é utilizado internamente pelo runtime da Olívia.
+
+A rota HTTP legada `/api/v1/olivia/reply` não faz mais parte da
+superfície pública da aplicação.
+
 
 ## Próximo gate operacional
 
