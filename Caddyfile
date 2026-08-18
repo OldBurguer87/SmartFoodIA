@@ -16,17 +16,11 @@
 
     # Demais APIs são exclusivas da operação/administração.
     handle /api/* {
-        basic_auth {
-            {$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
-        }
         reverse_proxy api:8000
     }
 
-    # O frontend é a central operacional e também exige autenticação.
+    # O frontend é a central operacional; a autenticação é feita pelo SmartFoodIA.
     handle {
-        basic_auth {
-            {$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
-        }
         reverse_proxy web:3000
     }
 

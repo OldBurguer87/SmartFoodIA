@@ -9,12 +9,14 @@ from app.models.catalog import Store
 from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage
 from app.models.conversation import HumanTicket
 from app.models.integration import StoreIntegration
+from app.services.commercial_status import CommercialStatusService
 
 
 class OperationalMonitorService:
     WINDOW_MINUTES = 15
     CONSUMER_WARNING_SECONDS = 120
     CONSUMER_CRITICAL_SECONDS = 300
+    STORE_OPEN_GRACE_SECONDS = 900
     PREFIX = "[AUTO-MONITOR]"
 
     def run(self, db: Session) -> dict[str, int]:
@@ -72,12 +74,49 @@ class OperationalMonitorService:
             )
         )
         consumer_failure = None
+
         if consumer_integration is None or not consumer_integration.active:
             consumer_failure = "Integração Consumer ausente ou inativa."
         else:
-            age = max(0, int((now - consumer_integration.updated_at).total_seconds()))
-            if age > self.CONSUMER_CRITICAL_SECONDS:
-                consumer_failure = f"Consumer sem polling há {age // 60} minuto(s)."
+            monitoring = CommercialStatusService().monitoring_status(
+                db,
+                store_id,
+            )
+
+            if monitoring["should_monitor"]:
+                opened_at = monitoring.get("opened_at")
+                local_time = monitoring.get("local_time")
+
+                in_opening_grace = False
+                if opened_at is not None and local_time is not None:
+                    seconds_since_open = max(
+                        0,
+                        int(
+                            (
+                                local_time - opened_at
+                            ).total_seconds()
+                        ),
+                    )
+                    in_opening_grace = (
+                        seconds_since_open
+                        < self.STORE_OPEN_GRACE_SECONDS
+                    )
+
+                if not in_opening_grace:
+                    age = max(
+                        0,
+                        int(
+                            (
+                                now - consumer_integration.updated_at
+                            ).total_seconds()
+                        ),
+                    )
+
+                    if age > self.CONSUMER_CRITICAL_SECONDS:
+                        consumer_failure = (
+                            f"Consumer sem polling há "
+                            f"{age // 60} minuto(s)."
+                        )
 
         queue_problem_count = db.scalar(
             select(func.count(ChannelEvent.id)).where(

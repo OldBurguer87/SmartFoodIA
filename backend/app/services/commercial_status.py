@@ -39,37 +39,257 @@ class CommercialStatusService:
         db.refresh(rules)
         return rules
 
-    def current_status(self, db: Session, store_id: UUID, service_mode: str | None = None) -> dict:
+    def _current_schedule_window(
+        self,
+        db: Session,
+        store: Store,
+        now: datetime,
+    ):
+        local_time = now.time().replace(tzinfo=None)
+        weekday = now.weekday()
+
+        today = db.scalar(
+            select(StoreBusinessHours).where(
+                StoreBusinessHours.store_id == store.id,
+                StoreBusinessHours.weekday == weekday,
+            )
+        )
+
+        previous = db.scalar(
+            select(StoreBusinessHours).where(
+                StoreBusinessHours.store_id == store.id,
+                StoreBusinessHours.weekday == ((weekday - 1) % 7),
+            )
+        )
+
+        active_day = None
+        opening_date = now.date()
+
+        if (
+            today is not None
+            and not today.closed
+            and today.open_time is not None
+            and today.close_time is not None
+        ):
+            if today.open_time <= today.close_time:
+                if today.open_time <= local_time <= today.close_time:
+                    active_day = today
+            elif local_time >= today.open_time:
+                active_day = today
+
+        if (
+            active_day is None
+            and previous is not None
+            and not previous.closed
+            and previous.open_time is not None
+            and previous.close_time is not None
+            and previous.open_time > previous.close_time
+            and local_time <= previous.close_time
+        ):
+            active_day = previous
+            opening_date = now.date() - timedelta(days=1)
+
+        opened_at = None
+        if active_day is not None:
+            opened_at = datetime.combine(
+                opening_date,
+                active_day.open_time,
+                tzinfo=now.tzinfo,
+            )
+
+        return today, active_day, opened_at
+
+    def monitoring_status(
+        self,
+        db: Session,
+        store_id: UUID,
+    ) -> dict:
         store = db.get(Store, store_id)
         if store is None:
             raise LookupError("Loja não encontrada.")
+
         rules = self.get_or_create_rules(db, store_id)
         now = datetime.now(ZoneInfo(store.timezone))
-        day = db.scalar(select(StoreBusinessHours).where(StoreBusinessHours.store_id == store_id, StoreBusinessHours.weekday == now.weekday()))
+
         if rules.manual_paused:
-            return {"open": False, "reason": rules.pause_reason or "Pedidos pausados temporariamente.", "local_time": now}
-        if service_mode == "DELIVERY" and not rules.delivery_enabled:
-            return {"open": False, "reason": "Delivery desativado.", "local_time": now}
-        if service_mode == "TAKEOUT" and not rules.takeout_enabled:
-            return {"open": False, "reason": "Retirada desativada.", "local_time": now}
-        if day is None:
             return {
-                "open": False,
-                "reason": "Horário de funcionamento ainda não cadastrado; não confirme que a loja está aberta.",
+                "should_monitor": False,
+                "reason": rules.pause_reason
+                or "Pedidos pausados temporariamente.",
                 "local_time": now,
+                "opened_at": None,
+                "schedule_configured": True,
+            }
+
+        today, active_day, opened_at = self._current_schedule_window(
+            db,
+            store,
+            now,
+        )
+
+        if active_day is not None:
+            return {
+                "should_monitor": True,
+                "reason": "Loja dentro do horário de funcionamento.",
+                "local_time": now,
+                "opened_at": opened_at,
+                "schedule_configured": True,
+            }
+
+        if today is None:
+            return {
+                "should_monitor": True,
+                "reason": (
+                    "Horário de funcionamento não cadastrado; "
+                    "monitoramento mantido."
+                ),
+                "local_time": now,
+                "opened_at": None,
                 "schedule_configured": False,
             }
-        if day.closed:
-            return {"open": False, "reason": "Restaurante fechado hoje.", "local_time": now, "schedule_configured": True}
-        local_time = now.time().replace(tzinfo=None)
-        if day.open_time and day.close_time:
-            inside = day.open_time <= local_time <= day.close_time if day.open_time <= day.close_time else (local_time >= day.open_time or local_time <= day.close_time)
-            if not inside:
-                return {"open": False, "reason": "Fora do horário de funcionamento.", "local_time": now, "schedule_configured": True}
-        cutoff = day.delivery_until if service_mode == "DELIVERY" else day.takeout_until if service_mode == "TAKEOUT" else None
-        if cutoff and local_time > cutoff:
-            return {"open": False, "reason": "Horário limite desta modalidade encerrado.", "local_time": now, "schedule_configured": True}
-        return {"open": True, "reason": "Aceitando pedidos.", "local_time": now, "schedule_configured": True}
+
+        if today.closed:
+            return {
+                "should_monitor": False,
+                "reason": "Restaurante fechado hoje.",
+                "local_time": now,
+                "opened_at": None,
+                "schedule_configured": True,
+            }
+
+        if today.open_time is None or today.close_time is None:
+            return {
+                "should_monitor": True,
+                "reason": (
+                    "Horário de funcionamento incompleto; "
+                    "monitoramento mantido."
+                ),
+                "local_time": now,
+                "opened_at": None,
+                "schedule_configured": True,
+            }
+
+        return {
+            "should_monitor": False,
+            "reason": "Fora do horário de funcionamento.",
+            "local_time": now,
+            "opened_at": None,
+            "schedule_configured": True,
+        }
+
+    def current_status(
+        self,
+        db: Session,
+        store_id: UUID,
+        service_mode: str | None = None,
+    ) -> dict:
+        store = db.get(Store, store_id)
+        if store is None:
+            raise LookupError("Loja não encontrada.")
+
+        rules = self.get_or_create_rules(db, store_id)
+        now = datetime.now(ZoneInfo(store.timezone))
+
+        if rules.manual_paused:
+            return {
+                "open": False,
+                "reason": rules.pause_reason
+                or "Pedidos pausados temporariamente.",
+                "local_time": now,
+            }
+
+        if service_mode == "DELIVERY" and not rules.delivery_enabled:
+            return {
+                "open": False,
+                "reason": "Delivery desativado.",
+                "local_time": now,
+            }
+
+        if service_mode == "TAKEOUT" and not rules.takeout_enabled:
+            return {
+                "open": False,
+                "reason": "Retirada desativada.",
+                "local_time": now,
+            }
+
+        today, active_day, opened_at = self._current_schedule_window(
+            db,
+            store,
+            now,
+        )
+
+        if active_day is None:
+            if today is None:
+                return {
+                    "open": False,
+                    "reason": (
+                        "Horário de funcionamento ainda não cadastrado; "
+                        "não confirme que a loja está aberta."
+                    ),
+                    "local_time": now,
+                    "schedule_configured": False,
+                }
+
+            if today.closed:
+                return {
+                    "open": False,
+                    "reason": "Restaurante fechado hoje.",
+                    "local_time": now,
+                    "schedule_configured": True,
+                }
+
+            if today.open_time is None or today.close_time is None:
+                return {
+                    "open": False,
+                    "reason": "Horário de funcionamento incompleto.",
+                    "local_time": now,
+                    "schedule_configured": True,
+                }
+
+            return {
+                "open": False,
+                "reason": "Fora do horário de funcionamento.",
+                "local_time": now,
+                "schedule_configured": True,
+            }
+
+        cutoff = (
+            active_day.delivery_until
+            if service_mode == "DELIVERY"
+            else active_day.takeout_until
+            if service_mode == "TAKEOUT"
+            else None
+        )
+
+        if cutoff is not None and opened_at is not None:
+            cutoff_date = opened_at.date()
+
+            if (
+                active_day.open_time > active_day.close_time
+                and cutoff <= active_day.close_time
+            ):
+                cutoff_date += timedelta(days=1)
+
+            cutoff_at = datetime.combine(
+                cutoff_date,
+                cutoff,
+                tzinfo=now.tzinfo,
+            )
+
+            if now > cutoff_at:
+                return {
+                    "open": False,
+                    "reason": "Horário limite desta modalidade encerrado.",
+                    "local_time": now,
+                    "schedule_configured": True,
+                }
+
+        return {
+            "open": True,
+            "reason": "Aceitando pedidos.",
+            "local_time": now,
+            "schedule_configured": True,
+        }
 
     def validate_scheduled_time(
         self,

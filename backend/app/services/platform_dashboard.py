@@ -11,12 +11,14 @@ from app.models.channel import ChannelAccount, OutboundChannelMessage
 from app.models.conversation import Conversation, HumanTicket
 from app.models.integration import StoreIntegration
 from app.models.order import Order
+from app.services.commercial_status import CommercialStatusService
 
 
 class PlatformDashboardService:
     ATTENTION_MINUTES = 15
     CONSUMER_WARNING_SECONDS = 120
     CONSUMER_CRITICAL_SECONDS = 300
+    STORE_OPEN_GRACE_SECONDS = 900
     AUTO_PREFIX = "[AUTO-MONITOR]"
 
     def overview(self, db: Session, *, hours: int = 24) -> dict:
@@ -91,7 +93,18 @@ class PlatformDashboardService:
         integrations = list(db.scalars(
             select(StoreIntegration).where(StoreIntegration.store_id == store.id).order_by(StoreIntegration.provider)
         ).all())
-        integration_items = [self._integration(item, now=now) for item in integrations]
+        monitoring = CommercialStatusService().monitoring_status(
+            db,
+            store.id,
+        )
+        integration_items = [
+            self._integration(
+                item,
+                now=now,
+                monitoring=monitoring,
+            )
+            for item in integrations
+        ]
         auto_issues = set(db.scalars(
             select(HumanTicket.reason).where(
                 HumanTicket.store_id == store.id,
@@ -99,8 +112,18 @@ class PlatformDashboardService:
                 HumanTicket.reason.like(f"{self.AUTO_PREFIX}%"),
             )
         ).all())
-        client_issue = any(item["status"] != "OPERATIONAL" for item in integration_items)
-        client_issue = client_issue or any(reason.endswith(" CONSUMER") for reason in auto_issues)
+        client_issue = any(
+            item["status"] != "OPERATIONAL"
+            for item in integration_items
+        )
+
+        consumer_ticket_issue = any(
+            reason.endswith(" CONSUMER")
+            for reason in auto_issues
+        )
+
+        if monitoring["should_monitor"]:
+            client_issue = client_issue or consumer_ticket_issue
 
         return {
             "store_id": str(store.id),
@@ -116,19 +139,75 @@ class PlatformDashboardService:
             "integrations": integration_items,
         }
 
-    def _integration(self, integration: StoreIntegration, *, now: datetime) -> dict:
-        status = "OPERATIONAL" if integration.active else "ATTENTION"
-        age_seconds = max(0, int((now - integration.updated_at).total_seconds()))
+    def _integration(
+        self,
+        integration: StoreIntegration,
+        *,
+        now: datetime,
+        monitoring: dict,
+    ) -> dict:
+        status = (
+            "OPERATIONAL"
+            if integration.active
+            else "ATTENTION"
+        )
+        age_seconds = max(
+            0,
+            int(
+                (
+                    now - integration.updated_at
+                ).total_seconds()
+            ),
+        )
         detail = "Ativa"
-        if integration.provider == "CONSUMER" and integration.active:
-            if age_seconds > self.CONSUMER_CRITICAL_SECONDS:
-                status = "ATTENTION"
-                detail = f"Sem polling há {age_seconds // 60} minuto(s)"
-            elif age_seconds > self.CONSUMER_WARNING_SECONDS:
-                status = "WARNING"
-                detail = f"Polling atrasado há {age_seconds // 60} minuto(s)"
+
+        if (
+            integration.provider == "CONSUMER"
+            and integration.active
+        ):
+            if not monitoring["should_monitor"]:
+                status = "OPERATIONAL"
+                detail = monitoring["reason"]
             else:
-                detail = "Polling ativo"
+                opened_at = monitoring.get("opened_at")
+                local_time = monitoring.get("local_time")
+
+                in_opening_grace = False
+                if opened_at is not None and local_time is not None:
+                    seconds_since_open = max(
+                        0,
+                        int(
+                            (
+                                local_time - opened_at
+                            ).total_seconds()
+                        ),
+                    )
+                    in_opening_grace = (
+                        seconds_since_open
+                        < self.STORE_OPEN_GRACE_SECONDS
+                    )
+
+                if in_opening_grace:
+                    status = "OPERATIONAL"
+                    detail = (
+                        "Loja acabou de abrir; "
+                        "polling em período de tolerância"
+                    )
+                elif age_seconds > self.CONSUMER_CRITICAL_SECONDS:
+                    status = "ATTENTION"
+                    detail = (
+                        f"Sem polling há "
+                        f"{age_seconds // 60} minuto(s)"
+                    )
+                elif age_seconds > self.CONSUMER_WARNING_SECONDS:
+                    status = "WARNING"
+                    detail = (
+                        f"Polling atrasado há "
+                        f"{age_seconds // 60} minuto(s)"
+                    )
+                else:
+                    detail = "Polling ativo"
+
         elif not integration.active:
             detail = "Integração inativa"
 
