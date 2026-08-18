@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.auth import router as auth_router
 from app.api.carts import router as carts_router
+from app.api.customers import router as customers_router
 from app.api.orders import router as orders_router
 from app.api.commercial_rules import router as commercial_router
 from app.api.customer_operations import router as customer_operations_router
@@ -59,6 +60,7 @@ def environment():
     app = FastAPI()
     app.include_router(auth_router)
     app.include_router(carts_router)
+    app.include_router(customers_router)
     app.include_router(orders_router)
     app.include_router(commercial_router)
     app.include_router(customer_operations_router)
@@ -1286,4 +1288,145 @@ def test_platform_admin_can_read_company_b_order(
     assert response.status_code == 200
     assert response.json()["id"] == str(
         environment["order_b"].id
+    )
+
+
+def test_customer_without_session_returns_401(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/customers/find-or-create",
+        json={
+            "store_id": str(environment["store_a"].id),
+            "name": "Cliente Novo",
+            "phone": "5597983333333",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_viewer_cannot_create_customer(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/customers/find-or-create",
+        json={
+            "store_id": str(environment["store_a"].id),
+            "name": "Cliente Viewer",
+            "phone": "5597983333334",
+        },
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_manager_can_create_customer_in_own_company(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/customers/find-or-create",
+        json={
+            "store_id": str(environment["store_a"].id),
+            "name": "Cliente Manager",
+            "phone": "5597983333335",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_a"].id
+    )
+
+
+def test_manager_cannot_create_customer_in_company_b(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/customers/find-or-create",
+        json={
+            "store_id": str(environment["store_b"].id),
+            "name": "Cliente Empresa B",
+            "phone": "5597983333336",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_manager_can_add_address_to_own_customer(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        (
+            "/api/v1/customers/"
+            f"{environment['customer_a'].id}/addresses"
+        ),
+        json={
+            "street": "Rua Empresa A",
+            "number": "100",
+            "neighborhood": "Centro",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["customer_id"] == str(
+        environment["customer_a"].id
+    )
+
+
+def test_manager_cannot_add_address_to_company_b_customer(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        (
+            "/api/v1/customers/"
+            f"{environment['customer_b'].id}/addresses"
+        ),
+        json={
+            "street": "Rua Indevida",
+            "number": "999",
+            "neighborhood": "Centro",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_platform_admin_can_add_address_to_company_b_customer(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        (
+            "/api/v1/customers/"
+            f"{environment['customer_b'].id}/addresses"
+        ),
+        json={
+            "street": "Rua Empresa B",
+            "number": "200",
+            "neighborhood": "Centro",
+        },
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["customer_id"] == str(
+        environment["customer_b"].id
     )
