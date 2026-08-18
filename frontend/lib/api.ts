@@ -494,3 +494,92 @@ export async function getStoreAnalytics(
 
   return response.json() as Promise<StoreAnalytics>;
 }
+
+
+export type PlatformAnalytics = {
+  scope: "platform";
+  period_hours: number;
+  generated_at: string;
+  summary: {
+    companies_total: number;
+    companies_active: number;
+    companies_with_orders: number;
+    stores_total: number;
+    stores_active: number;
+    stores_with_orders: number;
+    orders_total: number;
+    orders_valid: number;
+    orders_cancelled: number;
+    revenue: number;
+    average_ticket: number;
+  };
+  service_modes: Array<{
+    service_mode: string;
+    orders: number;
+    revenue: number;
+  }>;
+  payment_methods: Array<{
+    payment_method: string;
+    orders: number;
+    revenue: number;
+  }>;
+  states: Array<{
+    state: string;
+    stores: number;
+    orders: number;
+    revenue: number;
+  }>;
+  cities: Array<{
+    state: string;
+    city: string;
+    stores: number;
+    orders: number;
+    revenue: number;
+  }>;
+  top_products: Array<{
+    name: string;
+    stores: number;
+    quantity: number;
+    revenue: number;
+  }>;
+  top_modifiers: Array<{
+    name: string;
+    stores: number;
+    quantity: number;
+    revenue: number;
+  }>;
+  orders_by_weekday: Array<{
+    weekday: number;
+    label: string;
+    orders: number;
+    revenue: number;
+  }>;
+  orders_by_hour: Array<{
+    hour: number;
+    orders: number;
+    revenue: number;
+  }>;
+};
+
+
+export async function getPlatformAnalytics(
+  hours: number,
+): Promise<PlatformAnalytics> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/platform/analytics?hours=${hours}`,
+    {
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível carregar o Analytics global.",
+      ),
+    );
+  }
+
+  return response.json() as Promise<PlatformAnalytics>;
+}

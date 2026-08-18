@@ -8,6 +8,7 @@ import {
   ServiceStatus,
 } from "@/lib/api";
 import { Dashboard } from "@/components/dashboard";
+import { PlatformAnalyticsPanel } from "@/components/platform-analytics-panel";
 import { LogoMark, RefreshIcon } from "@/components/icons";
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -77,6 +78,7 @@ export function PlatformDashboard() {
 
         <nav aria-label="Navegação principal">
           <a className="navItem active" href="#plataforma">Visão geral</a>
+          <a className="navItem" href="#analytics-global">Analytics global</a>
           <a className="navItem" href="#clientes">Clientes</a>
           <a className="navItem" href="#saude">Saúde da plataforma</a>
         </nav>
@@ -137,6 +139,8 @@ export function PlatformDashboard() {
               <Metric label="Pedidos" value={overview.summary.orders_total} detail={`No período de ${overview.period_hours}h`} />
               <Metric label="Receita total" value={currency.format(overview.summary.revenue_total)} detail="Somatório dos clientes" />
             </section>
+
+            <PlatformAnalyticsPanel />
 
             <section className="panel wide" id="saude" style={{ marginBottom: 20 }}>
               <header className="panelHeader">
