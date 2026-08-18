@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import current_auth
 from app.database.session import get_db
+from app.models.catalog import Category
 from app.repositories.catalog import ProductRepository
 from app.schemas.catalog import ProductCreate, ProductRead
 from app.services.auth import (
@@ -66,6 +67,21 @@ def create_product(
         authenticated,
         store_id=payload.store_id,
     )
+
+    if payload.category_id is not None:
+        category = db.get(
+            Category,
+            payload.category_id,
+        )
+
+        if (
+            category is None
+            or category.store_id != payload.store_id
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Categoria não encontrada nesta loja.",
+            )
 
     existing = repository.get_by_external_code(
         db,

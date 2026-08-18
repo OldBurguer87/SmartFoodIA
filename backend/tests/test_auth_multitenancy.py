@@ -27,7 +27,7 @@ from app.core.security import hash_password, hash_session_token
 from app.database.base import Base
 from app.database.session import get_db
 from app.models.auth import AuthSession, CompanyUser, User
-from app.models.catalog import Company, Store
+from app.models.catalog import Category, Company, Store
 from app.models.cart import Cart
 from app.models.order import Order
 from app.models.customer import Customer
@@ -113,6 +113,22 @@ def environment():
     )
 
     db.add_all([store_a, store_b])
+    db.flush()
+
+    category_a = Category(
+        store_id=store_a.id,
+        name="Categoria Empresa A",
+    )
+
+    category_b = Category(
+        store_id=store_b.id,
+        name="Categoria Empresa B",
+    )
+
+    db.add_all([
+        category_a,
+        category_b,
+    ])
     db.flush()
 
     customer_a = Customer(
@@ -304,6 +320,8 @@ def environment():
         "db": db,
         "store_a": store_a,
         "store_b": store_b,
+        "category_a": category_a,
+        "category_b": category_b,
         "customer_a": customer_a,
         "customer_b": customer_b,
         "cart_a": cart_a,
@@ -1929,3 +1947,89 @@ def test_platform_analytics_response_contains_no_tenant_pii(
 
     for value in forbidden_values:
         assert value not in serialized
+
+
+def test_manager_can_create_product_with_own_store_category(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/products",
+        json={
+            "store_id": str(environment["store_a"].id),
+            "category_id": str(
+                environment["category_a"].id
+            ),
+            "external_code": "CAT-A-OK",
+            "name": "Produto Categoria A",
+            "price": "10.00",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["category_id"] == str(
+        environment["category_a"].id
+    )
+
+
+def test_company_a_cannot_use_company_b_category(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/products",
+        json={
+            "store_id": str(environment["store_a"].id),
+            "category_id": str(
+                environment["category_b"].id
+            ),
+            "external_code": "CAT-B-INDEVIDA",
+            "name": "Produto Categoria Indevida",
+            "price": "10.00",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Categoria não encontrada nesta loja."
+    )
+
+    check = environment["client"].get(
+        "/api/v1/products/CAT-B-INDEVIDA",
+        params={
+            "store_id": str(
+                environment["store_a"].id
+            ),
+        },
+    )
+
+    assert check.status_code == 404
+
+
+def test_platform_admin_cannot_cross_store_product_category(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/products",
+        json={
+            "store_id": str(environment["store_a"].id),
+            "category_id": str(
+                environment["category_b"].id
+            ),
+            "external_code": "ADMIN-CROSS-CAT",
+            "name": "Produto Categoria Cruzada",
+            "price": "10.00",
+        },
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Categoria não encontrada nesta loja."
+    )
