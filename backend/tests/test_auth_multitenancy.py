@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.auth import router as auth_router
+from app.api.carts import router as carts_router
 from app.api.commercial_rules import router as commercial_router
 from app.api.customer_operations import router as customer_operations_router
 from app.api.catalog_operations import router as catalog_operations_router
@@ -21,6 +22,7 @@ from app.database.base import Base
 from app.database.session import get_db
 from app.models.auth import AuthSession, CompanyUser, User
 from app.models.catalog import Company, Store
+from app.models.cart import Cart
 from app.models.customer import Customer
 from app.models.conversation import (
     Conversation,
@@ -53,6 +55,7 @@ def environment():
 
     app = FastAPI()
     app.include_router(auth_router)
+    app.include_router(carts_router)
     app.include_router(commercial_router)
     app.include_router(customer_operations_router)
     app.include_router(catalog_operations_router)
@@ -115,6 +118,23 @@ def environment():
     )
 
     db.add_all([customer_a, customer_b])
+    db.flush()
+
+    cart_a = Cart(
+        store_id=store_a.id,
+        customer_id=customer_a.id,
+        status="OPEN",
+        service_mode="DELIVERY",
+    )
+
+    cart_b = Cart(
+        store_id=store_b.id,
+        customer_id=customer_b.id,
+        status="OPEN",
+        service_mode="DELIVERY",
+    )
+
+    db.add_all([cart_a, cart_b])
     db.flush()
 
     viewer = User(
@@ -237,6 +257,8 @@ def environment():
         "store_b": store_b,
         "customer_a": customer_a,
         "customer_b": customer_b,
+        "cart_a": cart_a,
+        "cart_b": cart_b,
         "viewer": viewer,
         "manager": manager,
         "platform_admin": platform_admin,
@@ -998,3 +1020,121 @@ def test_invalid_pix_and_scheduling_values_are_rejected(
     )
 
     assert invalid_tolerance.status_code == 422
+
+
+def test_cart_without_session_returns_401(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        f"/api/v1/carts/{environment['cart_a'].id}",
+    )
+
+    assert response.status_code == 401
+
+
+def test_viewer_can_read_cart_from_own_company(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        f"/api/v1/carts/{environment['cart_a'].id}",
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_a"].id
+    )
+
+
+def test_company_a_cannot_read_company_b_cart(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        f"/api/v1/carts/{environment['cart_b'].id}",
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_viewer_cannot_write_cart(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/carts",
+        json={
+            "store_id": str(environment["store_a"].id),
+            "customer_id": str(
+                environment["customer_a"].id
+            ),
+            "service_mode": "DELIVERY",
+        },
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_manager_can_write_cart_from_own_company(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/carts",
+        json={
+            "store_id": str(environment["store_a"].id),
+            "customer_id": str(
+                environment["customer_a"].id
+            ),
+            "service_mode": "DELIVERY",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_a"].id
+    )
+
+
+def test_manager_cannot_write_company_b_cart(
+    environment,
+) -> None:
+    response = environment["client"].post(
+        "/api/v1/carts",
+        json={
+            "store_id": str(environment["store_b"].id),
+            "customer_id": str(
+                environment["customer_b"].id
+            ),
+            "service_mode": "DELIVERY",
+        },
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_platform_admin_can_read_company_b_cart(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        f"/api/v1/carts/{environment['cart_b'].id}",
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["store_id"] == str(
+        environment["store_b"].id
+    )
