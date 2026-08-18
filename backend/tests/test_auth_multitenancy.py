@@ -1824,3 +1824,108 @@ def test_platform_admin_can_read_company_b_analytics(
         environment["store_b"].id
     )
     assert response.json()["summary"]["orders_total"] == 1
+
+
+def test_platform_analytics_without_session_returns_401(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        "/api/v1/operations/platform/analytics",
+    )
+
+    assert response.status_code == 401
+
+
+def test_regular_company_user_cannot_read_platform_analytics(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        "/api/v1/operations/platform/analytics",
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_platform_admin_can_read_platform_analytics(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        "/api/v1/operations/platform/analytics",
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["scope"] == "platform"
+    assert data["summary"]["orders_total"] == 2
+    assert data["summary"]["orders_valid"] == 2
+    assert data["summary"]["revenue"] == 46.0
+
+
+def test_platform_analytics_response_contains_no_tenant_pii(
+    environment,
+) -> None:
+    response = environment["client"].get(
+        "/api/v1/operations/platform/analytics",
+        headers=auth_headers(
+            environment["tokens"]["platform_admin"],
+        ),
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    forbidden_keys = {
+        "customer_id",
+        "customer_name",
+        "customer_phone",
+        "address_street",
+        "address_number",
+        "address_complement",
+        "address_reference",
+        "postal_code",
+        "phone",
+        "email",
+        "document_number",
+        "store_id",
+        "company_id",
+    }
+
+    def assert_no_forbidden_keys(value):
+        if isinstance(value, dict):
+            assert forbidden_keys.isdisjoint(
+                value.keys()
+            )
+
+            for child in value.values():
+                assert_no_forbidden_keys(child)
+
+        elif isinstance(value, list):
+            for child in value:
+                assert_no_forbidden_keys(child)
+
+    assert_no_forbidden_keys(data)
+
+    serialized = str(data)
+
+    forbidden_values = (
+        "Cliente Empresa A",
+        "Cliente Empresa B",
+        "5597981111111",
+        "5597982222222",
+        "Loja A",
+        "Loja B",
+        "Empresa A",
+        "Empresa B",
+    )
+
+    for value in forbidden_values:
+        assert value not in serialized
