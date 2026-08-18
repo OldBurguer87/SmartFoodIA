@@ -42,14 +42,11 @@ Registra eventos técnicos e operacionais, como:
 4. A equipe responde e resolve a lacuna.
 5. A resposta poderá alimentar a base de conhecimento em etapa futura.
 
-## Endpoints
+## Acesso
 
-```text
-POST /api/v1/conversations
-POST /api/v1/conversations/{conversation_id}/messages
-GET  /api/v1/conversations/{conversation_id}/messages
-POST /api/v1/conversations/stores/{store_id}/tickets
-POST /api/v1/conversations/stores/{store_id}/knowledge-gaps
-PATCH /api/v1/conversations/knowledge-gaps/{gap_id}/resolve
-POST /api/v1/conversations/stores/{store_id}/events
-```
+Os fluxos de conversa, mensagens, tickets, lacunas de conhecimento e eventos
+são executados internamente pelos serviços do SmartFoodIA e não possuem
+mais API HTTP pública em `/api/v1/conversations`.
+
+As operações administrativas autenticadas permanecem disponíveis pelas
+rotas `/api/v1/operations/...`.
