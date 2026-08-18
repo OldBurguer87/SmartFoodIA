@@ -486,13 +486,21 @@ class OliviaOrchestrator:
 
         history = self.repository.list_messages(db, conversation_id, limit=30)
 
+        # Mídias como comprovantes PIX permanecem registradas no histórico
+        # para auditoria, mas não devem virar contexto textual da Olivia.
+        ai_history = [
+            message
+            for message in history
+            if (message.content_type or "TEXT").upper() == "TEXT"
+        ]
+
         checkout_required = _checkout_required_by_customer(
-            history=history,
+            history=ai_history,
             customer_message=customer_message,
         )
 
         force_greeting = _should_force_greeting(
-            history=history,
+            history=ai_history,
             customer_message=customer_message,
         )
 
@@ -501,7 +509,7 @@ class OliviaOrchestrator:
                 "role": "user" if message.sender_type == "CUSTOMER" else "assistant",
                 "content": message.content,
             }
-            for message in history
+            for message in ai_history
         ]
         registry = OliviaToolRegistry(
             ToolContext(

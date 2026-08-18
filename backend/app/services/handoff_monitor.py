@@ -77,6 +77,24 @@ class HumanHandoffMonitor:
                     or "solicitação de atendimento"
                 )
 
+                # O timeout da espera humana conta desde o momento em que
+                # a Olívia pediu ajuda, mesmo fora do horário da equipe.
+                age_since_handoff_seconds = (
+                    current_time - wait_event.created_at
+                ).total_seconds()
+
+                if (
+                    age_since_handoff_seconds
+                    >= settings.human_wait_timeout_seconds
+                ):
+                    if self._resume_with_olivia(
+                        db,
+                        conversation=conversation,
+                        wait_event=wait_event,
+                    ):
+                        resumed += 1
+                    continue
+
                 staff_available = self.relay.staff_is_available_now(
                     db,
                     store_id=conversation.store_id,

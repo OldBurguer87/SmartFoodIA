@@ -201,34 +201,6 @@ class PixReceiptService:
             customer_phone=sender,
         )
 
-        # Não baixa e não armazena fotos aleatórias se não houver
-        # nenhum pedido PIX recente para esse cliente.
-        if not candidates:
-            self._save_customer_message(
-                db,
-                conversation=conversation,
-                event=event,
-                receipt=None,
-                message_type=message_type,
-                media_id=media_id,
-            )
-
-            if allow_customer_reply:
-                self.channels.create_outbound(
-                    db,
-                    account=account,
-                    conversation_id=conversation.id,
-                    recipient=sender,
-                    content=(
-                        "Recebi sua imagem/arquivo 😊 "
-                        "Se for um comprovante de PIX, não encontrei "
-                        "um pedido PIX recente vinculado a este número. "
-                        "Me informe o número do pedido para eu localizar."
-                    ),
-                )
-
-            return None
-
         mime_type_from_message = media_payload.get("mime_type")
 
         if (
@@ -303,6 +275,91 @@ class PixReceiptService:
             .order_by(PaymentReceipt.created_at.desc())
             .limit(1)
         )
+
+        # Comprovante idêntico já recebido anteriormente:
+        # não cria novo PaymentReceipt e não encaminha para revisão.
+        if duplicate is not None:
+            duplicate_order = (
+                db.get(Order, duplicate.order_id)
+                if duplicate.order_id is not None
+                else None
+            )
+
+            same_customer = (
+                duplicate_order is not None
+                and self._digits(duplicate_order.customer_phone)
+                == self._digits(sender)
+            )
+
+            self._save_customer_message(
+                db,
+                conversation=conversation,
+                event=event,
+                receipt=duplicate,
+                message_type=message_type,
+                media_id=media_id,
+            )
+
+            if allow_customer_reply:
+                if (
+                    same_customer
+                    and duplicate.status
+                    in {"AUTO_CONFIRMED", "HUMAN_CONFIRMED"}
+                ):
+                    response = (
+                        f"Esse comprovante já foi utilizado no pedido "
+                        f"#{duplicate_order.display_id} ✅ "
+                        "Não é necessário enviá-lo novamente."
+                    )
+                elif same_customer:
+                    response = (
+                        "Esse comprovante já foi recebido anteriormente "
+                        "e está registrado para conferência. "
+                        "Não é necessário enviá-lo novamente."
+                    )
+                else:
+                    response = (
+                        "Esse comprovante já foi utilizado anteriormente "
+                        "e não pode ser usado novamente."
+                    )
+
+                self.channels.create_outbound(
+                    db,
+                    account=account,
+                    conversation_id=conversation.id,
+                    recipient=sender,
+                    content=response,
+                )
+
+            return None
+
+        # Se não houver pedido PIX pendente e a imagem não for duplicada,
+        # não armazenamos o arquivo.
+        if not candidates:
+            self._save_customer_message(
+                db,
+                conversation=conversation,
+                event=event,
+                receipt=None,
+                message_type=message_type,
+                media_id=media_id,
+            )
+
+            if allow_customer_reply:
+                self.channels.create_outbound(
+                    db,
+                    account=account,
+                    conversation_id=conversation.id,
+                    recipient=sender,
+                    content=(
+                        "Recebi sua imagem/arquivo 😊 "
+                        "Se for um comprovante de PIX, não encontrei "
+                        "um pedido PIX recente vinculado a este número. "
+                        "Me informe o número do pedido para eu localizar."
+                    ),
+                )
+
+            return None
 
         # Se houver pedidos PIX candidatos, começamos pelo mais recente.
         # O validador confirma/reassocia usando o valor extraído do
