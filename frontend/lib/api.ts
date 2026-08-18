@@ -412,3 +412,85 @@ export async function getCustomerDetail(
 
   return response.json();
 }
+
+
+export type StoreAnalytics = {
+  store_id: string;
+  period_hours: number;
+  timezone: string;
+  generated_at: string;
+  summary: {
+    orders_total: number;
+    orders_valid: number;
+    orders_cancelled: number;
+    revenue: number;
+    average_ticket: number;
+    unique_customers: number;
+    new_customers: number;
+    returning_customers: number;
+  };
+  service_modes: Array<{
+    service_mode: string;
+    orders: number;
+    revenue: number;
+  }>;
+  payment_methods: Array<{
+    payment_method: string;
+    orders: number;
+    revenue: number;
+  }>;
+  top_products: Array<{
+    product_id: string;
+    external_code: string | null;
+    name: string;
+    quantity: number;
+    revenue: number;
+  }>;
+  top_modifiers: Array<{
+    modifier_id: string;
+    external_code: string | null;
+    name: string;
+    quantity: number;
+    revenue: number;
+  }>;
+  top_neighborhoods: Array<{
+    neighborhood: string;
+    orders: number;
+    revenue: number;
+  }>;
+  orders_by_weekday: Array<{
+    weekday: number;
+    label: string;
+    orders: number;
+    revenue: number;
+  }>;
+  orders_by_hour: Array<{
+    hour: number;
+    orders: number;
+    revenue: number;
+  }>;
+};
+
+
+export async function getStoreAnalytics(
+  storeId: string,
+  hours: number,
+): Promise<StoreAnalytics> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/stores/${storeId}/analytics?hours=${hours}`,
+    {
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível carregar o Analytics da loja.",
+      ),
+    );
+  }
+
+  return response.json() as Promise<StoreAnalytics>;
+}

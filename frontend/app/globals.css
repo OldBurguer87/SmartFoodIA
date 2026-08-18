@@ -1270,3 +1270,344 @@ h1 {
     align-items: flex-start;
   }
 }
+
+
+/* Store Analytics */
+
+.analyticsSection {
+  margin: 28px 0;
+}
+
+.analyticsHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.analyticsHeader h2 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.025em;
+}
+
+.analyticsHeader > div:first-child > p:last-child {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.analyticsPeriod {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.analyticsPeriod label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.analyticsPeriod select {
+  padding: 10px 34px 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.analyticsPeriod select:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(36, 76, 54, 0.09);
+}
+
+.analyticsPeriod select:disabled {
+  opacity: 0.6;
+}
+
+.analyticsLoading {
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: var(--shadow);
+}
+
+.analyticsMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.analyticsMetric {
+  min-height: 135px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.analyticsMetric > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.analyticsMetric strong {
+  margin: 8px 0 7px;
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -0.035em;
+}
+
+.analyticsMetric small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analyticsMetric.critical {
+  border-color: #f1c7c1;
+  background: var(--danger-soft);
+}
+
+.analyticsMetric.critical strong {
+  color: var(--danger);
+}
+
+.analyticsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.analyticsCard {
+  min-width: 0;
+  min-height: 260px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.analyticsCard.wide {
+  grid-column: span 2;
+}
+
+.analyticsCard > header {
+  margin-bottom: 20px;
+}
+
+.analyticsCard h3 {
+  margin: 0 0 5px;
+  font-size: 17px;
+}
+
+.analyticsCard header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analyticsRanking {
+  display: flex;
+  flex-direction: column;
+}
+
+.analyticsRankingRow {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.analyticsRankingRow:last-child {
+  border-bottom: 0;
+}
+
+.analyticsRank {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.analyticsRankingRow > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.analyticsRankingRow strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analyticsRankingRow small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.analyticsRankingRow > b {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.analyticsEmpty {
+  margin: 0;
+  padding: 18px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.weekdayChart {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.weekdayRow {
+  display: grid;
+  grid-template-columns: 36px minmax(100px, 1fr) 36px 90px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.weekdayRow > span {
+  font-weight: 700;
+}
+
+.weekdayRow > strong {
+  text-align: right;
+}
+
+.weekdayRow > small {
+  color: var(--muted);
+  text-align: right;
+}
+
+.weekdayTrack {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #edf0ec;
+}
+
+.weekdayFill {
+  min-width: 2px;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.hourlyChart {
+  height: 220px;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(12px, 1fr));
+  align-items: end;
+  gap: 4px;
+  padding-top: 8px;
+}
+
+.hourlyColumn {
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: 1fr 20px;
+  gap: 7px;
+  text-align: center;
+}
+
+.hourlyBarArea {
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 5px;
+  background: var(--surface-soft);
+}
+
+.hourlyBar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 5px 5px 2px 2px;
+  background: var(--green);
+  transition: height 180ms ease;
+}
+
+.hourlyColumn span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.analyticsFoot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (max-width: 1050px) {
+  .analyticsMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .analyticsHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .analyticsPeriod {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .analyticsMetrics,
+  .analyticsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .analyticsCard.wide {
+    grid-column: auto;
+  }
+
+  .weekdayRow {
+    grid-template-columns: 34px minmax(70px, 1fr) 30px;
+  }
+
+  .weekdayRow > small {
+    display: none;
+  }
+
+  .hourlyChart {
+    overflow-x: auto;
+    grid-template-columns: repeat(24, 22px);
+  }
+
+  .analyticsFoot {
+    flex-direction: column;
+  }
+}
