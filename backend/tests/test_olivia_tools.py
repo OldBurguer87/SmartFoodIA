@@ -196,11 +196,72 @@ def test_add_customer_address_accepts_customer_from_same_store() -> None:
             "street": "Rua Local",
             "number": "10",
             "neighborhood": "Centro",
+            "reference": "Próximo à igreja",
         },
     )
 
     assert result.ok is True
     assert result.data["customer_id"] == customer.data["id"]
+
+
+def test_add_customer_address_requires_reference() -> None:
+    _, _, registry = setup_registry()
+
+    customer = registry.execute(
+        "find_or_create_customer",
+        {
+            "name": "Cliente Sem Referência",
+            "phone": "97981113333",
+        },
+    )
+
+    result = registry.execute(
+        "add_customer_address",
+        {
+            "customer_id": customer.data["id"],
+            "street": "Rua Sem Referência",
+            "number": "20",
+            "neighborhood": "Centro",
+        },
+    )
+
+    assert result.ok is False
+    assert "Ponto de referência é obrigatório" in result.error
+
+
+def test_add_customer_address_accepts_explicit_no_reference() -> None:
+    _, _, registry = setup_registry()
+
+    customer = registry.execute(
+        "find_or_create_customer",
+        {
+            "name": "Cliente Sem Ponto",
+            "phone": "97981114444",
+        },
+    )
+
+    result = registry.execute(
+        "add_customer_address",
+        {
+            "customer_id": customer.data["id"],
+            "street": "Rua Sem Ponto",
+            "number": "30",
+            "neighborhood": "Centro",
+            "reference": "Sem referência",
+        },
+    )
+
+    assert result.ok is True
+
+    addresses = registry.execute(
+        "list_customer_addresses",
+        {
+            "customer_id": customer.data["id"],
+        },
+    )
+
+    assert addresses.ok is True
+    assert addresses.data["addresses"][0]["reference"] == "Sem referência"
 
 
 def test_add_customer_address_blocks_customer_from_another_store() -> None:
@@ -237,6 +298,7 @@ def test_add_customer_address_blocks_customer_from_another_store() -> None:
             "street": "Rua Empresa B",
             "number": "20",
             "neighborhood": "Centro",
+            "reference": "Próximo ao mercado",
         },
     )
 

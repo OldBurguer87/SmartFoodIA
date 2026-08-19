@@ -176,7 +176,15 @@ class AddCustomerAddressTool:
                 "state": {"type": "string"},
                 "postal_code": {"type": ["string", "null"]},
                 "complement": {"type": ["string", "null"]},
-                "reference": {"type": ["string", "null"]},
+                "reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": (
+                        "Ponto de referência informado pelo cliente. "
+                        "Se ele disser explicitamente que não possui, "
+                        "use 'Sem referência'."
+                    ),
+                },
                 "is_default": {"type": "boolean"},
             },
             "required": [
@@ -184,6 +192,7 @@ class AddCustomerAddressTool:
                 "street",
                 "number",
                 "neighborhood",
+                "reference",
             ],
             "additionalProperties": False,
         },
@@ -225,6 +234,18 @@ class AddCustomerAddressTool:
             return ToolResult(
                 ok=False,
                 error="Cliente não encontrado.",
+            )
+
+        reference = (reference or "").strip()
+        if not reference:
+            return ToolResult(
+                ok=False,
+                error=(
+                    "Ponto de referência é obrigatório para cadastrar "
+                    "um novo endereço. Pergunte ao cliente por uma referência "
+                    "próxima. Se ele disser explicitamente que não possui, "
+                    "use 'Sem referência'."
+                ),
             )
 
         try:
