@@ -11,7 +11,7 @@ O Consumer consulta a API do SmartFoodIA. Cada loja possui:
 
 O token é armazenado somente como SHA-256, nunca em texto puro.
 
-Para o piloto da Old Burguer 87, a base pública oficial é:
+Para a Old Burguer 87, a base pública oficial é:
 
 ```text
 https://smartfoodia.com.br
@@ -33,7 +33,7 @@ docker compose exec api python -m app.scripts.configure_consumer_partner \
 
 ## Autenticação
 
-O backend aceita dois formatos:
+O backend aceita:
 
 ```http
 Authorization: Bearer TOKEN_DA_LOJA
@@ -45,7 +45,7 @@ ou:
 xapikey: TOKEN_DA_LOJA
 ```
 
-Na homologação real de 2026-08-11, o Consumer utilizou `xapikey`.
+Na homologação real, o Consumer utilizou `xapikey`.
 
 ## URLs operacionais homologadas
 
@@ -67,43 +67,87 @@ GET https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/order
 POST https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/orders/{order_id}/events
 ```
 
-### Atualização de status — formato observado em homologação
+### Atualização de status
+
+Formato observado em produção:
 
 ```text
 POST https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/orders/status
 ```
 
-O identificador do pedido vem no corpo (`OrderId`).
+O `OrderId` vem no corpo JSON.
 
-### Rota de compatibilidade com UUID no caminho
+Compatibilidade com UUID no caminho:
 
 ```text
 POST https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/orders/{order_id}/status
 ```
 
-Essa rota continua disponível no backend, mas não foi a forma utilizada pelo Consumer durante a homologação real.
-
 ### Compatibilidade adicional de detalhes
-
-O runtime homologado possui também:
 
 ```text
 POST https://smartfoodia.com.br/api/v1/integrations/consumer/old-burguer-87/orders/details
 ```
 
-Ela é uma rota de compatibilidade operacional e deve ser mantida documentada até consolidação final do contrato.
-
 ## Fluxo real observado
 
 1. O checkout cria `PLACED / PLC`.
-2. O Consumer consulta `/events`.
-3. O Consumer consulta `GET /orders/{order_id}`.
-4. O pedido aparece na fila do Consumer.
-5. O Consumer envia mudanças de status para `/orders/status`.
-6. O SmartFoodIA atualiza o estado interno e registra eventos.
-7. Quando o canal WhatsApp estiver configurado, o notifier poderá enfileirar a atualização para o cliente.
+2. O pedido passa pelas regras de liberação do Core.
+3. O Consumer consulta `/events`.
+4. O Consumer consulta detalhes.
+5. O pedido aparece na fila do Consumer.
+6. O Consumer envia mudanças de status.
+7. O SmartFoodIA atualiza o estado interno e registra eventos.
+8. O notifier pode enfileirar atualização para o cliente pelo WhatsApp.
 
-Na produção homologada, a consulta dos detalhes também marca o `PLC` pendente como entregue. Portanto, o fluxo real não deve depender exclusivamente de um callback ODR posterior.
+## Regra de liberação para pedidos PIX
+
+Desde o commit `832f93e`, pedidos com:
+
+```text
+payment_method = PIX
+service_mode = DELIVERY ou TAKEOUT
+```
+
+**não são expostos ao Consumer imediatamente após o checkout**.
+
+Eles só podem aparecer no polling, ser serializados em detalhes ou aceitar callbacks diretos quando existir um `PaymentReceipt` do pedido com status:
+
+```text
+AUTO_CONFIRMED
+ou
+HUMAN_CONFIRMED
+```
+
+Estados abaixo **não liberam o pedido**:
+
+```text
+RECEIVED
+NEEDS_REVIEW
+HUMAN_REJECTED
+```
+
+Essa proteção existe em duas fronteiras:
+
+- filtro de eventos pendentes usados pelo polling;
+- validação direta no adapter antes de detalhes/eventos/status.
+
+Assim, uma chamada direta ao endpoint não consegue contornar a regra do polling.
+
+## Pedidos agendados
+
+Pedidos com `release_at` futuro continuam invisíveis ao Consumer até o horário de liberação.
+
+Para PIX agendado, as duas condições precisam ser verdadeiras:
+
+1. `release_at` já alcançado;
+2. pagamento PIX confirmado (`AUTO_CONFIRMED` ou `HUMAN_CONFIRMED`).
+
+## Pagamentos não-PIX
+
+A trava descrita acima é exclusiva do PIX.
+
+Meios como dinheiro, débito, crédito ou cartão mantêm o comportamento de integração existente, respeitando as demais regras do pedido.
 
 ## Status aceitos
 
@@ -123,25 +167,15 @@ Aliases externos aceitos/normalizados incluem:
 - `DELIVERED`;
 - variantes CamelCase como `ReadyToPickup` e `OutForDelivery`.
 
-A normalização de produção ignora diferenças de maiúsculas/minúsculas, hífens, espaços e underscores quando possível.
+A normalização ignora diferenças de maiúsculas/minúsculas, hífens, espaços e underscores quando possível.
 
 ## Payload DELIVERY homologado
 
-Para `service_mode=DELIVERY`, o baseline que foi aceito pelo Consumer em 2026-08-11 contém:
+Para `service_mode=DELIVERY`, o baseline aceito pelo Consumer contém endereço e bloco de entrega compatíveis com o contrato real, incluindo os campos necessários para a operação homologada.
 
-```text
-deliveredBy = "Partner"
-formattedAddress
-coordinates.latitude
-coordinates.longitude
-delivery.observations
-```
-
-O conjunto foi validado em produção após um teste A/B. Não foi isolado qual campo individual é obrigatório; por isso, esses campos devem ser mantidos juntos até uma nova homologação controlada.
+Até uma nova homologação controlada, o mapper deve preservar o conjunto já aprovado em produção.
 
 ## Retirada homologada
-
-Fluxo validado:
 
 ```text
 PLACED → CONFIRMED → READY → CONCLUDED
@@ -149,18 +183,27 @@ PLACED → CONFIRMED → READY → CONCLUDED
 
 ## Delivery homologado
 
-Fluxo validado:
+```text
+PLACED → CONFIRMED → READY → DISPATCHED → CONCLUDED
+```
+
+## Proteção contra regressão
+
+Callbacks tardios não podem reabrir pedidos terminais nem reduzir o estágio operacional.
+
+Exemplos bloqueados:
 
 ```text
-PLACED → CONFIRMED → DISPATCHED → CONCLUDED
+CONCLUDED → READY
+DISPATCHED → READY
+READY → CONFIRMED
 ```
 
 ## Segurança
 
-O token é segredo. A Constituição determina que logs não exponham chaves ou tokens. A auditoria de 2026-08-11 identificou que o access log do Caddy pode registrar o header `xapikey` em texto. Essa não conformidade deve ser corrigida antes da produção assistida.
+- tokens são segredos;
+- logs não devem expor `xapikey`;
+- o Consumer continua sendo um adapter;
+- regras de cliente, carrinho, pagamento, pedido, idempotência e liberação permanecem no Core.
 
-## Princípio de arquitetura
-
-O Consumer continua sendo um adaptador do SmartFoodIA. Regras de cliente, carrinho, pedido, cálculo, idempotência e validação permanecem no Core.
-
-Consulte `docs/PRODUCTION_RUNTIME.md` para o snapshot operacional auditado.
+Consulte `docs/PRODUCTION_RUNTIME.md` para o snapshot operacional mais recente.
