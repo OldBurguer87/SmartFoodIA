@@ -1,8 +1,8 @@
 # Estado real de produção
 
-Última auditoria operacional: **2026-08-12**.
+Última auditoria operacional: **2026-08-19**.
 
-Este documento registra o que está efetivamente executando na VPS e o que já foi homologado na prática. Ele separa três conceitos que não devem ser confundidos:
+Este documento registra o que está efetivamente executando na VPS e separa três conceitos:
 
 1. **implementado no código**;
 2. **configurado na produção**;
@@ -10,16 +10,18 @@ Este documento registra o que está efetivamente executando na VPS e o que já f
 
 ## Snapshot da VPS
 
-- branch: `main`;
+- branch operacional: `feature/plataforma-multiempresa`;
+- commit implantado: **`832f93e`**;
 - ambiente: `production`;
 - domínio público: `smartfoodia.com.br`;
 - HTTPS ativo via Caddy;
 - PostgreSQL 17;
 - Python 3.12;
 - frontend Next.js 16 / React 19;
-- migrations Alembic em `0008 (head)` na auditoria original.
+- Alembic: **`0017 (head)`**;
+- backend: **231 testes aprovados** antes da virada de 2026-08-19.
 
-## Serviços ativos
+## Serviços ativos após a virada
 
 - `smartfoodia-api`: ativo e saudável;
 - `smartfoodia-worker`: ativo;
@@ -27,13 +29,87 @@ Este documento registra o que está efetivamente executando na VPS e o que já f
 - `smartfoodia-db`: ativo e saudável;
 - `smartfoodia-caddy`: ativo.
 
+Validação externa pós-deploy:
+
+```text
+GET https://smartfoodia.com.br/ready
+HTTP 200
+{"status":"ready","application":"SmartFoodIA","database":"available"}
+```
+
+Os logs iniciais da API e do worker não apresentaram `ERROR`, exception ou traceback após a troca.
+
+## Imagens e rollback
+
+Antes da virada, as imagens em execução foram preservadas com as tags:
+
+```text
+smartfoodia-api:rollback-20260819
+smartfoodia-worker:rollback-20260819
+smartfoodia-web:rollback-20260819
+```
+
+As novas imagens foram preservadas como:
+
+```text
+smartfoodia-api:deploy-832f93e
+smartfoodia-worker:deploy-832f93e
+smartfoodia-web:deploy-832f93e
+```
+
+Foi criado um script de rollback operacional em `/root/smartFoodIA/rollback-20260819.sh` antes da troca dos containers.
+
+## Backups da virada
+
+Foram criados e validados dois marcos:
+
+1. **pré-produção/desenvolvimento** — estado completo anterior à limpeza dos dados de teste;
+2. **produção-zero** — estado imediatamente após a limpeza dos dados operacionais de teste e antes da operação normal.
+
+Os dumps foram gerados em formato custom do PostgreSQL, validados por SHA-256 e listados com `pg_restore` dentro do container PostgreSQL.
+
+Na limpeza de virada foram zerados:
+
+- pedidos;
+- itens/eventos dependentes de pedidos;
+- carrinhos;
+- clientes;
+- endereços.
+
+Foram preservados:
+
+- catálogo;
+- loja;
+- equipe;
+- conta WhatsApp;
+- integração Consumer;
+- horários e regras comerciais;
+- conversas e tickets históricos;
+- configurações.
+
+Após a limpeza, a base confirmou:
+
+```text
+pedidos = 0
+clientes = 0
+enderecos = 0
+carrinhos = 0
+produtos_ativos = 107
+equipe_ativa = 2
+canais_ativos = 1
+integracoes_ativas = 1
+lojas = 1
+```
+
 ## Consumer — estado atual
 
-Estado: **configurado e homologado de ponta a ponta** para a Old Burguer 87.
+Estado: **ativo e homologado**.
 
-### Retirada homologada
+A integração continua usando o Consumer como adapter, sem mover regras do Core para o ERP.
 
-Fluxo real validado:
+### Fluxos homologados
+
+Retirada:
 
 ```text
 PLACED / PLC
@@ -42,18 +118,7 @@ PLACED / PLC
 → Concluded
 ```
 
-Estados internos persistidos:
-
-```text
-READY_FOR_INTEGRATION
-→ CONFIRMED
-→ READY
-→ CONCLUDED
-```
-
-### Delivery homologado
-
-Fluxo real validado:
+Delivery:
 
 ```text
 PLACED / PLC
@@ -63,221 +128,208 @@ PLACED / PLC
 → Concluded
 ```
 
-Estados internos persistidos:
+Proteções vigentes:
+
+- callbacks idempotentes;
+- estados terminais não reabrem;
+- regressões de estágio são ignoradas;
+- pedidos simultâneos preservam seus UUIDs;
+- `release_at` controla liberação de pedidos agendados.
+
+### Regra PIX antes do Consumer
+
+Desde o commit `832f93e`, pedidos com:
 
 ```text
-READY_FOR_INTEGRATION
-→ CONFIRMED
-→ READY
-→ DISPATCHED
-→ CONCLUDED
+payment_method = PIX
+service_mode = DELIVERY ou TAKEOUT
 ```
 
-O payload DELIVERY homologado inclui endereço completo, referência, taxa de entrega, `deliveredBy: "Partner"`, `formattedAddress`, coordenadas e bloco de entrega compatível com o Consumer.
-
-### Teste simultâneo de dois pedidos
-
-Em 2026-08-12 foram criados do zero e processados ao mesmo tempo:
-
-- pedido `000019` — TAKEOUT;
-- pedido `000020` — DELIVERY.
-
-Os callbacks de status chegaram intercalados, mas cada atualização manteve o UUID correto do pedido. Não houve mistura entre pedidos.
-
-Resultado final:
+só ficam disponíveis ao Consumer se existir `PaymentReceipt` com status:
 
 ```text
-000019: PLC → CFM → RTP → CON
-000020: PLC → CFM → RTP → DSP → CON
+AUTO_CONFIRMED
+ou
+HUMAN_CONFIRMED
 ```
 
-Todos os eventos ficaram `DELIVERED` e os dois pedidos terminaram em `CONCLUDED`.
-
-### Proteção contra regressão de status
-
-Após os testes foi adicionada proteção no adapter Consumer para impedir regressões como:
+Estados como:
 
 ```text
-CONCLUDED → READY
-DISPATCHED → READY
-READY → CONFIRMED
+NEEDS_REVIEW
+HUMAN_REJECTED
 ```
 
-Estados terminais não são reabertos por callbacks tardios, e regressões de estágio são ignoradas.
+não liberam polling, detalhes ou callbacks diretos do Consumer.
 
-### Autenticação observada
+Pagamentos não-PIX mantêm o comportamento anterior.
 
-O Consumer real envia o token em:
+Após o deploy, `store_integrations.updated_at` continuou sendo renovado, confirmando polling Consumer ativo pelo worker novo.
+
+## WhatsApp Cloud
+
+Estado: **ativo em produção**.
+
+Conta ativa:
 
 ```text
-xapikey: TOKEN
+provider = WHATSAPP_CLOUD
+Phone Number ID = 1244010068798110
 ```
 
-O backend também aceita:
+A migração do número oficial foi homologada com:
+
+- webhook ativo;
+- token de produção funcional;
+- texto recebido e respondido;
+- imagem recebida;
+- mensagens outbound chegando ao cliente;
+- atendimento humano pelo número da equipe.
+
+Registros `DEAD`/`FAILED` encontrados durante a auditoria de virada eram históricos de desenvolvimento de 2026-08-12/17, anteriores à produção atual. Não houve evento novo problemático após a troca do runtime.
+
+## Olívia
+
+Estado: **operacional no canal real**.
+
+Já homologado:
+
+- contexto conversacional;
+- catálogo real;
+- complementos;
+- carrinho;
+- confirmação explícita;
+- TAKEOUT;
+- DELIVERY;
+- taxa de entrega;
+- status do Consumer;
+- atendimento humano e retomada.
+
+## Atendimento humano
+
+Comandos homologados incluem:
 
 ```text
-Authorization: Bearer TOKEN
+ASSUMIR
+STATUS
+RESOLVER
+DEVOLVER
+LOCALIZAR PEDIDO
 ```
 
-por compatibilidade.
+### Retomada automática
 
-### Rotação de credencial Consumer
+Uma conversa em `WAITING_HUMAN` que não for assumida dentro do timeout operacional pode voltar à Olívia. A retomada não depende do gerente para continuar o atendimento.
 
-A credencial foi rotacionada durante a homologação de 2026-08-11/12 porque a chave antiga havia aparecido em logs históricos anteriores à correção do Caddy.
+### Escalonamento gerencial
 
-Durante a rotação foi identificado que o polling já utilizava a chave nova, enquanto o componente do Consumer responsável por alterações manuais de status ainda mantinha a chave antiga em memória. Isso produziu `401 Unauthorized` apenas nos callbacks de status.
+O gerente possui fila de notificação separada da equipe comum.
 
-Diagnóstico confirmado sem registrar o segredo: a credencial recebida e a credencial configurada tinham hashes diferentes.
+Situações cobertas:
 
-A correção operacional foi:
+- atendimento não assumido;
+- etapa final da cadeia de PIX rejeitado;
+- novos incidentes críticos detectados pelo monitor operacional.
 
-1. gerar nova chave;
-2. armazenar somente o hash no SmartFoodIA;
-3. salvar a mesma chave na API Parceiro do Consumer;
-4. reiniciar completamente o Consumer após a troca;
-5. validar polling e callbacks de status com `200 OK`.
+Um gerente pode assumir por até 30 minutos uma conversa `OPEN` que tenha sido recentemente escalada. Essa exceção não é concedida a atendentes comuns.
 
-Depois do reinício completo, `Confirmed`, `ReadyToPickup`, `Dispatched` e `Concluded` passaram a usar a nova credencial corretamente.
+## Mídia e localização em atendimento humano
 
-### Callback de status
+Durante status `HUMAN`:
 
-A rota observada na operação real é:
+- imagem/documento recebido do cliente é encaminhado ao atendente;
+- essa mídia não passa pelo fluxo de comprovante PIX;
+- conversa `HUMAN` sem atendente vinculado falha de forma segura;
+- localização do WhatsApp é convertida em contexto textual com latitude, longitude e link de mapa e encaminhada ao atendente.
+
+## LOCALIZAR PEDIDO
+
+Para pedidos `DELIVERY`, o atendente pode localizar o pedido pelo display ID e assumir a conversa correspondente para solicitar localização/foto/referência do cliente.
+
+Proteções incluem:
+
+- pedido inexistente;
+- pedido não-delivery;
+- conversa encerrada/incompatível;
+- não roubar conversa de outro atendente;
+- restrição de contexto ao pedido e telefone corretos.
+
+## PIX — revisão e escalonamento
+
+Proteções atuais:
+
+- SHA-256 de arquivo;
+- fingerprint/transação para antifraude;
+- comprovante rejeitado não pode ser reutilizado para confirmar o pedido;
+- nova transação interrompe a cadeia antiga de rejeição.
+
+Após `HUMAN_REJECTED` e ausência de novo comprovante:
 
 ```text
-POST /api/v1/integrations/consumer/{store_slug}/orders/status
+5 min  → lembrete ao cliente
+10 min → alerta à equipe
+15 min → escalonamento ao gerente
 ```
 
-O `OrderId` vem no corpo JSON.
+Não há cancelamento automático do pedido nessa cadeia.
 
-A rota com UUID no caminho permanece disponível como compatibilidade:
+## Alertas operacionais críticos
+
+`OperationalMonitorService` detecta problemas de:
+
+- OpenAI;
+- WhatsApp/Meta;
+- Consumer;
+- fila operacional.
+
+Um novo incidente cria ticket `SYSTEM / URGENT` e tenta alertar o gerente. A mesma falha persistente reutiliza o ticket e não dispara alerta duplicado em cada ciclo.
+
+Falha na notificação ao gerente não impede o monitor de registrar o incidente.
+
+## Template gerencial da Meta
+
+Template configurado:
 
 ```text
-POST /api/v1/integrations/consumer/{store_slug}/orders/{order_id}/status
+alerta_operacional_gerente
+idioma: pt_BR
+categoria: Utilidade
 ```
 
-### Consulta de detalhes
+Status em **2026-08-19**: **Em análise**.
 
-O Consumer consulta:
+Dentro da janela ativa do WhatsApp, o gerente pode receber texto normal. Fora dela, o sistema tenta o template aprovado. Enquanto a Meta não aprovar o template, essa parte específica pode falhar sem bloquear o atendimento principal.
 
-```text
-GET /api/v1/integrations/consumer/{store_slug}/orders/{order_id}
-```
+## Segurança e segredos
 
-Essa consulta marca o `PLC / PLACED` pendente como entregue no fluxo homologado.
+- tokens e credenciais não devem ser exibidos em logs/documentação;
+- `.env` e backups são restritos ao servidor;
+- credencial Consumer permanece armazenada de forma segura;
+- access log do Caddy não deve persistir `xapikey`;
+- backups de virada incluem `.env` protegido, mas seu conteúdo não deve ser exibido.
 
-### Normalização de status
+## Estado dos gates
 
-Mapeamentos aceitos/homologados:
-
-- `Confirmed` → `CONFIRMED`;
-- `ReadyToPickup` / `READY_TO_PICKUP` → `READY`;
-- `ReadyForPickup` / `READY_FOR_PICKUP` → `READY`;
-- `Dispatched` → `DISPATCHED`;
-- `OutForDelivery` / `OUT_FOR_DELIVERY` → `DISPATCHED`;
-- `Concluded` → `CONCLUDED`;
-- `Delivered` → `CONCLUDED`;
-- `Cancelled` → `CANCELLED`.
-
-## Segurança de logs
-
-Estado: **corrigido para novos logs**.
-
-Medidas aplicadas:
-
-- removido log de payload bruto de callback de status;
-- Caddy configurado para não persistir `Xapikey` no access log;
-- teste com chave falsa confirmou que o valor do token não aparece em novos logs;
-- diagnósticos temporários de autenticação e status usados na homologação foram removidos do código em 2026-08-12;
-- após a remoção, o polling continuou respondendo `200 OK`.
-
-A cópia temporária da nova chave no computador Windows utilizado na operação foi removida e a área de transferência foi limpa.
-
-## OpenAI / Olívia
-
-Estado: **configurado e operacional na VPS**.
-
-Validações executadas em 2026-08-11/12:
-
-- `OPENAI_API_KEY` configurada no ambiente;
-- modelo `gpt-5.5` disponível e utilizado;
-- chamada direta à OpenAI respondeu com sucesso;
-- Olívia respondeu pelo runtime real;
-- 13 tools carregadas;
-- `search_catalog` validado com catálogo real;
-- `get_product` validado com complementos reais;
-- carrinho validado com produto + complementos;
-- `checkout_cart` bloqueado antes de confirmação explícita;
-- checkout real homologado após confirmação explícita;
-- pedidos TAKEOUT e DELIVERY criados pela Olívia chegaram corretamente ao Consumer.
-
-A Olívia não inventa preços ou complementos: os dados utilizados nos testes vieram do Core e do catálogo importado.
-
-## Catálogo e complementos
-
-O catálogo rico do Consumer foi importado a partir do arquivo `.prodcon` real.
-
-Última importação auditada:
-
-- versão Consumer: `16.1.0.6`;
-- produtos no arquivo: `212`;
-- detalhes de produtos: `264`;
-- complementos no arquivo: `40`;
-- vínculos no arquivo: `1849`;
-- grupos criados: `129`;
-- produtos com complementos: `129`;
-- vínculos grupo-item criados: `1849`;
-- produtos locais não encontrados: `0`;
-- detalhes de complemento não encontrados: `0`.
-
-O produto AMERICANO foi validado com complementos reais, incluindo Bacon e Queijo, e esses códigos PDV chegaram corretamente ao Consumer nos pedidos de teste.
-
-## WhatsApp
-
-Estado do código: **implementado**.
-
-Estado de produção até esta auditoria:
-
-- canal real ainda não configurado;
-- nenhuma conta WhatsApp Cloud ativa havia sido cadastrada na última verificação;
-- o fluxo Consumer → SmartFoodIA está homologado, mas a notificação final ao cliente depende da ativação do canal.
-
-Esse é o próximo grande gate operacional.
-
-## Exposição pública atual
-
-Via Caddy estão publicados para o backend:
-
-- `/api/*`;
-- `/live`;
-- `/ready`.
-
-Para diagnóstico externo, usar `/ready` e os endpoints sob `/api/...`.
-
-## Gates atuais
-
-Situação em **2026-08-12**:
+Situação em **2026-08-19**:
 
 - Gate A — DNS público: **concluído**;
 - Gate B — HTTPS público: **concluído**;
 - Gate C — diagnóstico API Parceiro: **concluído**;
-- Gate D — configuração no Consumer: **concluído**;
+- Gate D — configuração Consumer: **concluído**;
 - Gate E — pedido controlado: **concluído**;
-- Gate F — retorno de status: **concluído para retirada e delivery**;
-- Gate G — homologação ampliada: **avançada / em andamento**;
-- Gate H — produção assistida via WhatsApp: **pendente**.
+- Gate F — retorno de status: **concluído**;
+- Gate G — homologação ampliada: **concluída para entrada em produção assistida**;
+- Gate H — WhatsApp oficial: **concluído**;
+- Gate I — produção assistida: **ativa**.
 
 ## Próximo passo operacional
 
-Configurar a conta WhatsApp Cloud da Old Burguer 87 e homologar o fluxo completo sem comandos manuais:
+Não fazer mudanças desnecessárias durante a estabilização.
 
-```text
-WhatsApp real
-→ Olívia
-→ catálogo / cliente / endereço / carrinho
-→ confirmação explícita
-→ checkout
-→ Consumer
-→ mudanças de status
-→ SmartFoodIA
-→ mensagem ao cliente
-```
+Prioridades:
+
+1. observar primeiros pedidos reais completos;
+2. acompanhar logs, filas e Consumer;
+3. validar o template gerencial quando a Meta decidir;
+4. registrar incidentes reais e corrigir somente problemas reproduzíveis;
+5. após período de estabilidade, declarar os critérios da V1 cumpridos.
