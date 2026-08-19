@@ -2,56 +2,105 @@
 
 ## Estado atual do projeto
 
-Documentação de referência: **0.3.4**, com homologação operacional atualizada em **2026-08-11**.
+Snapshot operacional atualizado em **2026-08-19**.
 
-A auditoria da VPS mostrou que a aplicação em execução ainda reporta `APP_VERSION=0.3.3`. Essa diferença é conhecida e está documentada; não deve ser confundida com o estado funcional já homologado.
+A Old Burguer 87 iniciou a operação produtiva assistida do SmartFoodIA em `https://smartfoodia.com.br` usando o commit de aplicação **`832f93e`** da branch `feature/plataforma-multiempresa`.
 
-## O que já está homologado
+Antes da virada foram executados **231 testes de backend**, smoke tests das imagens de API/worker/web, validação externa de `/ready`, backup pré-produção e backup do estado `produção-zero`.
+
+## Produção ativa
 
 ### Infraestrutura
 
 - VPS de produção ativa;
-- domínio `smartfoodia.com.br` resolvendo para a VPS;
+- domínio `smartfoodia.com.br`;
 - Caddy como proxy reverso;
 - HTTPS válido;
-- PostgreSQL em produção;
-- frontend e worker ativos.
+- PostgreSQL 17 saudável;
+- API saudável;
+- worker ativo;
+- frontend ativo;
+- Alembic em `0017 (head)`.
+
+### WhatsApp Cloud / Olívia
+
+Estado: **ativo em produção**.
+
+- conta WhatsApp Cloud oficial da Old Burguer 87 cadastrada e ativa;
+- webhook público validado;
+- token de produção validado;
+- mensagens de texto e imagem recebidas pelo número oficial;
+- Olívia operacional no canal real;
+- atendimento humano com `ASSUMIR`, `STATUS`, `RESOLVER` e `DEVOLVER` homologado;
+- `LOCALIZAR PEDIDO` implementado para pedidos delivery;
+- localização compartilhada pelo cliente é encaminhada ao atendente;
+- imagem/documento durante conversa `HUMAN` é encaminhado ao atendente e não é tratado como comprovante PIX.
+
+### PIX
+
+Estado: **hardening concluído e protegido por testes**.
+
+- comprovante analisado e associado ao pedido;
+- duplicidade de arquivo e de transação protegida;
+- comprovante recusado não pode ser reutilizado para confirmar o mesmo pedido;
+- cadeia de acompanhamento após rejeição: cliente, equipe e gerente;
+- pedidos PIX `DELIVERY`/`TAKEOUT` só ficam disponíveis ao Consumer após `AUTO_CONFIRMED` ou `HUMAN_CONFIRMED`;
+- `NEEDS_REVIEW` e `HUMAN_REJECTED` permanecem bloqueados;
+- pedidos agendados continuam respeitando `release_at`.
+
+### Escalonamento humano e gerencial
+
+- espera por humano possui retomada automática pela Olívia;
+- gerente recebe escalonamento quando o atendimento não é assumido;
+- gerente pode assumir uma conversa escalada recentemente sem abrir essa permissão para atendentes comuns;
+- falhas operacionais críticas podem gerar alerta gerencial sem bloquear o monitor operacional;
+- alertas normais usam a janela ativa do WhatsApp; fora da janela, o sistema usa o template `alerta_operacional_gerente`.
+
+**Pendência externa:** o template `alerta_operacional_gerente` permanece **Em análise** na Meta em 2026-08-19. Essa pendência não bloqueia Olívia, pedidos, PIX, Consumer ou atendimento humano; afeta apenas alertas proativos ao gerente que precisem iniciar conversa fora da janela permitida.
 
 ### Consumer Partner API
 
-A integração da Old Burguer 87 já foi validada de ponta a ponta para:
+Estado: **ativo e homologado**.
+
+Já validado para:
 
 - polling;
 - consulta de detalhes;
-- pedido de retirada entrando no Consumer;
-- pedido delivery entrando no Consumer;
+- TAKEOUT;
+- DELIVERY;
 - confirmação;
-- pronto para retirada;
+- pronto;
 - despacho / Em Rota;
 - conclusão;
-- retorno e persistência dos estados no SmartFoodIA.
+- callbacks idempotentes;
+- proteção contra regressão de status;
+- isolamento entre pedidos simultâneos;
+- política de liberação de PIX confirmado antes de expor o pedido ao Consumer.
 
-A homologação real revelou diferenças em relação à documentação anterior, incluindo uso de `xapikey`, callback de status sem UUID no caminho, normalização de status CamelCase e requisitos práticos do payload DELIVERY. Essas diferenças estão registradas em `docs/PRODUCTION_RUNTIME.md` e `docs/CONSUMER_PARTNER_API.md`.
+## Virada produtiva de 2026-08-19
 
-## O que ainda não está ativo em produção
+Antes do início da operação normal:
 
-Embora exista no código:
-
-- OpenAI/Olívia ainda não tinha chave configurada na VPS auditada;
-- WhatsApp ainda não tinha token, app secret nem `channel_account` configurado;
-- o ciclo completo WhatsApp → Olívia → Consumer → WhatsApp ainda precisa ser homologado.
+- criado backup completo da fase de desenvolvimento;
+- criado e validado backup `produção-zero`;
+- pedidos, carrinhos, clientes e endereços de teste foram zerados;
+- catálogo, equipe, WhatsApp, Consumer, loja e configurações foram preservados;
+- imagens anteriores receberam tags `rollback-20260819`;
+- imagens novas receberam tags `deploy-832f93e`;
+- rollback operacional foi preparado antes da troca;
+- produção nova respondeu `HTTP 200` em `/ready` com banco disponível;
+- logs iniciais de API e worker não apresentaram erros.
 
 ## Gate atual
 
-O projeto já concluiu DNS, HTTPS, configuração Consumer, primeiro pedido e retorno de status para retirada e delivery.
+O projeto saiu da homologação ampliada e entrou em **produção assistida**.
 
-O gate atual é **homologação ampliada**, seguido de produção assistida.
+Prioridades imediatas:
 
-## Atenção antes de novo deploy
-
-A VPS auditada contém hotfixes funcionais do Consumer ainda não consolidados no commit base do GitHub. Um novo deploy não deve ser realizado até revisar e versionar essas diferenças.
-
-Também existe uma não conformidade de segurança: o access log do Caddy foi observado registrando `xapikey` em texto. Isso deve ser corrigido antes do piloto produtivo assistido.
+1. acompanhar os primeiros pedidos reais e métricas operacionais;
+2. testar o template gerencial assim que a Meta aprová-lo;
+3. manter observação de fila, Consumer, WhatsApp e logs durante a estabilização;
+4. consolidar aprendizados do piloto antes de declarar a V1 estável.
 
 ## Documentos principais
 
