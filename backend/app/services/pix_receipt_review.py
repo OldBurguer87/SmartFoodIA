@@ -523,3 +523,102 @@ class PixReceiptReviewService:
             f"#{order.display_id} marcado como não confirmado.\n"
             "O cliente foi orientado sobre o comprovante."
         )
+
+
+    def remind_rejected_customer(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        receipt: PaymentReceipt,
+    ) -> bool:
+        if (
+            receipt.status != "HUMAN_REJECTED"
+            or receipt.order_id is None
+            or receipt.conversation_id is None
+        ):
+            return False
+
+        order = db.get(Order, receipt.order_id)
+        conversation = db.get(
+            Conversation,
+            receipt.conversation_id,
+        )
+
+        if (
+            order is None
+            or conversation is None
+            or not conversation.external_conversation_id
+        ):
+            return False
+
+        self.channels.create_outbound(
+            db,
+            account=account,
+            conversation_id=conversation.id,
+            recipient=conversation.external_conversation_id,
+            content=(
+                f"Ainda estamos aguardando um novo comprovante PIX "
+                f"para o pedido #{order.display_id}. "
+                "Se você realizou um novo PIX, envie o comprovante "
+                "da nova transação por aqui, por favor."
+            ),
+        )
+
+        return True
+
+    def notify_rejected_pending_staff(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        receipt: PaymentReceipt,
+    ) -> int:
+        if (
+            receipt.status != "HUMAN_REJECTED"
+            or receipt.order_id is None
+        ):
+            return 0
+
+        order = db.get(Order, receipt.order_id)
+        if order is None:
+            return 0
+
+        # Nível intermediário: somente equipe operacional.
+        # Gerentes são tratados pelo ManagerEscalationService.
+        members = list(
+            db.scalars(
+                select(StoreStaffMember)
+                .where(
+                    StoreStaffMember.store_id == receipt.store_id,
+                    StoreStaffMember.active.is_(True),
+                    StoreStaffMember.notify_whatsapp.is_(True),
+                    StoreStaffMember.role != "MANAGER",
+                )
+                .order_by(StoreStaffMember.created_at)
+            ).all()
+        )
+
+        notified = 0
+
+        for member in members:
+            if not self._staff_window_open(member):
+                continue
+
+            self.channels.create_outbound(
+                db,
+                account=account,
+                conversation_id=None,
+                recipient=member.phone,
+                content=(
+                    "⚠️ PIX continua pendente\n\n"
+                    f"Pedido: #{order.display_id}\n"
+                    f"Cliente: {order.customer_name}\n"
+                    f"Total: {self._money(order.total)}\n\n"
+                    "O comprovante anterior foi recusado e ainda não "
+                    "recebemos um novo comprovante válido do cliente."
+                ),
+            )
+            notified += 1
+
+        return notified

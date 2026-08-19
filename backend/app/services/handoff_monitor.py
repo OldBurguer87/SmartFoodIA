@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.models.conversation import AIEvent, Conversation
 from app.repositories.channel import ChannelRepository
 from app.services.human_relay import HumanRelayService
+from app.services.manager_escalation import ManagerEscalationService
 
 
 logger = logging.getLogger("smartfoodia.handoff-monitor")
@@ -34,6 +35,7 @@ class HumanHandoffMonitor:
     ) -> None:
         self.channels = ChannelRepository()
         self.relay = HumanRelayService()
+        self.manager = ManagerEscalationService()
         self.orchestrator_factory = orchestrator_factory or (
             lambda: OliviaOrchestrator(OpenAIResponsesProvider())
         )
@@ -325,5 +327,30 @@ class HumanHandoffMonitor:
             store_id=latest.store_id,
             conversation_id=latest.id,
         )
+
+        # Escalonamento de supervisão:
+        # a Olívia já retomou a conversa e segue normalmente.
+        # Qualquer falha ao avisar o gerente NÃO interfere
+        # no atendimento do cliente.
+        try:
+            self.manager.notify_conversation(
+                db,
+                store_id=latest.store_id,
+                conversation_id=latest.id,
+                title="Atendimento não assumido pela equipe",
+                details=(
+                    "Nenhum atendente assumiu a conversa dentro "
+                    "do tempo máximo. A Olívia já retomou o "
+                    "atendimento automaticamente. Você pode "
+                    "acompanhar ou assumir se achar necessário."
+                ),
+                source="HUMAN_WAIT_TIMEOUT",
+            )
+        except Exception:
+            logger.exception(
+                "Falha ao notificar gerente após retomada "
+                "da conversa %s",
+                latest.id,
+            )
 
         return True

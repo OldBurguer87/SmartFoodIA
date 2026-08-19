@@ -156,6 +156,30 @@ class ChannelRepository:
         db.refresh(message)
         return message
 
+    def create_media_id_outbound(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        conversation_id: UUID | None,
+        recipient: str,
+        content: str,
+    ) -> OutboundChannelMessage:
+        message = OutboundChannelMessage(
+            channel_account_id=account.id,
+            conversation_id=conversation_id,
+            provider=account.provider,
+            recipient=recipient,
+            content_type="MEDIA_ID",
+            content=content,
+            status="PENDING",
+            attempts=0,
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return message
+
     def create_media_file_outbound(
         self,
         db: Session,

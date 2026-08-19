@@ -58,6 +58,18 @@ class WhatsAppQueueProcessor:
                             caption=document.get("caption"),
                         )
 
+                    elif msg.content_type == "MEDIA_ID":
+                        media = json.loads(msg.content)
+
+                        msg.external_message_id = client.send_media_by_id(
+                            phone_number_id=account.external_account_id,
+                            recipient=msg.recipient,
+                            media_id=media["media_id"],
+                            media_type=media["media_type"],
+                            filename=media.get("filename"),
+                            caption=media.get("caption"),
+                        )
+
                     elif msg.content_type == "MEDIA_FILE":
                         media = json.loads(msg.content)
 

@@ -10,6 +10,7 @@ from tests_support import configure_store_open
 from app.models.catalog import Company, Product, Store
 from app.models.integration import StoreIntegration
 from app.models.order import OrderEvent
+from app.models.payment import PaymentReceipt
 from app.schemas.cart import CartItemAdd
 from app.schemas.consumer import (
     ConsumerOrderEventRequest,
@@ -110,6 +111,17 @@ def setup_context():
             delivery_fee=Decimal("5.00"),
         ),
     )
+    db.add(
+        PaymentReceipt(
+            store_id=store.id,
+            order_id=order.id,
+            external_media_id=f"consumer-confirmed-{uuid4()}",
+            media_type="IMAGE",
+            file_sha256=uuid4().hex * 2,
+            status="AUTO_CONFIRMED",
+        )
+    )
+    db.commit()
     return db, store, order
 
 

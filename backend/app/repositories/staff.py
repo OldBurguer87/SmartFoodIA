@@ -107,6 +107,32 @@ class StaffRepository:
                     StoreStaffMember.store_id == store_id,
                     StoreStaffMember.active.is_(True),
                     StoreStaffMember.notify_whatsapp.is_(True),
+                    StoreStaffMember.role != "MANAGER",
+                )
+                .order_by(StoreStaffMember.created_at)
+            ).all()
+        )
+
+    def list_managers(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+    ) -> list[StoreStaffMember]:
+        """
+        Gerentes possuem uma fila de notificação separada.
+
+        Não depende do horário operacional da loja porque esse nível
+        é reservado para escalonamentos e problemas críticos.
+        """
+        return list(
+            db.scalars(
+                select(StoreStaffMember)
+                .where(
+                    StoreStaffMember.store_id == store_id,
+                    StoreStaffMember.active.is_(True),
+                    StoreStaffMember.notify_whatsapp.is_(True),
+                    StoreStaffMember.role == "MANAGER",
                 )
                 .order_by(StoreStaffMember.created_at)
             ).all()

@@ -4,6 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.order import Order, OrderEvent, OrderItem
+from app.models.payment import PaymentReceipt
 
 
 class OrderRepository:
@@ -68,6 +69,19 @@ class OrderRepository:
                 or_(
                     Order.release_at.is_(None),
                     Order.release_at <= func.now(),
+                ),
+                or_(
+                    Order.payment_method != "PIX",
+                    ~Order.service_mode.in_(["DELIVERY", "TAKEOUT"]),
+                    select(PaymentReceipt.id)
+                    .where(
+                        PaymentReceipt.store_id == Order.store_id,
+                        PaymentReceipt.order_id == Order.id,
+                        PaymentReceipt.status.in_(
+                            ["AUTO_CONFIRMED", "HUMAN_CONFIRMED"]
+                        ),
+                    )
+                    .exists(),
                 ),
             )
             .order_by(OrderEvent.created_at)

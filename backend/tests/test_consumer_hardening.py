@@ -12,6 +12,7 @@ from app.integrations.consumer.adapter import IntegrationStatusError
 from app.models.catalog import Company, Product, Store
 from app.models.channel import ChannelAccount, OutboundChannelMessage
 from app.models.integration import StoreIntegration
+from app.models.payment import PaymentReceipt
 from app.schemas.cart import CartItemAdd
 from app.schemas.consumer import ConsumerOrderEventRequest
 from app.schemas.customer import AddressCreate, CustomerCreate
@@ -110,6 +111,17 @@ def setup_context(store_name: str = "Hamburgueria Teste"):
             delivery_fee=Decimal("5"),
         ),
     )
+    db.add(
+        PaymentReceipt(
+            store_id=store.id,
+            order_id=order.id,
+            external_media_id=f"consumer-confirmed-{uuid4()}",
+            media_type="IMAGE",
+            file_sha256=uuid4().hex * 2,
+            status="AUTO_CONFIRMED",
+        )
+    )
+    db.commit()
     return db, store, order
 
 

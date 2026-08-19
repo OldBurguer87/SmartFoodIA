@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from uuid import UUID
 
@@ -521,6 +522,48 @@ class HumanRelayService:
 
         return list(db.scalars(statement).all())
 
+    def _manager_escalated_conversations(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        code: str | None = None,
+        now: datetime | None = None,
+    ) -> list[Conversation]:
+        current = now or datetime.now(timezone.utc)
+
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+
+        cutoff = current - timedelta(minutes=30)
+
+        escalated_ids = (
+            select(AIEvent.conversation_id)
+            .where(
+                AIEvent.store_id == store_id,
+                AIEvent.event_type == "MANAGER_ESCALATION",
+                AIEvent.created_at >= cutoff,
+            )
+        )
+
+        statement = (
+            select(Conversation)
+            .where(
+                Conversation.store_id == store_id,
+                Conversation.status == "OPEN",
+                Conversation.id.in_(escalated_ids),
+            )
+            .order_by(Conversation.last_message_at.desc())
+            .limit(10)
+        )
+
+        if code:
+            statement = statement.where(
+                Conversation.external_conversation_id.endswith(code)
+            )
+
+        return list(db.scalars(statement).all())
+
     def _active_ticket(
         self,
         db: Session,
@@ -548,6 +591,249 @@ class HumanRelayService:
         return self.conversation_repository.get(
             db,
             staff.current_conversation_id,
+        )
+
+    def _localizar_pedido(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        staff: StoreStaffMember,
+        display_id: str,
+    ) -> None:
+        normalized_id = display_id.strip().lstrip("#").zfill(6)
+
+        order = db.scalar(
+            select(Order)
+            .where(
+                Order.store_id == staff.store_id,
+                Order.display_id == normalized_id,
+            )
+            .limit(1)
+        )
+
+        if order is None:
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    f"Não encontrei o pedido #{normalized_id}."
+                ),
+            )
+            return
+
+        if str(order.service_mode or "").upper() != "DELIVERY":
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    f"O pedido #{normalized_id} não é DELIVERY. "
+                    "O comando LOCALIZAR PEDIDO é exclusivo para entregas."
+                ),
+            )
+            return
+
+        if str(order.status or "").upper() in {
+            "CANCELLED",
+            "CONCLUDED",
+        }:
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    f"O pedido #{normalized_id} já está "
+                    f"{order.status} e não pode iniciar localização."
+                ),
+            )
+            return
+
+        raw_phone = "".join(
+            character
+            for character in str(order.customer_phone or "")
+            if character.isdigit()
+        )
+        normalized_phone = normalize_phone(raw_phone)
+
+        phone_variants = {
+            value
+            for value in {
+                raw_phone,
+                normalized_phone,
+            }
+            if value
+        }
+
+        # Compatibilidade com conversas antigas que possam estar
+        # registradas sem o nono dígito.
+        if (
+            normalized_phone.startswith("55")
+            and len(normalized_phone) == 13
+            and normalized_phone[4] == "9"
+        ):
+            phone_variants.add(
+                normalized_phone[:4] + normalized_phone[5:]
+            )
+
+        conversation = db.scalar(
+            select(Conversation)
+            .where(
+                Conversation.store_id == staff.store_id,
+                Conversation.channel == "WHATSAPP",
+                Conversation.status.in_(
+                    ["OPEN", "WAITING_HUMAN", "HUMAN"]
+                ),
+                Conversation.external_conversation_id.in_(
+                    phone_variants
+                ),
+            )
+            .order_by(Conversation.created_at.desc())
+            .limit(1)
+        )
+
+        if conversation is None:
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    f"Encontrei o pedido #{normalized_id}, mas não "
+                    "encontrei uma conversa WhatsApp vinculada ao "
+                    f"telefone {order.customer_phone}."
+                ),
+            )
+            return
+
+        current = self._current(
+            db,
+            staff=staff,
+        )
+
+        if (
+            current is not None
+            and current.status == "HUMAN"
+            and current.id != conversation.id
+        ):
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    "Você já está atendendo outro cliente. "
+                    "Envie DEVOLVER antes de usar LOCALIZAR PEDIDO."
+                ),
+            )
+            return
+
+        owner = self.staff.get_by_current_conversation(
+            db,
+            conversation_id=conversation.id,
+        )
+
+        if (
+            conversation.status == "HUMAN"
+            and owner is not None
+            and owner.id != staff.id
+        ):
+            self._send_internal(
+                db,
+                account=account,
+                staff=staff,
+                content=(
+                    f"O pedido #{normalized_id} já está sendo atendido "
+                    f"por {owner.name}."
+                ),
+            )
+            return
+
+        assigned_to = f"{staff.name} via WhatsApp"
+
+        self.conversations.take_over(
+            db,
+            conversation_id=conversation.id,
+            assigned_to=assigned_to,
+        )
+
+        ticket = self._active_ticket(
+            db,
+            conversation_id=conversation.id,
+        )
+
+        if ticket is not None:
+            self.conversations.assign_ticket(
+                db,
+                ticket_id=ticket.id,
+                assigned_to=assigned_to,
+            )
+
+        staff.current_conversation_id = conversation.id
+        staff.last_seen_at = datetime.now(timezone.utc)
+        db.commit()
+
+        customer_text = (
+            f"Olá, {order.customer_name}. Estamos com dificuldade "
+            f"para localizar o endereço do pedido #{normalized_id}.\n\n"
+            "Por favor, envie sua localização pelo WhatsApp ou uma "
+            "foto da fachada/rua. Se puder, informe também um ponto "
+            "de referência para ajudar o entregador."
+        )
+
+        message = self.conversations.add_human_message(
+            db,
+            conversation_id=conversation.id,
+            content=customer_text,
+            assigned_to=assigned_to,
+        )
+
+        self.channels.create_outbound(
+            db,
+            account=account,
+            conversation_id=conversation.id,
+            recipient=conversation.external_conversation_id,
+            content=message.content,
+        )
+
+        address_parts = []
+
+        if order.address_street:
+            street = order.address_street
+            if order.address_number:
+                street += f", {order.address_number}"
+            address_parts.append(street)
+
+        if order.address_neighborhood:
+            address_parts.append(order.address_neighborhood)
+
+        if order.address_reference:
+            address_parts.append(
+                f"Referência: {order.address_reference}"
+            )
+
+        address_text = (
+            " | ".join(address_parts)
+            if address_parts
+            else "Endereço não informado no pedido"
+        )
+
+        self._send_internal(
+            db,
+            account=account,
+            staff=staff,
+            content=(
+                f"📍 Localização iniciada para o pedido "
+                f"#{normalized_id}.\n"
+                f"Cliente: {order.customer_name}\n"
+                f"Telefone: {conversation.external_conversation_id}\n"
+                f"Endereço: {address_text}\n"
+                f"Código da conversa: "
+                f"{self.conversation_code(conversation)}\n\n"
+                "A conversa foi assumida por você imediatamente. "
+                "O cliente recebeu o pedido para enviar localização "
+                "ou foto da fachada. Responda normalmente quando ele "
+                "retornar."
+            ),
         )
 
     def _assume(
@@ -578,6 +864,24 @@ class HumanRelayService:
             store_id=staff.store_id,
             code=code,
         )
+
+        # O gerente pode assumir também uma conversa que já voltou
+        # para a Olívia, desde que ela tenha sido escalada ao gerente
+        # recentemente. Atendentes comuns continuam restritos a
+        # WAITING_HUMAN.
+        if staff.role == "MANAGER":
+            escalated = self._manager_escalated_conversations(
+                db,
+                store_id=staff.store_id,
+                code=code,
+            )
+
+            known_ids = {item.id for item in matches}
+            matches.extend(
+                item
+                for item in escalated
+                if item.id not in known_ids
+            )
 
         if not matches:
             self._send_internal(
@@ -934,6 +1238,20 @@ class HumanRelayService:
             )
             return
 
+        localizar_match = re.fullmatch(
+            r"LOCALIZAR\s+PEDIDO\s+#?([0-9]{1,10})",
+            upper,
+        )
+
+        if localizar_match:
+            self._localizar_pedido(
+                db,
+                account=account,
+                staff=staff,
+                display_id=localizar_match.group(1),
+            )
+            return
+
         assume_match = re.fullmatch(
             r"ASSUMIR(?:\s+([0-9]{3,15}))?",
             upper,
@@ -987,6 +1305,7 @@ class HumanRelayService:
                 content=(
                     "Comandos do atendimento SmartFoodIA:\n\n"
                     "ASSUMIR código — assumir um cliente\n"
+                    "LOCALIZAR PEDIDO número — localizar cliente de delivery\n"
                     "STATUS — ver cliente atual\n"
                     "RESOLVER solução — resolver o chamado e devolver para a Olívia\n"
                     "DEVOLVER — devolver sem marcar o chamado como resolvido\n"
@@ -1030,6 +1349,57 @@ class HumanRelayService:
             recipient=conversation.external_conversation_id,
             content=message.content,
         )
+
+    def forward_customer_media_to_staff(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        conversation: Conversation,
+        media_id: str,
+        media_type: str,
+        filename: str | None = None,
+        caption: str | None = None,
+    ) -> bool:
+        staff = self.staff.get_by_current_conversation(
+            db,
+            conversation_id=conversation.id,
+        )
+
+        if staff is None:
+            return False
+
+        code = self.conversation_code(conversation)
+
+        if media_type == "image":
+            label = f"📷 Cliente {code}"
+        else:
+            label = f"📎 Cliente {code}"
+
+        if caption:
+            label += f": {caption}"
+
+        payload = {
+            "media_id": media_id,
+            "media_type": media_type,
+            "caption": label,
+        }
+
+        if filename:
+            payload["filename"] = filename
+
+        self.channels.create_media_id_outbound(
+            db,
+            account=account,
+            conversation_id=conversation.id,
+            recipient=staff.phone,
+            content=json.dumps(
+                payload,
+                ensure_ascii=False,
+            ),
+        )
+
+        return True
 
     def forward_customer_message_to_staff(
         self,

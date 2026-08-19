@@ -388,6 +388,79 @@ class WhatsAppGatewayService:
                 ),
             )
 
+            # Em atendimento humano, imagem/documento pertence à
+            # conversa com o atendente e nunca deve ser analisado como PIX.
+            if conversation.status == "HUMAN":
+                media_payload = message.get(message_type) or {}
+                media_id = str(
+                    media_payload.get("id") or ""
+                ).strip()
+
+                if not media_id:
+                    raise WhatsAppWebhookError(
+                        "Mensagem de mídia sem media_id."
+                    )
+
+                filename = (
+                    str(media_payload.get("filename") or "").strip()
+                    if message_type == "document"
+                    else None
+                )
+
+                caption = str(
+                    media_payload.get("caption") or ""
+                ).strip() or None
+
+                history_content = (
+                    "[Imagem recebida]"
+                    if message_type == "image"
+                    else (
+                        f"[Documento recebido: {filename}]"
+                        if filename
+                        else "[Documento recebido]"
+                    )
+                )
+
+                if caption:
+                    history_content += f" {caption}"
+
+                forwarded = (
+                    self.human_relay.forward_customer_media_to_staff(
+                        db,
+                        account=account,
+                        conversation=conversation,
+                        media_id=media_id,
+                        media_type=message_type,
+                        filename=filename,
+                        caption=caption,
+                    )
+                )
+
+                if not forwarded:
+                    raise WhatsAppWebhookError(
+                        "Conversa HUMAN sem atendente vinculado "
+                        "para receber a mídia."
+                    )
+
+                self.conversations.add_message(
+                    db,
+                    conversation_id=conversation.id,
+                    payload=MessageCreate(
+                        direction="INBOUND",
+                        sender_type="CUSTOMER",
+                        content_type=message_type.upper(),
+                        content=history_content,
+                        external_message_id=event.external_event_id,
+                        metadata_json={
+                            "media_id": media_id,
+                            "media_type": message_type,
+                            "filename": filename,
+                            "caption": caption,
+                        },
+                    ),
+                )
+                return
+
             if self.client_factory is None:
                 raise WhatsAppWebhookError(
                     "Cliente WhatsApp não disponível para baixar mídia."
@@ -429,6 +502,42 @@ class WhatsAppGatewayService:
             body = str(
                 (message.get("text") or {}).get("body") or ""
             ).strip()
+
+        elif message_type == "location":
+            location = message.get("location") or {}
+
+            latitude = location.get("latitude")
+            longitude = location.get("longitude")
+            name = str(location.get("name") or "").strip()
+            address = str(location.get("address") or "").strip()
+
+            if latitude is None or longitude is None:
+                raise WhatsAppWebhookError(
+                    "Localização recebida sem latitude/longitude."
+                )
+
+            parts = [
+                "📍 Localização compartilhada pelo cliente",
+            ]
+
+            if name:
+                parts.append(f"Local: {name}")
+
+            if address:
+                parts.append(f"Endereço: {address}")
+
+            parts.extend(
+                [
+                    f"Latitude: {latitude}",
+                    f"Longitude: {longitude}",
+                    (
+                        "Mapa: https://www.google.com/maps/search/"
+                        f"?api=1&query={latitude},{longitude}"
+                    ),
+                ]
+            )
+
+            body = "\n".join(parts)
 
         else:
             event.status = "IGNORED"

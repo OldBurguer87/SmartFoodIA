@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.integrations.contracts.orders import IntegrationEvent
 from app.integrations.consumer.mapper import map_order
 from app.integrations.consumer.status import INTERNAL_EVENT, STATUS_TO_INTERNAL
 from app.models.order import OrderEvent
+from app.models.payment import PaymentReceipt
 from app.repositories.order import OrderRepository
 
 
@@ -52,6 +54,40 @@ class ConsumerPartnerAdapter:
                 "Pedido agendado ainda não liberado para integração."
             )
 
+    @staticmethod
+    def _requires_pix_confirmation(order) -> bool:
+        return (
+            str(order.payment_method or "").upper() == "PIX"
+            and str(order.service_mode or "").upper()
+            in {"DELIVERY", "TAKEOUT"}
+        )
+
+    @classmethod
+    def _ensure_payment_released(
+        cls,
+        db: Session,
+        order,
+    ) -> None:
+        if not cls._requires_pix_confirmation(order):
+            return
+
+        confirmed_receipt_id = db.scalar(
+            select(PaymentReceipt.id)
+            .where(
+                PaymentReceipt.store_id == order.store_id,
+                PaymentReceipt.order_id == order.id,
+                PaymentReceipt.status.in_(
+                    ["AUTO_CONFIRMED", "HUMAN_CONFIRMED"]
+                ),
+            )
+            .limit(1)
+        )
+
+        if confirmed_receipt_id is None:
+            raise IntegrationOrderNotFound(
+                "Pedido PIX ainda não confirmado para integração."
+            )
+
     def poll(self, db: Session, *, store_id: UUID, limit: int = 100):
         return [
             IntegrationEvent(
@@ -85,6 +121,7 @@ class ConsumerPartnerAdapter:
             raise IntegrationOrderNotFound("Pedido não encontrado.")
 
         self._ensure_released(order)
+        self._ensure_payment_released(db, order)
         return map_order(order, integration)
 
     def acknowledge_details_request(
@@ -114,6 +151,8 @@ class ConsumerPartnerAdapter:
             raise IntegrationStatusError(
                 "Evento suportado neste endpoint: ODR / ORDER_DETAILS_REQUESTED."
             )
+
+        self._ensure_payment_released(db, order)
 
         existing = next(
             (
@@ -173,6 +212,9 @@ class ConsumerPartnerAdapter:
         )
         if not order:
             raise IntegrationOrderNotFound("Pedido não encontrado.")
+
+        self._ensure_released(order)
+        self._ensure_payment_released(db, order)
 
         normalized = status.strip().upper().replace("-", "_").replace(" ", "_")
         compact = normalized.replace("_", "")

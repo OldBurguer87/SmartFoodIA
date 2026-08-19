@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
@@ -10,6 +11,10 @@ from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMess
 from app.models.conversation import HumanTicket
 from app.models.integration import StoreIntegration
 from app.services.commercial_status import CommercialStatusService
+from app.services.manager_escalation import ManagerEscalationService
+
+
+logger = logging.getLogger("smartfoodia.operational-monitor")
 
 
 class OperationalMonitorService:
@@ -18,6 +23,9 @@ class OperationalMonitorService:
     CONSUMER_CRITICAL_SECONDS = 300
     STORE_OPEN_GRACE_SECONDS = 900
     PREFIX = "[AUTO-MONITOR]"
+
+    def __init__(self) -> None:
+        self.manager = ManagerEscalationService()
 
     def run(self, db: Session) -> dict[str, int]:
         opened = resolved = checked = 0
@@ -29,6 +37,29 @@ class OperationalMonitorService:
                 if failure:
                     if self._open_ticket(db, store.id, code, failure):
                         opened += 1
+
+                        # O alerta ao gerente representa um novo incidente.
+                        # Se a falha persistir, o ticket existente impede
+                        # notificações repetidas em cada ciclo do monitor.
+                        try:
+                            self.manager.notify_system(
+                                db,
+                                store_id=store.id,
+                                title=f"Falha crítica: {code}",
+                                details=failure,
+                                source=(
+                                    f"OPERATIONAL_MONITOR_{code}"
+                                ),
+                            )
+                        except Exception:
+                            # A falha de notificação nunca pode impedir
+                            # o monitor de registrar o incidente.
+                            logger.exception(
+                                "Falha ao notificar gerente sobre "
+                                "incidente operacional %s da loja %s",
+                                code,
+                                store.id,
+                            )
                 else:
                     resolved += self._resolve_ticket(db, store.id, code)
         return {"stores_checked": checked, "tickets_opened": opened, "tickets_resolved": resolved}

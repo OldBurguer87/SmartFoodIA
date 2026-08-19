@@ -311,6 +311,17 @@ class PixReceiptService:
                         f"#{duplicate_order.display_id} ✅ "
                         "Não é necessário enviá-lo novamente."
                     )
+                elif (
+                    same_customer
+                    and duplicate.status == "HUMAN_REJECTED"
+                ):
+                    response = (
+                        f"Esse é o mesmo comprovante do pedido "
+                        f"#{duplicate_order.display_id} que já foi recusado "
+                        "pela nossa equipe. Ele não pode ser usado para "
+                        "confirmar este pedido. Envie um novo comprovante "
+                        "referente a uma nova transação PIX, por favor."
+                    )
                 elif same_customer:
                     response = (
                         "Esse comprovante já foi recebido anteriormente "
