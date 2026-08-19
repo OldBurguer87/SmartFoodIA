@@ -313,9 +313,19 @@ class PixReceiptReviewService:
         if order is None:
             return 0
 
-        members = self.staff.list_notifiable(
-            db,
-            store_id=receipt.store_id,
+        # Revisões de PIX podem ser notificadas mesmo fora do horário
+        # da loja. A janela de atendimento do WhatsApp é validada abaixo
+        # individualmente para cada atendente.
+        members = list(
+            db.scalars(
+                select(StoreStaffMember)
+                .where(
+                    StoreStaffMember.store_id == receipt.store_id,
+                    StoreStaffMember.active.is_(True),
+                    StoreStaffMember.notify_whatsapp.is_(True),
+                )
+                .order_by(StoreStaffMember.created_at)
+            ).all()
         )
 
         if not members:
@@ -476,22 +486,40 @@ class PixReceiptReviewService:
                 conversation is not None
                 and conversation.external_conversation_id
             ):
-                self.channels.create_outbound(
-                    db,
-                    account=account,
-                    conversation_id=conversation.id,
-                    recipient=conversation.external_conversation_id,
-                    content=(
+                validation = receipt.validation_json or {}
+                reasons = set(validation.get("reasons") or [])
+
+                if (
+                    "DUPLICATE_TRANSACTION_ID" in reasons
+                    or "DUPLICATE_RECEIPT_FILE" in reasons
+                ):
+                    customer_message = (
+                        f"O comprovante PIX do pedido "
+                        f"#{order.display_id} não foi confirmado. "
+                        "Essa transação já foi utilizada anteriormente "
+                        "e não pode ser usada para confirmar este pedido. "
+                        "Se você realizou um novo PIX para este pedido, "
+                        "envie o comprovante dessa nova transação, por favor."
+                    )
+                else:
+                    customer_message = (
                         f"A equipe não conseguiu confirmar o "
                         f"comprovante PIX do pedido "
                         f"#{order.display_id}. "
                         "Pode enviar o comprovante novamente, "
                         "por favor?"
-                    ),
+                    )
+
+                self.channels.create_outbound(
+                    db,
+                    account=account,
+                    conversation_id=conversation.id,
+                    recipient=conversation.external_conversation_id,
+                    content=customer_message,
                 )
 
         return (
             f"❌ Comprovante PIX do pedido "
             f"#{order.display_id} marcado como não confirmado.\n"
-            "O cliente foi orientado a enviar novamente."
+            "O cliente foi orientado sobre o comprovante."
         )

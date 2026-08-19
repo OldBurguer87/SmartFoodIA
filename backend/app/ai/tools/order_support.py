@@ -138,6 +138,17 @@ def order_payload(context: ToolContext, order: Order) -> dict[str, Any]:
         ),
         "service_mode": order.service_mode,
         "created_at": order.created_at.isoformat(),
+        "scheduled_for": (
+            order.scheduled_for.isoformat()
+            if order.scheduled_for is not None
+            else None
+        ),
+        "release_at": (
+            order.release_at.isoformat()
+            if order.release_at is not None
+            else None
+        ),
+        "is_scheduled": order.scheduled_for is not None,
         "elapsed_minutes": elapsed_minutes,
         "average_prep_minutes": average_prep_minutes,
         "delay_assessment": delay_assessment,
