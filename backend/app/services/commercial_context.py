@@ -61,6 +61,16 @@ class CommercialContextService:
                     "não estão completos; nesse caso não invente dados."
                 )
 
+        online_order_context = ""
+        if rules.online_order_url:
+            online_order_context = (
+                f" CARDÁPIO/PEDIDO ONLINE OFICIAL: {rules.online_order_url}. "
+                "Este é um canal oficial alternativo para o cliente montar "
+                "o pedido. Quando apropriado, ofereça ao cliente a escolha "
+                "entre continuar o pedido pelo WhatsApp ou usar esse "
+                "cardápio online. Não invente, altere ou substitua esta URL."
+            )
+
         hours_text = "não cadastrado"
         if hours:
             parts = []
@@ -88,7 +98,7 @@ class CommercialContextService:
             "REGRAS COMERCIAIS DA LOJA %s. "
             "Situação atual: %s. Motivo: %s. "
             "Delivery: %s. Retirada: %s. Pedido mínimo delivery: R$ %.2f. %s. "
-            "Pagamentos: %s. Troco: %s. Tempo médio: %s min. Horários: %s. Observações: %s.%s "
+            "Pagamentos: %s. Troco: %s. Tempo médio: %s min. Horários: %s. Observações: %s.%s%s "
             "Consulte estas regras antes de iniciar e novamente antes de finalizar pedido. Não invente exceções."
         ) % (
             store.name,
@@ -104,4 +114,5 @@ class CommercialContextService:
             hours_text,
             rules.general_notes or "nenhuma",
             pix_context,
+            online_order_context,
         )

@@ -70,6 +70,7 @@ class StoreCommercialRules(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scheduled_max_days_ahead: Mapped[int | None] = mapped_column(
         Integer,
     )
+    online_order_url: Mapped[str | None] = mapped_column(String(500))
     general_notes: Mapped[str | None] = mapped_column(Text)
     menu_original_name: Mapped[str | None] = mapped_column(String(240))
     menu_storage_name: Mapped[str | None] = mapped_column(String(240))
