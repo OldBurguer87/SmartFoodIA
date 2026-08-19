@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ from app.database.base import Base
 from tests_support import configure_store_open
 from app.models.catalog import Company, Product, Store
 from app.models.customer import CustomerAddress
+from app.models.order import Order
 from app.schemas.customer import CustomerCreate
 from app.services.customer import CustomerService
 
@@ -248,3 +250,58 @@ def test_add_customer_address_blocks_customer_from_another_store() -> None:
     )
 
     assert foreign_address is None
+
+
+
+def test_get_order_status_returns_schedule_fields() -> None:
+    db, store, registry = setup_registry()
+
+    scheduled_for = datetime(
+        2026, 8, 19, 23, 0, tzinfo=timezone.utc
+    )
+    release_at = datetime(
+        2026, 8, 19, 22, 40, tzinfo=timezone.utc
+    )
+
+    order = Order(
+        store_id=store.id,
+        customer_id=uuid4(),
+        cart_id=uuid4(),
+        display_id="000123",
+        status="READY_FOR_INTEGRATION",
+        service_mode="TAKEOUT",
+        payment_method="PIX",
+        payment_type="ONLINE",
+        subtotal=Decimal("30.00"),
+        delivery_fee=Decimal("0.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("30.00"),
+        customer_name="Cliente Agendado",
+        customer_phone="97999999999",
+        scheduled_for=scheduled_for,
+        release_at=release_at,
+    )
+
+    db.add(order)
+    db.commit()
+
+    result = registry.execute(
+        "get_order_status",
+        {
+            "order_number": "123",
+        },
+    )
+
+    assert result.ok is True
+    assert result.data["display_id"] == "000123"
+    assert result.data["is_scheduled"] is True
+
+    assert (
+        result.data["scheduled_for"]
+        == scheduled_for.isoformat()
+    )
+
+    assert (
+        result.data["release_at"]
+        == release_at.isoformat()
+    )

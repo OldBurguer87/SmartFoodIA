@@ -1,9 +1,11 @@
+from datetime import timedelta
 from uuid import uuid4
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.channels.whatsapp.service import WhatsAppGatewayService
+from app.core.config import settings
 from app.database.base import Base
 from app.models.catalog import Company, Store
 from app.models.channel import ChannelAccount, OutboundChannelMessage
@@ -11,6 +13,7 @@ from app.models.conversation import AIEvent, Message
 from app.repositories.channel import ChannelRepository
 from app.schemas.conversation import ConversationCreate
 from app.services.conversation import ConversationService
+from app.services.handoff_monitor import HumanHandoffMonitor
 
 
 class FailingOrchestrator:
@@ -142,3 +145,58 @@ def test_human_reply_is_persisted_and_queued():
     assert message.sender_type == "HUMAN"
     assert outbound.status == "PENDING"
     assert db.get(OutboundChannelMessage, outbound.id) is not None
+
+
+def test_handoff_timeout_resumes_before_staff_availability_check():
+    db, store, _, conversation = setup_context()
+
+    conversation.status = "WAITING_HUMAN"
+
+    wait_event = AIEvent(
+        store_id=store.id,
+        conversation_id=conversation.id,
+        event_type="HUMAN_WAITING",
+        success=True,
+        payload_json={"reason": "cliente pediu atendente"},
+    )
+    db.add(wait_event)
+    db.commit()
+    db.refresh(wait_event)
+
+    class FakeResumeOrchestrator:
+        def reply(self, *args, **kwargs):
+            return "Não consegui falar com a equipe a tempo. Voltei para ajudar."
+
+    monitor = HumanHandoffMonitor(
+        orchestrator_factory=lambda: FakeResumeOrchestrator()
+    )
+
+    def fail_if_staff_availability_is_checked(*args, **kwargs):
+        raise AssertionError(
+            "A disponibilidade da equipe não deve impedir o timeout."
+        )
+
+    monitor.relay.staff_is_available_now = (
+        fail_if_staff_availability_is_checked
+    )
+    monitor.relay.notify_timeout = lambda *args, **kwargs: None
+
+    now = wait_event.created_at + timedelta(
+        seconds=settings.human_wait_timeout_seconds + 1
+    )
+
+    result = monitor.run_once(db, now=now)
+
+    db.refresh(conversation)
+
+    assert result.resumed == 1
+    assert result.failed == 0
+    assert conversation.status == "OPEN"
+
+    timeout_event = db.scalar(
+        select(AIEvent).where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "HUMAN_WAIT_TIMEOUT",
+        )
+    )
+    assert timeout_event is not None

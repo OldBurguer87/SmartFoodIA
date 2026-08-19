@@ -79,6 +79,18 @@ def order_payload(context: ToolContext, order: Order) -> dict[str, Any]:
         int((now - created_at).total_seconds() // 60),
     )
 
+    scheduled_for = order.scheduled_for
+    if scheduled_for is not None and scheduled_for.tzinfo is None:
+        scheduled_for = scheduled_for.replace(
+            tzinfo=timezone.utc
+        )
+
+    release_at = order.release_at
+    if release_at is not None and release_at.tzinfo is None:
+        release_at = release_at.replace(
+            tzinfo=timezone.utc
+        )
+
     rules = context.db.scalar(
         select(StoreCommercialRules).where(
             StoreCommercialRules.store_id == context.store_id
@@ -139,16 +151,16 @@ def order_payload(context: ToolContext, order: Order) -> dict[str, Any]:
         "service_mode": order.service_mode,
         "created_at": order.created_at.isoformat(),
         "scheduled_for": (
-            order.scheduled_for.isoformat()
-            if order.scheduled_for is not None
+            scheduled_for.isoformat()
+            if scheduled_for is not None
             else None
         ),
         "release_at": (
-            order.release_at.isoformat()
-            if order.release_at is not None
+            release_at.isoformat()
+            if release_at is not None
             else None
         ),
-        "is_scheduled": order.scheduled_for is not None,
+        "is_scheduled": scheduled_for is not None,
         "elapsed_minutes": elapsed_minutes,
         "average_prep_minutes": average_prep_minutes,
         "delay_assessment": delay_assessment,

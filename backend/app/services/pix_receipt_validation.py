@@ -835,10 +835,20 @@ class PixReceiptValidationService:
                 minutes=rules.pix_receipt_max_age_minutes
             )
 
+            order_created_at = order.created_at
+
+            # SQLite pode devolver DateTime(timezone=True) sem tzinfo.
+            # created_at é armazenado pelo SmartFoodIA em UTC, então
+            # normalizamos defensivamente antes da comparação.
+            if order_created_at.tzinfo is None:
+                order_created_at = order_created_at.replace(
+                    tzinfo=timezone.utc
+                )
+
             earliest_allowed = max(
                 now - max_age,
                 (
-                    order.created_at
+                    order_created_at
                     - timedelta(minutes=60)
                 ),
             )

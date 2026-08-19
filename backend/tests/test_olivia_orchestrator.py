@@ -112,3 +112,44 @@ def test_orchestrator_returns_direct_response_without_tool():
     assert reply.endswith(
         "Olá! Como posso ajudar?"
     )
+
+
+def test_orchestrator_excludes_media_messages_from_ai_history():
+    db, store, conversation = setup_context()
+
+    db.add(
+        Message(
+            conversation_id=conversation.id,
+            direction="INBOUND",
+            sender_type="CUSTOMER",
+            content_type="IMAGE",
+            content="[Comprovante PIX recebido]",
+        )
+    )
+    db.commit()
+
+    provider = FakeProvider([
+        ProviderResponse(
+            response_id="resp-media-filter",
+            text="Olá! Como posso ajudar?",
+        )
+    ])
+
+    OliviaOrchestrator(provider).reply(
+        db,
+        store_id=store.id,
+        conversation_id=conversation.id,
+        customer_message="Oi",
+    )
+
+    input_items = provider.calls[0]["input_items"]
+
+    assert any(
+        item["role"] == "user" and item["content"] == "Oi"
+        for item in input_items
+    )
+
+    assert all(
+        item["content"] != "[Comprovante PIX recebido]"
+        for item in input_items
+    )
