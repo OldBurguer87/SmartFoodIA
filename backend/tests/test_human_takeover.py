@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.database.base import Base
 from app.models.catalog import Company, Store
 from app.models.channel import ChannelAccount, OutboundChannelMessage
-from app.models.conversation import AIEvent, Message
+from app.models.conversation import AIEvent, HumanTicket, Message
 from app.repositories.channel import ChannelRepository
 from app.schemas.conversation import ConversationCreate
 from app.services.conversation import ConversationService
@@ -200,3 +200,67 @@ def test_handoff_timeout_resumes_before_staff_availability_check():
         )
     )
     assert timeout_event is not None
+
+
+
+def test_urgent_handoff_never_resumes_olivia_on_timeout():
+    db, store, _, conversation = setup_context()
+
+    conversation.status = "WAITING_HUMAN"
+
+    ticket = HumanTicket(
+        store_id=store.id,
+        conversation_id=conversation.id,
+        category="OTHER",
+        priority="URGENT",
+        status="OPEN",
+        reason="Acidente com entregador; atendimento humano necessário",
+        customer_message="O entregador sofreu um acidente.",
+    )
+    db.add(ticket)
+
+    wait_event = AIEvent(
+        store_id=store.id,
+        conversation_id=conversation.id,
+        event_type="HUMAN_WAITING",
+        success=True,
+        payload_json={
+            "reason": (
+                "Acidente com entregador; "
+                "atendimento humano necessário"
+            ),
+            "ticket_id": str(ticket.id),
+        },
+    )
+    db.add(wait_event)
+    db.commit()
+    db.refresh(wait_event)
+
+    monitor = HumanHandoffMonitor(
+        orchestrator_factory=lambda: FailingOrchestrator()
+    )
+
+    # Depois do timeout máximo, um chamado URGENT continua humano.
+    now = wait_event.created_at + timedelta(
+        seconds=settings.human_wait_timeout_seconds + 60
+    )
+
+    result = monitor.run_once(
+        db,
+        now=now,
+    )
+
+    db.refresh(conversation)
+
+    assert result.resumed == 0
+    assert result.failed == 0
+    assert conversation.status == "WAITING_HUMAN"
+
+    timeout_event = db.scalar(
+        select(AIEvent).where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "HUMAN_WAIT_TIMEOUT",
+        )
+    )
+
+    assert timeout_event is None

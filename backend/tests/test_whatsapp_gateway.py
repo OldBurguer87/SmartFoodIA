@@ -6,13 +6,14 @@ import hashlib
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.ai.providers.openai_provider import OpenAIProviderRequestError
 from app.channels.whatsapp.client import DownloadedMedia
 from app.channels.whatsapp.security import hash_verify_token, verify_meta_signature
 from app.channels.whatsapp.service import WhatsAppGatewayService
 from app.database.base import Base
 from app.models.catalog import Company, Store
 from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage
-from app.models.conversation import Conversation, Message
+from app.models.conversation import AIEvent, Conversation, Message, HumanTicket
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
 from app.models.staff import StoreStaffMember
@@ -215,7 +216,9 @@ def test_image_without_recent_pix_order_is_processed():
         select(OutboundChannelMessage)
     )
     assert outbound is not None
-    assert "pedido PIX recente" in outbound.content
+    assert "pedido PIX recente" not in outbound.content
+    assert "comprovante de PIX" not in outbound.content
+    assert "atendimento humano" in outbound.content
     assert outbound.status == "SENT_TO_META"
 
 
@@ -1046,3 +1049,293 @@ def test_human_media_without_linked_staff_fails_safely():
     assert "HUMAN sem atendente vinculado" in (
         event.error_message or ""
     )
+
+
+def test_open_location_is_not_sent_to_olivia():
+    db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "id": "waba-1",
+                "changes": [
+                    {
+                        "field": "messages",
+                        "value": {
+                            "messaging_product": "whatsapp",
+                            "metadata": {
+                                "display_phone_number": "5597999999999",
+                                "phone_number_id": "phone-number-id-1",
+                            },
+                            "messages": [
+                                {
+                                    "from": "5597999999999",
+                                    "id": "wamid.open-location-1",
+                                    "timestamp": "1785942000",
+                                    "type": "location",
+                                    "location": {
+                                        "latitude": -4.0944,
+                                        "longitude": -63.1411,
+                                        "name": "Local do cliente",
+                                        "address": "Coari - AM",
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = service.process_payload(db, payload)
+
+    assert result.received == 1
+    assert result.processed == 1
+    assert result.failed == 0
+
+    # A localização nunca chega à Olívia.
+    assert orchestrator.calls == []
+
+    # Localização em conversa OPEN não vira comprovante PIX.
+    assert list(db.scalars(select(PaymentReceipt))) == []
+
+    # Latitude, longitude e mapa não entram no histórico da Olívia.
+    messages = list(db.scalars(select(Message)))
+    assert messages == []
+
+    outbound = db.scalar(select(OutboundChannelMessage))
+    assert outbound is not None
+    assert "endereço em texto" in outbound.content
+    assert "ponto de referência" in outbound.content
+    assert "Latitude" not in outbound.content
+    assert "google.com/maps" not in outbound.content
+
+
+def test_recent_pix_order_without_conversation_checkout_does_not_treat_image_as_receipt():
+    db, store, _ = setup_db()
+
+    sender = "5597999999999"
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id=sender,
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.flush()
+
+    order = Order(
+        store_id=store.id,
+        customer_id=uuid4(),
+        cart_id=uuid4(),
+        display_id="000888",
+        status="READY_FOR_INTEGRATION",
+        service_mode="TAKEOUT",
+        payment_method="PIX",
+        payment_type="ONLINE",
+        subtotal=Decimal("25.00"),
+        delivery_fee=Decimal("0.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("25.00"),
+        customer_name="Cliente Teste",
+        customer_phone=sender,
+    )
+    db.add(order)
+    db.commit()
+
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    result = service.process_payload(
+        db,
+        inbound_payload(
+            message_id="wamid.foto-comum-com-pix-recente",
+            message_type="image",
+        ),
+    )
+
+    assert result.received == 1
+    assert result.processed == 1
+    assert result.failed == 0
+
+    # A foto comum não deve virar comprovante apenas porque existe
+    # um pedido PIX recente desse telefone.
+    assert list(db.scalars(select(PaymentReceipt))) == []
+
+    # Imagem também não deve ser enviada à Olívia.
+    assert orchestrator.calls == []
+
+    outbound = db.scalar(
+        select(OutboundChannelMessage).where(
+            OutboundChannelMessage.recipient == sender
+        )
+    )
+    assert outbound is not None
+
+    # Sem contexto explícito de checkout PIX, a resposta não deve
+    # induzir o cliente a acreditar que a imagem foi tratada como PIX.
+    assert "pedido PIX recente" not in outbound.content
+    assert "comprovante de PIX" not in outbound.content
+
+
+
+def test_pix_checkout_in_same_conversation_enables_receipt_candidate():
+    db, store, _ = setup_db()
+
+    sender = "5597999999999"
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id=sender,
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.flush()
+
+    order = Order(
+        store_id=store.id,
+        customer_id=uuid4(),
+        cart_id=uuid4(),
+        display_id="000889",
+        status="READY_FOR_INTEGRATION",
+        service_mode="TAKEOUT",
+        payment_method="PIX",
+        payment_type="ONLINE",
+        subtotal=Decimal("25.00"),
+        delivery_fee=Decimal("0.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("25.00"),
+        customer_name="Cliente Teste",
+        customer_phone=sender,
+    )
+    db.add(order)
+    db.flush()
+
+    checkout_event = AIEvent(
+        store_id=store.id,
+        conversation_id=conversation.id,
+        event_type="TOOL_EXECUTION",
+        tool_name="checkout_cart",
+        success=True,
+        payload_json={
+            "arguments": {},
+            "result": {
+                "ok": True,
+                "data": {
+                    "id": str(order.id),
+                    "display_id": order.display_id,
+                    "payment_method": "PIX",
+                    "total": 25.00,
+                },
+                "error": None,
+                "requires_human": False,
+            },
+        },
+    )
+    db.add(checkout_event)
+    db.commit()
+
+    candidates = PixReceiptService()._recent_pix_orders(
+        db,
+        store_id=store.id,
+        customer_phone=sender,
+        conversation_id=conversation.id,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].id == order.id
+    assert candidates[0].payment_method == "PIX"
+
+
+
+class OpenAIFailingOrchestrator:
+    def reply(self, db, **kwargs):
+        from app.schemas.conversation import MessageCreate
+        from app.services.conversation import ConversationService
+
+        ConversationService().add_message(
+            db,
+            conversation_id=kwargs["conversation_id"],
+            payload=MessageCreate(
+                direction="INBOUND",
+                sender_type="CUSTOMER",
+                content=kwargs["customer_message"],
+            ),
+        )
+
+        raise OpenAIProviderRequestError(
+            "OpenAI: insufficient_quota"
+        )
+
+
+def test_openai_failure_returns_fallback_and_handoff():
+    db, _, _ = setup_db()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: OpenAIFailingOrchestrator(),
+        client_factory=lambda: client,
+    )
+
+    result = service.process_payload(
+        db,
+        inbound_payload(
+            message_id="wamid.openai-outage",
+        ),
+    )
+
+    assert result.received == 1
+    assert result.processed == 1
+    assert result.failed == 0
+
+    conversation = db.scalar(select(Conversation))
+
+    assert conversation.status == "WAITING_HUMAN"
+
+    failure = db.scalar(
+        select(AIEvent).where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "AI_PROVIDER_FAILURE",
+        )
+    )
+
+    assert failure is not None
+    assert failure.success is False
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id
+            )
+        )
+    )
+
+    assert len(tickets) == 1
+    assert tickets[0].priority == "URGENT"
+
+    outbound = db.scalar(
+        select(OutboundChannelMessage).where(
+            OutboundChannelMessage.conversation_id
+            == conversation.id
+        )
+    )
+
+    assert outbound is not None
+    assert "instabilidade temporária" in outbound.content
+    assert "Não precisa repetir" in outbound.content

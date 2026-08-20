@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,7 +12,7 @@ from app.channels.whatsapp.client import WhatsAppCloudClient
 from app.core.config import settings
 from app.models.channel import ChannelAccount, ChannelEvent
 from app.models.commercial import StoreCommercialRules
-from app.models.conversation import Conversation
+from app.models.conversation import AIEvent, Conversation
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
 from app.repositories.channel import ChannelRepository
@@ -59,6 +59,7 @@ class PixReceiptService:
         *,
         store_id,
         customer_phone: str,
+        conversation_id,
     ) -> list[Order]:
         rules = db.scalar(
             select(StoreCommercialRules).where(
@@ -77,49 +78,82 @@ class PixReceiptService:
             - timedelta(minutes=max_age_minutes)
         )
 
-        possible = list(
-            db.scalars(
-                select(Order)
-                .where(
-                    Order.store_id == store_id,
-                    Order.payment_method == "PIX",
-                    Order.created_at >= cutoff,
-                    Order.status != "CANCELLED",
-                )
-                .order_by(Order.created_at.desc())
-                .limit(20)
-            ).all()
+        # Uma imagem só pode ser candidata a comprovante quando existe
+        # checkout PIX bem-sucedido na própria conversa. A existência
+        # isolada de um pedido PIX recente do mesmo telefone não basta.
+        checkout_event = db.scalar(
+            select(AIEvent)
+            .where(
+                AIEvent.store_id == store_id,
+                AIEvent.conversation_id == conversation_id,
+                AIEvent.event_type == "TOOL_EXECUTION",
+                AIEvent.tool_name == "checkout_cart",
+                AIEvent.success.is_(True),
+                AIEvent.created_at >= cutoff,
+            )
+            .order_by(AIEvent.created_at.desc())
+            .limit(1)
         )
 
-        expected_phone = self._digits(customer_phone)
+        if checkout_event is None:
+            return []
 
-        matched = [
-            order
-            for order in possible
-            if self._digits(order.customer_phone) == expected_phone
-        ]
+        event_payload = checkout_event.payload_json or {}
+        result_payload = event_payload.get("result") or {}
+        order_data = result_payload.get("data") or {}
 
-        candidates: list[Order] = []
+        # O checkout mais recente da conversa define o contexto atual.
+        # Se ele não for PIX, não reutilizamos um PIX mais antigo.
+        if order_data.get("payment_method") != "PIX":
+            return []
 
-        for order in matched:
-            confirmed_receipt = db.scalar(
-                select(PaymentReceipt.id)
-                .where(
-                    PaymentReceipt.order_id == order.id,
-                    PaymentReceipt.status.in_(
-                        [
-                            "AUTO_CONFIRMED",
-                            "HUMAN_CONFIRMED",
-                        ]
-                    ),
-                )
-                .limit(1)
+        raw_order_id = order_data.get("id")
+
+        if not raw_order_id:
+            return []
+
+        try:
+            order_id = UUID(str(raw_order_id))
+        except (TypeError, ValueError):
+            return []
+
+        order = db.scalar(
+            select(Order).where(
+                Order.id == order_id,
+                Order.store_id == store_id,
+                Order.created_at >= cutoff,
             )
+        )
 
-            if confirmed_receipt is None:
-                candidates.append(order)
+        if order is None:
+            return []
 
-        return candidates
+        if (
+            order.payment_method != "PIX"
+            or order.status == "CANCELLED"
+            or self._digits(order.customer_phone)
+            != self._digits(customer_phone)
+        ):
+            return []
+
+        confirmed_receipt = db.scalar(
+            select(PaymentReceipt.id)
+            .where(
+                PaymentReceipt.order_id == order.id,
+                PaymentReceipt.status.in_(
+                    [
+                        "AUTO_CONFIRMED",
+                        "HUMAN_CONFIRMED",
+                    ]
+                ),
+            )
+            .limit(1)
+        )
+
+        if confirmed_receipt is not None:
+            return []
+
+        return [order]
 
     def _save_customer_message(
         self,
@@ -199,6 +233,7 @@ class PixReceiptService:
             db,
             store_id=account.store_id,
             customer_phone=sender,
+            conversation_id=conversation.id,
         )
 
         mime_type_from_message = media_payload.get("mime_type")
@@ -363,10 +398,11 @@ class PixReceiptService:
                     conversation_id=conversation.id,
                     recipient=sender,
                     content=(
-                        "Recebi sua imagem/arquivo 😊 "
-                        "Se for um comprovante de PIX, não encontrei "
-                        "um pedido PIX recente vinculado a este número. "
-                        "Me informe o número do pedido para eu localizar."
+                        "Recebi sua imagem/arquivo. "
+                        "A Olívia não usa imagens para interpretar dados "
+                        "do pedido ou endereço. Se você precisar que uma "
+                        "atendente analise essa imagem, peça atendimento "
+                        "humano."
                     ),
                 )
 

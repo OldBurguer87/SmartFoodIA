@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database.base import Base
 from app.models.catalog import Company, Store
-from app.models.conversation import HumanTicket
+from app.models.conversation import AIEvent, HumanTicket
 from app.services.operational_monitor import OperationalMonitorService
 
 
@@ -105,3 +105,34 @@ def test_operational_incident_notifies_manager_only_once():
 
     assert len(tickets) == 1
     assert tickets[0].status == "OPEN"
+
+
+
+def test_operational_monitor_detects_ai_provider_failure_event():
+    db, store = _setup_db()
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=None,
+            event_type="AI_PROVIDER_FAILURE",
+            success=False,
+            payload_json={
+                "provider": "OPENAI",
+            },
+            error_message=(
+                "OpenAI: credit_balance_exhausted"
+            ),
+        )
+    )
+    db.commit()
+
+    monitor = OperationalMonitorService()
+
+    checks = monitor._checks(
+        db,
+        store.id,
+    )
+
+    assert checks["OPENAI"] is not None
+    assert "credit_balance_exhausted" in checks["OPENAI"]

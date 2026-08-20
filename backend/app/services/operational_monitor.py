@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.catalog import Store
 from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage
-from app.models.conversation import HumanTicket
+from app.models.conversation import AIEvent, HumanTicket
 from app.models.integration import StoreIntegration
 from app.services.commercial_status import CommercialStatusService
 from app.services.manager_escalation import ManagerEscalationService
@@ -76,6 +76,18 @@ class OperationalMonitorService:
                 ChannelEvent.status.in_(["RETRY", "DEAD", "FAILED"]),
                 ChannelEvent.error_message.ilike("%OpenAI:%"),
             ).order_by(ChannelEvent.updated_at.desc())
+        )
+
+        ai_provider_failure = db.scalar(
+            select(AIEvent)
+            .where(
+                AIEvent.store_id == store_id,
+                AIEvent.created_at >= recent,
+                AIEvent.event_type == "AI_PROVIDER_FAILURE",
+                AIEvent.success.is_(False),
+            )
+            .order_by(AIEvent.created_at.desc())
+            .limit(1)
         )
 
         whatsapp_outbound = db.scalar(
@@ -164,8 +176,25 @@ class OperationalMonitorService:
             )
         ) or 0
 
+        openai_failure = None
+
+        if ai_provider_failure is not None:
+            detail = (
+                ai_provider_failure.error_message
+                or "falha do provedor de IA"
+            )
+            openai_failure = (
+                "OpenAI com falha recente: "
+                f"{detail[:300]}"
+            )
+        elif openai is not None:
+            openai_failure = (
+                "OpenAI com falha recente: "
+                f"{openai.error_message[:300]}"
+            )
+
         return {
-            "OPENAI": f"OpenAI com falha recente: {openai.error_message[:300]}" if openai else None,
+            "OPENAI": openai_failure,
             "WHATSAPP": (
                 "WhatsApp/Meta com falha recente de envio ou entrega."
                 if whatsapp_outbound or delivery_failed else None

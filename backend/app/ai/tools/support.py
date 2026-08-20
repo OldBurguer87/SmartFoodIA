@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
+
 from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
+from app.models.conversation import Conversation, HumanTicket
 from app.schemas.conversation import HumanTicketCreate, KnowledgeGapCreate
 from app.services.conversation import ConversationService
 from app.services.human_relay import HumanRelayService
@@ -75,34 +78,106 @@ class RequestHumanHelpTool:
         )
         customer_uuid = UUID(customer_id) if customer_id else None
 
-        ticket = self.service.create_ticket(
-            self.context.db,
-            store_id=self.context.store_id,
-            payload=HumanTicketCreate(
-                conversation_id=conversation_uuid,
-                customer_id=customer_uuid,
-                category=category,
-                priority=priority,
-                reason=reason,
-                customer_message=customer_message,
-            ),
-        )
+        existing_ticket = None
 
-        staff_notified = 0
-
-        if conversation_uuid is not None:
-            self.service.wait_for_human(
-                self.context.db,
-                conversation_id=conversation_uuid,
-                reason=reason,
-                ticket_id=ticket.id,
+        if (
+            priority == "URGENT"
+            and conversation_uuid is not None
+        ):
+            existing_ticket = self.context.db.scalar(
+                select(HumanTicket)
+                .where(
+                    HumanTicket.store_id == self.context.store_id,
+                    HumanTicket.conversation_id == conversation_uuid,
+                    HumanTicket.priority == "URGENT",
+                    HumanTicket.status.in_(
+                        ["OPEN", "IN_PROGRESS"]
+                    ),
+                )
+                .order_by(HumanTicket.created_at.desc())
+                .limit(1)
             )
-            staff_notified = HumanRelayService().notify_waiting(
+
+        reused_ticket = existing_ticket is not None
+
+        if existing_ticket is not None:
+            # Novas informações complementam o mesmo incidente crítico.
+            new_reason = reason.strip()
+            old_reason = (existing_ticket.reason or "").strip()
+
+            if new_reason and new_reason.casefold() not in old_reason.casefold():
+                existing_ticket.reason = (
+                    f"{old_reason} | Atualização: {new_reason}"
+                ).strip(" |")[:500]
+
+            new_message = customer_message.strip()
+            old_message = (
+                existing_ticket.customer_message or ""
+            ).strip()
+
+            if (
+                new_message
+                and new_message.casefold()
+                not in old_message.casefold()
+            ):
+                existing_ticket.customer_message = (
+                    f"{old_message}\n\n"
+                    f"Atualização do cliente: {new_message}"
+                ).strip()
+
+            self.context.db.commit()
+            self.context.db.refresh(existing_ticket)
+            ticket = existing_ticket
+        else:
+            ticket = self.service.create_ticket(
                 self.context.db,
                 store_id=self.context.store_id,
-                conversation_id=conversation_uuid,
-                reason=reason,
+                payload=HumanTicketCreate(
+                    conversation_id=conversation_uuid,
+                    customer_id=customer_uuid,
+                    category=category,
+                    priority=priority,
+                    reason=reason,
+                    customer_message=customer_message,
+                ),
             )
+
+        staff_notified = 0
+        escalation_already_active = False
+
+        if conversation_uuid is not None:
+            conversation = self.context.db.get(
+                Conversation,
+                conversation_uuid,
+            )
+
+            if (
+                conversation is not None
+                and conversation.status in {
+                    "WAITING_HUMAN",
+                    "HUMAN",
+                    "RESUMING_OLIVIA",
+                }
+            ):
+                escalation_already_active = True
+
+            elif (
+                conversation is not None
+                and conversation.status != "CLOSED"
+            ):
+                self.service.wait_for_human(
+                    self.context.db,
+                    conversation_id=conversation_uuid,
+                    reason=reason,
+                    ticket_id=ticket.id,
+                )
+
+                staff_notified = HumanRelayService().notify_waiting(
+                    self.context.db,
+                    store_id=self.context.store_id,
+                    conversation_id=conversation_uuid,
+                    reason=reason,
+                )
 
         gap_id = None
         if create_knowledge_gap:
@@ -131,5 +206,9 @@ class RequestHumanHelpTool:
                 "priority": priority,
                 "status": ticket.status,
                 "staff_notified": staff_notified,
+                "reused_ticket": reused_ticket,
+                "escalation_already_active": (
+                    escalation_already_active
+                ),
             },
         )

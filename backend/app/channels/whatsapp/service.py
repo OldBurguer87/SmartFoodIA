@@ -6,11 +6,19 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app.ai.orchestrator import OliviaOrchestrator
-from app.ai.providers.openai_provider import OpenAIResponsesProvider
+from app.ai.providers.openai_provider import (
+    OpenAIProviderRequestError,
+    OpenAIResponsesProvider,
+)
 from app.channels.whatsapp.client import WhatsAppCloudClient
 from app.models.channel import ChannelAccount, ChannelEvent
 from app.repositories.channel import ChannelRepository
-from app.schemas.conversation import ConversationCreate, MessageCreate
+from app.schemas.conversation import (
+    AIEventCreate,
+    ConversationCreate,
+    HumanTicketCreate,
+    MessageCreate,
+)
 from app.services.conversation import ConversationService
 from app.services.human_relay import HumanRelayService
 from app.services.pix_receipt import PixReceiptService
@@ -569,6 +577,29 @@ class WhatsAppGatewayService:
                 external_conversation_id=sender,
             ),
         )
+
+        # A Olívia não utiliza localização do WhatsApp para cadastrar
+        # endereço. Localização permanece disponível somente durante
+        # atendimento humano.
+        if (
+            message_type == "location"
+            and conversation.status == "OPEN"
+        ):
+            self.repository.create_outbound(
+                db,
+                account=account,
+                conversation_id=conversation.id,
+                recipient=sender,
+                content=(
+                    "Para cadastrar a entrega, me envie o endereço em texto: "
+                    "rua/avenida, número, bairro e um ponto de referência. "
+                    "O ponto de referência é muito importante para o "
+                    "entregador encontrar o local. Se você não souber o "
+                    "endereço, posso chamar uma atendente para ajudar."
+                ),
+            )
+            return
+
         if conversation.status in {
             "WAITING_HUMAN",
             "RESUMING_OLIVIA",
@@ -594,13 +625,83 @@ class WhatsAppGatewayService:
                 )
 
             return
-        reply = self.orchestrator_factory().reply(
-            db,
-            store_id=account.store_id,
-            conversation_id=conversation.id,
-            customer_message=body,
-            customer_phone=sender,
-        )
+        try:
+            reply = self.orchestrator_factory().reply(
+                db,
+                store_id=account.store_id,
+                conversation_id=conversation.id,
+                customer_message=body,
+                customer_phone=sender,
+            )
+
+        except OpenAIProviderRequestError as error:
+            # Nunca deixa o cliente sem resposta por falha da OpenAI.
+            self.conversations.record_event(
+                db,
+                store_id=account.store_id,
+                payload=AIEventCreate(
+                    conversation_id=conversation.id,
+                    event_type="AI_PROVIDER_FAILURE",
+                    success=False,
+                    payload_json={
+                        "provider": "OPENAI",
+                        "fallback": "HUMAN_HANDOFF",
+                    },
+                    error_message=str(error),
+                ),
+            )
+
+            ticket = self.conversations.create_ticket(
+                db,
+                store_id=account.store_id,
+                payload=HumanTicketCreate(
+                    conversation_id=conversation.id,
+                    customer_id=conversation.customer_id,
+                    category="OTHER",
+                    priority="URGENT",
+                    reason=(
+                        "Instabilidade temporária do provedor "
+                        "de IA/OpenAI"
+                    ),
+                    customer_message=body,
+                ),
+            )
+
+            self.conversations.wait_for_human(
+                db,
+                conversation_id=conversation.id,
+                reason=(
+                    "Atendimento automático temporariamente "
+                    "indisponível"
+                ),
+                ticket_id=ticket.id,
+            )
+
+            self.human_relay.notify_waiting(
+                db,
+                store_id=account.store_id,
+                conversation_id=conversation.id,
+                reason=(
+                    "Atendimento automático temporariamente "
+                    "indisponível"
+                ),
+            )
+
+            self.repository.create_outbound(
+                db,
+                account=account,
+                conversation_id=conversation.id,
+                recipient=sender,
+                content=(
+                    "Recebi sua mensagem. Estamos com uma "
+                    "instabilidade temporária no atendimento "
+                    "automático e encaminhei sua conversa para "
+                    "atendimento humano. Não precisa repetir "
+                    "a mensagem."
+                ),
+            )
+            return
+
         self.repository.create_outbound(
             db,
             account=account,

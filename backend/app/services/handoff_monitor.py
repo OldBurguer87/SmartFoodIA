@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.ai.orchestrator import OliviaOrchestrator
 from app.ai.providers.openai_provider import OpenAIResponsesProvider
 from app.core.config import settings
-from app.models.conversation import AIEvent, Conversation
+from app.models.conversation import AIEvent, Conversation, HumanTicket
 from app.repositories.channel import ChannelRepository
 from app.services.human_relay import HumanRelayService
 from app.services.manager_escalation import ManagerEscalationService
@@ -39,6 +39,31 @@ class HumanHandoffMonitor:
         self.orchestrator_factory = orchestrator_factory or (
             lambda: OliviaOrchestrator(OpenAIResponsesProvider())
         )
+
+    @staticmethod
+    def _has_urgent_human_ticket(
+        db: Session,
+        *,
+        conversation_id,
+    ) -> bool:
+        """
+        Chamados URGENT exigem decisão humana explícita.
+        A Olívia nunca deve reassumir automaticamente por timeout.
+        """
+        ticket_id = db.scalar(
+            select(HumanTicket.id)
+            .where(
+                HumanTicket.conversation_id == conversation_id,
+                HumanTicket.priority == "URGENT",
+                HumanTicket.status.in_(
+                    ["OPEN", "IN_PROGRESS"]
+                ),
+            )
+            .order_by(HumanTicket.created_at.desc())
+            .limit(1)
+        )
+
+        return ticket_id is not None
 
     def run_once(
         self,
@@ -79,6 +104,11 @@ class HumanHandoffMonitor:
                     or "solicitação de atendimento"
                 )
 
+                urgent_handoff = self._has_urgent_human_ticket(
+                    db,
+                    conversation_id=conversation.id,
+                )
+
                 # O timeout da espera humana conta desde o momento em que
                 # a Olívia pediu ajuda, mesmo fora do horário da equipe.
                 age_since_handoff_seconds = (
@@ -86,7 +116,8 @@ class HumanHandoffMonitor:
                 ).total_seconds()
 
                 if (
-                    age_since_handoff_seconds
+                    not urgent_handoff
+                    and age_since_handoff_seconds
                     >= settings.human_wait_timeout_seconds
                 ):
                     if self._resume_with_olivia(
@@ -166,7 +197,11 @@ class HumanHandoffMonitor:
                     current_time - start_event.created_at
                 ).total_seconds()
 
-                if age_seconds >= settings.human_wait_timeout_seconds:
+                if (
+                    not urgent_handoff
+                    and age_seconds
+                    >= settings.human_wait_timeout_seconds
+                ):
                     if self._resume_with_olivia(
                         db,
                         conversation=conversation,

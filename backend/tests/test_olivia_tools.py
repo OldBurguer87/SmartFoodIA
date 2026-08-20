@@ -10,6 +10,7 @@ from app.ai.tools.registry import OliviaToolRegistry
 from app.database.base import Base
 from tests_support import configure_store_open
 from app.models.catalog import Company, Product, Store
+from app.models.conversation import AIEvent, Conversation, HumanTicket
 from app.models.customer import CustomerAddress
 from app.models.order import Order
 from app.schemas.customer import CustomerCreate
@@ -367,3 +368,323 @@ def test_get_order_status_returns_schedule_fields() -> None:
         result.data["release_at"]
         == release_at.isoformat()
     )
+
+
+
+def test_checkout_blocks_reconstructed_duplicate_cart() -> None:
+    db, store, _ = setup_registry()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999112233",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.commit()
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999112233",
+        )
+    )
+
+    customer = registry.execute(
+        "find_or_create_customer",
+        {
+            "name": "Cliente Duplicidade",
+            "phone": "5597999112233",
+        },
+    )
+
+    first_cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": first_cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+            "observations": "Sem cebola",
+        },
+    )
+
+    first = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": first_cart.data["id"],
+            "payment_method": "PIX",
+            "payment_type": "PENDING",
+            "customer_confirmed": True,
+        },
+    )
+
+    assert first.ok is True
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="checkout_cart",
+            success=True,
+            payload_json={
+                "arguments": {
+                    "cart_id": first_cart.data["id"],
+                    "payment_method": "PIX",
+                },
+                "result": {
+                    "ok": True,
+                    "data": first.data,
+                    "error": None,
+                    "requires_human": False,
+                },
+            },
+        )
+    )
+    db.commit()
+
+    second_cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    assert second_cart.data["id"] != first_cart.data["id"]
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": second_cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+            "observations": "Sem cebola",
+        },
+    )
+
+    second = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": second_cart.data["id"],
+            "payment_method": "PIX",
+            "payment_type": "PENDING",
+            "customer_confirmed": True,
+        },
+    )
+
+    assert second.ok is True
+    assert second.data["id"] == first.data["id"]
+    assert second.data["display_id"] == first.data["display_id"]
+
+    orders = list(
+        db.scalars(
+            select(Order).where(Order.store_id == store.id)
+        )
+    )
+    assert len(orders) == 1
+
+
+def test_checkout_allows_changed_cart_after_recent_order() -> None:
+    db, store, _ = setup_registry()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999445566",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.commit()
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999445566",
+        )
+    )
+
+    customer = registry.execute(
+        "find_or_create_customer",
+        {
+            "name": "Cliente Novo Pedido",
+            "phone": "5597999445566",
+        },
+    )
+
+    first_cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": first_cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+        },
+    )
+
+    first = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": first_cart.data["id"],
+            "payment_method": "PIX",
+            "payment_type": "PENDING",
+            "customer_confirmed": True,
+        },
+    )
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="checkout_cart",
+            success=True,
+            payload_json={
+                "result": {
+                    "ok": True,
+                    "data": first.data,
+                    "error": None,
+                    "requires_human": False,
+                },
+            },
+        )
+    )
+    db.commit()
+
+    second_cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": second_cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 2,
+        },
+    )
+
+    second = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": second_cart.data["id"],
+            "payment_method": "PIX",
+            "payment_type": "PENDING",
+            "customer_confirmed": True,
+        },
+    )
+
+    assert second.ok is True
+    assert second.data["id"] != first.data["id"]
+
+    orders = list(
+        db.scalars(
+            select(Order).where(Order.store_id == store.id)
+        )
+    )
+    assert len(orders) == 2
+
+
+def test_repeated_urgent_human_help_reuses_active_ticket():
+    db, store, _ = setup_registry()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999001122",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.commit()
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999001122",
+        )
+    )
+
+    first = registry.execute(
+        "request_human_help",
+        {
+            "reason": "Acidente com entregador",
+            "customer_message": (
+                "O entregador sofreu um acidente."
+            ),
+            "category": "OTHER",
+            "priority": "URGENT",
+            "create_knowledge_gap": False,
+        },
+    )
+
+    assert first.ok is True
+    assert first.data["reused_ticket"] is False
+
+    second = registry.execute(
+        "request_human_help",
+        {
+            "reason": (
+                "Acidente com entregador; está no hospital"
+            ),
+            "customer_message": (
+                "Ele está em observação no hospital."
+            ),
+            "category": "OTHER",
+            "priority": "URGENT",
+            "create_knowledge_gap": False,
+        },
+    )
+
+    assert second.ok is True
+    assert second.data["ticket_id"] == first.data["ticket_id"]
+    assert second.data["reused_ticket"] is True
+    assert second.data["escalation_already_active"] is True
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id
+            )
+        )
+    )
+
+    assert len(tickets) == 1
+    assert tickets[0].priority == "URGENT"
+    assert "hospital" in tickets[0].reason.lower()
+    assert "hospital" in tickets[0].customer_message.lower()
+
+    waiting_events = list(
+        db.scalars(
+            select(AIEvent).where(
+                AIEvent.conversation_id == conversation.id,
+                AIEvent.event_type == "HUMAN_WAITING",
+            )
+        )
+    )
+
+    assert len(waiting_events) == 1
