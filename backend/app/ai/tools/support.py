@@ -11,6 +11,7 @@ from app.models.conversation import Conversation, HumanTicket
 from app.schemas.conversation import HumanTicketCreate, KnowledgeGapCreate
 from app.services.conversation import ConversationService
 from app.services.human_relay import HumanRelayService
+from app.services.manager_escalation import ManagerEscalationService
 
 
 class RequestHumanHelpTool:
@@ -179,6 +180,28 @@ class RequestHumanHelpTool:
                     reason=reason,
                 )
 
+        manager_notified = 0
+
+        if (
+            priority == "URGENT"
+            and conversation_uuid is not None
+            and not escalation_already_active
+        ):
+            manager_notified = (
+                ManagerEscalationService().notify_conversation(
+                    self.context.db,
+                    store_id=self.context.store_id,
+                    conversation_id=conversation_uuid,
+                    title="Incidente crítico — atendimento imediato",
+                    details=(
+                        f"Motivo: {reason}. "
+                        f"Relato recebido: {customer_message}"
+                    ),
+                    source="REQUEST_HUMAN_HELP_URGENT",
+                    olivia_continues=False,
+                )
+            )
+
         gap_id = None
         if create_knowledge_gap:
             gap = self.service.create_or_increment_gap(
@@ -206,6 +229,7 @@ class RequestHumanHelpTool:
                 "priority": priority,
                 "status": ticket.status,
                 "staff_notified": staff_notified,
+                "manager_notified": manager_notified,
                 "reused_ticket": reused_ticket,
                 "escalation_already_active": (
                     escalation_already_active

@@ -153,6 +153,7 @@ class ManagerEscalationService:
         details: str,
         source: str,
         now: datetime | None = None,
+        olivia_continues: bool = True,
     ) -> int:
         account = self.channels.get_account_by_store(
             db,
@@ -184,20 +185,38 @@ class ManagerEscalationService:
             or "não identificado"
         )
 
+        status_text = (
+            "A Olívia continua atendendo o cliente enquanto isso."
+            if olivia_continues
+            else (
+                "A conversa está pausada aguardando atendimento "
+                "humano e não será retomada automaticamente."
+            )
+        )
+
+        template_status = (
+            "A Olívia continua atendendo normalmente."
+            if olivia_continues
+            else (
+                "A conversa está pausada aguardando atendimento "
+                "humano e não será retomada automaticamente."
+            )
+        )
+
         content = (
             f"🚨 {title}\n\n"
             f"Cliente: {customer}\n"
             f"Código: {code}\n\n"
             f"{details}\n\n"
-            "A Olívia continua atendendo o cliente enquanto isso.\n\n"
-            "Se quiser assumir a conversa, responda:\n"
+            f"{status_text}\n\n"
+            "Para assumir a conversa, responda:\n"
             f"ASSUMIR {code}"
         )
 
         template_details = (
             f"Cliente: {customer}. "
             f"{details} "
-            "A Olívia continua atendendo normalmente. "
+            f"{template_status} "
             f"Para assumir a conversa, envie ASSUMIR {code}."
         )
 

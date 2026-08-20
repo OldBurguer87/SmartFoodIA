@@ -5,6 +5,7 @@ from uuid import uuid4
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.ai.olivia_prompt import OLIVIA_INSTRUCTIONS
 from app.ai.tools.context import ToolContext
 from app.ai.tools.registry import OliviaToolRegistry
 from app.database.base import Base
@@ -688,3 +689,91 @@ def test_repeated_urgent_human_help_reuses_active_ticket():
     )
 
     assert len(waiting_events) == 1
+
+
+
+def test_urgent_human_help_notifies_manager_only_on_first_escalation(
+    monkeypatch,
+):
+    db, store, _ = setup_registry()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999554433",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.commit()
+
+    manager_calls = []
+
+    class FakeManagerEscalation:
+        def notify_conversation(self, db, **kwargs):
+            manager_calls.append(kwargs)
+            return 1
+
+    monkeypatch.setattr(
+        "app.ai.tools.support.ManagerEscalationService",
+        FakeManagerEscalation,
+    )
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999554433",
+        )
+    )
+
+    first = registry.execute(
+        "request_human_help",
+        {
+            "reason": "Entregador sofreu acidente",
+            "customer_message": (
+                "O entregador sofreu acidente e foi levado "
+                "ao hospital."
+            ),
+            "category": "OTHER",
+            "priority": "URGENT",
+            "create_knowledge_gap": False,
+        },
+    )
+
+    second = registry.execute(
+        "request_human_help",
+        {
+            "reason": "Atualização do acidente",
+            "customer_message": (
+                "A bolsa de entrega ficou no hospital."
+            ),
+            "category": "OTHER",
+            "priority": "URGENT",
+            "create_knowledge_gap": False,
+        },
+    )
+
+    assert first.ok is True
+    assert first.data["manager_notified"] == 1
+    assert first.data["escalation_already_active"] is False
+
+    assert second.ok is True
+    assert second.data["ticket_id"] == first.data["ticket_id"]
+    assert second.data["reused_ticket"] is True
+    assert second.data["manager_notified"] == 0
+    assert second.data["escalation_already_active"] is True
+
+    assert len(manager_calls) == 1
+    assert manager_calls[0]["olivia_continues"] is False
+    assert manager_calls[0]["source"] == (
+        "REQUEST_HUMAN_HELP_URGENT"
+    )
+
+
+def test_olivia_prompt_has_critical_incident_mode():
+    assert "INCIDENTES CRÍTICOS E SEGURANÇA" in OLIVIA_INSTRUCTIONS
+    assert "priority=URGENT" in OLIVIA_INSTRUCTIONS
+    assert "Não faça investigação clínica" in OLIVIA_INSTRUCTIONS
+    assert "manager_notified" in OLIVIA_INSTRUCTIONS
+    assert "não continue investigando" in OLIVIA_INSTRUCTIONS

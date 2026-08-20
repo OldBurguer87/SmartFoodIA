@@ -171,3 +171,36 @@ def test_manager_outside_window_receives_template_alert():
 
     assert event is not None
     assert event.payload_json["source"] == "HUMAN_WAIT_TIMEOUT"
+
+
+
+def test_urgent_handoff_manager_alert_says_conversation_is_paused():
+    now = datetime.now(timezone.utc)
+
+    db, store, _, conversation, manager = _setup_manager(
+        last_seen_at=now - timedelta(hours=1),
+    )
+
+    result = ManagerEscalationService().notify_conversation(
+        db,
+        store_id=store.id,
+        conversation_id=conversation.id,
+        title="Incidente crítico — atendimento imediato",
+        details="Acidente informado pelo cliente.",
+        source="REQUEST_HUMAN_HELP_URGENT",
+        now=now,
+        olivia_continues=False,
+    )
+
+    assert result == 1
+
+    outbound = db.scalar(
+        select(OutboundChannelMessage).where(
+            OutboundChannelMessage.recipient == manager.phone
+        )
+    )
+
+    assert outbound is not None
+    assert "pausada aguardando atendimento humano" in outbound.content
+    assert "não será retomada automaticamente" in outbound.content
+    assert "continua atendendo o cliente" not in outbound.content
