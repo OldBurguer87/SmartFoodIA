@@ -443,6 +443,14 @@ class CheckoutCartTool:
                 error="O cliente ainda não confirmou o resumo final do pedido.",
             )
 
+        # Não dependemos da IA para decidir o tipo financeiro.
+        # PIX confirmado pela SmartFoodIA é PREPAID no Consumer.
+        payment_type = (
+            "PREPAID"
+            if payment_method == "PIX"
+            else "PENDING"
+        )
+
         duplicate_order = self._find_recent_duplicate_order(
             self.context.db,
             cart_id=UUID(cart_id),

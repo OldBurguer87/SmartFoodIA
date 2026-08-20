@@ -324,3 +324,25 @@ def test_takeout_pix_without_confirmation_is_hidden():
             order_id=order.id,
             integration=integration,
         )
+
+def test_confirmed_pix_is_sent_to_consumer_as_prepaid():
+    db, store, integration, order = setup(
+        payment_method="PIX",
+        receipt_status="AUTO_CONFIRMED",
+    )
+
+    payload = ConsumerPartnerAdapter().serialize_order(
+        db,
+        store_id=store.id,
+        order_id=order.id,
+        integration=integration,
+    )
+
+    payments = payload["item"]["payments"]
+    method = payments["methods"][0]
+
+    assert method["method"] == "PIX"
+    assert method["type"] == "PREPAID"
+    assert method["prepaid"] is True
+    assert payments["pending"] == 0.0
+    assert payments["prepaid"] == float(order.total)

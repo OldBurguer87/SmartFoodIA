@@ -21,9 +21,19 @@ class CheckoutRequest(BaseModel):
     scheduled_for: datetime | None = None
 
     @model_validator(mode="after")
-    def validate_cash(self):
+    def normalize_payment(self):
         if self.payment_method != "CASH" and self.change_for is not None:
             raise ValueError("Troco só pode ser informado para pagamento em dinheiro.")
+
+        # No fluxo atual da SmartFoodIA, PIX só é liberado para a
+        # integração depois da confirmação do comprovante.
+        # Portanto, para o PDV ele é sempre pagamento pré-pago.
+        self.payment_type = (
+            "PREPAID"
+            if self.payment_method == "PIX"
+            else "PENDING"
+        )
+
         return self
 
 

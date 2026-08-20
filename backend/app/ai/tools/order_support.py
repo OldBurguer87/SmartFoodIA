@@ -11,6 +11,7 @@ from app.ai.tools.contracts import ToolDefinition, ToolResult
 from app.models.commercial import StoreCommercialRules
 from app.models.conversation import Conversation, HumanTicket
 from app.models.order import Order, OrderItem
+from app.models.payment import PaymentReceipt
 from app.schemas.conversation import HumanTicketCreate
 from app.services.conversation import ConversationService
 from app.services.human_relay import HumanRelayService
@@ -23,6 +24,17 @@ STATUS_LABELS = {
     "DISPATCHED": "Pedido saiu para entrega",
     "CONCLUDED": "Pedido finalizado",
     "CANCELLED": "Pedido cancelado",
+}
+
+
+PIX_RECEIPT_STATUS_LABELS = {
+    "NOT_RECEIVED": "Comprovante PIX ainda não recebido",
+    "RECEIVED": "Comprovante PIX recebido e em conferência",
+    "NEEDS_ORDER": "Comprovante aguardando identificação do pedido",
+    "NEEDS_REVIEW": "Comprovante aguardando conferência da equipe",
+    "AUTO_CONFIRMED": "Pagamento PIX confirmado",
+    "HUMAN_CONFIRMED": "Pagamento PIX confirmado pela equipe",
+    "HUMAN_REJECTED": "Comprovante PIX recusado pela equipe",
 }
 
 
@@ -140,6 +152,35 @@ def order_payload(context: ToolContext, order: Order) -> dict[str, Any]:
             key=lambda item: item.created_at,
         )
 
+    latest_receipt = None
+
+    if order.payment_method == "PIX":
+        latest_receipt = context.db.scalar(
+            select(PaymentReceipt)
+            .where(
+                PaymentReceipt.store_id == context.store_id,
+                PaymentReceipt.order_id == order.id,
+            )
+            .order_by(PaymentReceipt.created_at.desc())
+            .limit(1)
+        )
+
+    pix_receipt_status = None
+    payment_confirmed = None
+
+    if order.payment_method == "PIX":
+        pix_receipt_status = (
+            latest_receipt.status
+            if latest_receipt is not None
+            else "NOT_RECEIVED"
+        )
+
+        payment_confirmed = (
+            latest_receipt is not None
+            and latest_receipt.status
+            in {"AUTO_CONFIRMED", "HUMAN_CONFIRMED"}
+        )
+
     return {
         "order_id": str(order.id),
         "display_id": order.display_id,
@@ -168,6 +209,16 @@ def order_payload(context: ToolContext, order: Order) -> dict[str, Any]:
         "consumer_order_id": order.consumer_order_id,
         "payment_method": order.payment_method,
         "payment_type": order.payment_type,
+        "payment_confirmed": payment_confirmed,
+        "pix_receipt_status": pix_receipt_status,
+        "pix_receipt_status_label": (
+            PIX_RECEIPT_STATUS_LABELS.get(
+                pix_receipt_status,
+                pix_receipt_status,
+            )
+            if pix_receipt_status is not None
+            else None
+        ),
         "subtotal": float(order.subtotal),
         "delivery_fee": float(order.delivery_fee),
         "discount": float(order.discount),

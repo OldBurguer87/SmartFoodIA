@@ -777,3 +777,12 @@ def test_olivia_prompt_has_critical_incident_mode():
     assert "Não faça investigação clínica" in OLIVIA_INSTRUCTIONS
     assert "manager_notified" in OLIVIA_INSTRUCTIONS
     assert "não continue investigando" in OLIVIA_INSTRUCTIONS
+
+def test_olivia_prompt_blocks_ambiguous_product_selection():
+    from app.ai.olivia_prompt import OLIVIA_INSTRUCTIONS
+
+    assert "PRODUTO AMBÍGUO" in OLIVIA_INSTRUCTIONS
+    assert "NÃO use add_cart_item" in OLIVIA_INSTRUCTIONS
+    assert "payment_confirmed" in OLIVIA_INSTRUCTIONS
+    assert "pix_receipt_status" in OLIVIA_INSTRUCTIONS
+    assert "Faça UMA pergunta por vez" in OLIVIA_INSTRUCTIONS

@@ -154,3 +154,24 @@ def test_cash_change_must_cover_total() -> None:
                 change_for=Decimal("50.00"),
             ),
         )
+
+def test_pix_checkout_request_is_normalized_to_prepaid():
+    from app.schemas.order import CheckoutRequest
+
+    request = CheckoutRequest(
+        payment_method="PIX",
+        payment_type="PENDING",
+    )
+
+    assert request.payment_type == "PREPAID"
+
+
+def test_non_pix_checkout_request_is_pending():
+    from app.schemas.order import CheckoutRequest
+
+    request = CheckoutRequest(
+        payment_method="CASH",
+        payment_type="PREPAID",
+    )
+
+    assert request.payment_type == "PENDING"

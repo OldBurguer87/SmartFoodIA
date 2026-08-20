@@ -47,7 +47,12 @@ def sanitize_whatsapp_text(value: str) -> str:
     The prompt asks for plain text, but this defensive layer removes common
     Markdown artifacts if a model response still contains them.
     """
-    text = str(value).replace("`", "").replace("*", "")
+    text = (
+        str(value)
+        .replace("`", "")
+        .replace("*", "")
+        .replace("\ufffd", "")
+    )
     lines = []
     for line in text.splitlines():
         stripped = line.lstrip()

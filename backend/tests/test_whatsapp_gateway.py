@@ -1339,3 +1339,12 @@ def test_openai_failure_returns_fallback_and_handoff():
     assert outbound is not None
     assert "instabilidade temporária" in outbound.content
     assert "Não precisa repetir" in outbound.content
+
+def test_sanitize_whatsapp_text_removes_replacement_character():
+    from app.channels.whatsapp.service import sanitize_whatsapp_text
+
+    result = sanitize_whatsapp_text(
+        "Mensagem com caractere corrompido: �"
+    )
+
+    assert "�" not in result
