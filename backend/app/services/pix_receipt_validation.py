@@ -12,8 +12,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.usage import extract_openai_usage
 from app.core.config import settings
 from app.models.commercial import StoreCommercialRules
+from app.models.conversation import AIEvent
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
 from app.services.pix_receipt_fingerprint import (
@@ -326,6 +328,16 @@ class PixReceiptAnalyzer:
         *,
         receipt: PaymentReceipt,
     ) -> dict:
+        extracted, _ = self.analyze_with_usage(
+            receipt=receipt
+        )
+        return extracted
+
+    def analyze_with_usage(
+        self,
+        *,
+        receipt: PaymentReceipt,
+    ) -> tuple[dict, dict | None]:
         path = Path(receipt.storage_path)
 
         if not path.exists():
@@ -493,10 +505,23 @@ class PixReceiptValidationService:
             db.refresh(receipt)
             return receipt
 
+        usage = None
+
         try:
-            extracted = self.analyzer.analyze(
-                receipt=receipt
+            analyze_with_usage = getattr(
+                self.analyzer,
+                "analyze_with_usage",
+                None,
             )
+
+            if callable(analyze_with_usage):
+                extracted, usage = analyze_with_usage(
+                    receipt=receipt
+                )
+            else:
+                extracted = self.analyzer.analyze(
+                    receipt=receipt
+                )
         except Exception as error:
             receipt.status = "NEEDS_REVIEW"
             receipt.validation_json = {

@@ -12,6 +12,8 @@ class ProviderResponse:
     response_id: str | None
     text: str | None = None
     tool_calls: list[ProviderToolCall] = field(default_factory=list)
+    model: str | None = None
+    usage: dict[str, Any] | None = None
 
 class AIProvider(Protocol):
     def respond(self, *, instructions: str, input_items: list[dict[str, Any]],

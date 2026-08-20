@@ -585,6 +585,8 @@ class OliviaOrchestrator:
                     payload_json={
                         "round": round_number,
                         "tool_calls": len(response.tool_calls),
+                        "model": response.model,
+                        "usage": response.usage,
                     },
                 ),
             )

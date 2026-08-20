@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 from app.ai.providers.base import ProviderResponse, ProviderToolCall
+from app.ai.usage import extract_openai_usage
 from app.core.config import settings
 
 
@@ -67,6 +68,12 @@ class OpenAIResponsesProvider:
                     )
                 )
         output_text = getattr(response, "output_text", None)
+
+        actual_model = str(
+            getattr(response, "model", None)
+            or self.model
+        )
+
         return ProviderResponse(
             response_id=getattr(response, "id", None),
             text=(
@@ -75,4 +82,9 @@ class OpenAIResponsesProvider:
                 else None
             ),
             tool_calls=calls,
+            model=actual_model,
+            usage=extract_openai_usage(
+                response,
+                requested_model=self.model,
+            ),
         )
