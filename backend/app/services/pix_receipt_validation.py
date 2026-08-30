@@ -404,7 +404,9 @@ class PixReceiptAnalyzer:
                         receipt.original_filename
                         or "comprovante-pix.pdf"
                     ),
-                    "file_data": encoded,
+                    "file_data": (
+                        f"data:application/pdf;base64,{encoded}"
+                    ),
                 }
             )
 
@@ -449,16 +451,44 @@ class PixReceiptAnalyzer:
             )
 
         try:
-            return json.loads(output_text)
+            extracted = json.loads(output_text)
         except json.JSONDecodeError as error:
             raise PixReceiptAnalysisError(
                 "Resposta estruturada inválida."
             ) from error
 
+        usage_object = getattr(response, "usage", None)
+
+        if isinstance(usage_object, dict):
+            raw_usage = usage_object
+        elif usage_object is not None:
+            model_dump = getattr(
+                usage_object,
+                "model_dump",
+                None,
+            )
+            raw_usage = (
+                model_dump()
+                if callable(model_dump)
+                else usage_object
+            )
+        else:
+            raw_usage = None
+
+        usage = extract_openai_usage(
+            {
+                "usage": raw_usage,
+                "model": getattr(response, "model", None),
+            },
+            requested_model=settings.openai_model,
+        )
+
+        return extracted, usage
+
 
 class PixReceiptValidationService:
     def __init__(self, *, analyzer=None) -> None:
-        self.analyzer = analyzer or PixReceiptAnalyzer()
+        self.analyzer = analyzer
 
     def process(
         self,
@@ -508,8 +538,13 @@ class PixReceiptValidationService:
         usage = None
 
         try:
+            analyzer = self.analyzer
+            if analyzer is None:
+                analyzer = PixReceiptAnalyzer()
+                self.analyzer = analyzer
+
             analyze_with_usage = getattr(
-                self.analyzer,
+                analyzer,
                 "analyze_with_usage",
                 None,
             )
@@ -519,7 +554,7 @@ class PixReceiptValidationService:
                     receipt=receipt
                 )
             else:
-                extracted = self.analyzer.analyze(
+                extracted = analyzer.analyze(
                     receipt=receipt
                 )
         except Exception as error:
@@ -1018,9 +1053,35 @@ class PixReceiptValidationService:
             "reasons": reasons,
             "decision": receipt.status,
             "order_display_id": order.display_id,
+            "usage": usage,
         }
 
+        # Primeiro persiste a validação do pagamento.
+        # Uma eventual falha de telemetria não pode impedir o PIX.
         db.commit()
         db.refresh(receipt)
+
+        if isinstance(usage, dict):
+            try:
+                db.add(
+                    AIEvent(
+                        store_id=receipt.store_id,
+                        conversation_id=receipt.conversation_id,
+                        event_type="PIX_AI_ANALYSIS",
+                        tool_name="pix_receipt_validation",
+                        success=True,
+                        payload_json={
+                            "receipt_id": str(receipt.id),
+                            "order_id": str(order.id),
+                            "order_display_id": order.display_id,
+                            "decision": receipt.status,
+                            "usage": usage,
+                        },
+                    )
+                )
+                db.commit()
+            except Exception:
+                # Telemetria nunca deve bloquear a validação do pagamento.
+                db.rollback()
 
         return receipt

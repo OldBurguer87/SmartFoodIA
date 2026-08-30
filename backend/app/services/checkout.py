@@ -7,9 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.cart import Cart
-from app.models.catalog import Store
+from app.models.catalog import ProductComboComponent, Store
 from app.models.customer import CustomerAddress
-from app.models.order import Order, OrderEvent, OrderItem, OrderItemModifier
+from app.models.order import (
+    Order,
+    OrderEvent,
+    OrderItem,
+    OrderItemComboComponent,
+    OrderItemModifier,
+)
 from app.repositories.cart import CartRepository
 from app.repositories.customer import CustomerRepository
 from app.repositories.order import OrderRepository
@@ -148,6 +154,43 @@ class CheckoutService:
                     "O valor informado para troco é menor que o total do pedido."
                 )
 
+        # Carrega e valida previamente a composição técnica dos combos.
+        # Nenhum pedido é persistido se a soma dos componentes divergir
+        # do preço comercial unitário salvo no carrinho.
+        combo_components_by_product_id = {}
+
+        for cart_item in cart.items:
+            components = db.scalars(
+                select(ProductComboComponent)
+                .where(
+                    ProductComboComponent.combo_product_id
+                    == cart_item.product_id
+                )
+                .order_by(ProductComboComponent.display_order)
+            ).all()
+
+            if components:
+                components_total = sum(
+                    (
+                        component.unit_price * component.quantity
+                        for component in components
+                    ),
+                    Decimal("0.00"),
+                )
+
+                if components_total != cart_item.unit_price:
+                    raise CheckoutValidationError(
+                        "Composição do combo "
+                        f"'{cart_item.product_name}' inconsistente: "
+                        f"componentes somam R$ {components_total:.2f}, "
+                        f"mas o preço comercial é "
+                        f"R$ {cart_item.unit_price:.2f}."
+                    )
+
+            combo_components_by_product_id[
+                cart_item.product_id
+            ] = components
+
         display_id = self.order_repository.next_display_id(db, cart.store_id)
         order = Order(
             store_id=cart.store_id,
@@ -211,6 +254,32 @@ class CheckoutService:
                         unit_price=cart_modifier.unit_price,
                         total_price=cart_modifier.unit_price
                         * cart_modifier.quantity,
+                    )
+                )
+
+
+            # Componentes técnicos do combo são apenas snapshot.
+            # Eles NÃO participam do cálculo financeiro do SmartFoodIA.
+            combo_components = combo_components_by_product_id.get(
+                cart_item.product_id,
+                [],
+            )
+
+            for component in combo_components:
+                db.add(
+                    OrderItemComboComponent(
+                        order_item_id=order_item.id,
+                        component_external_code=(
+                            component.component_external_code
+                        ),
+                        component_name=component.component_name,
+                        quantity=component.quantity,
+                        unit_price=component.unit_price,
+                        total_price=(
+                            component.unit_price
+                            * component.quantity
+                        ),
+                        display_order=component.display_order,
                     )
                 )
 

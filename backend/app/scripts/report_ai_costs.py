@@ -66,12 +66,18 @@ with SessionLocal() as db:
         if event.conversation_id:
             conversations.add(event.conversation_id)
 
+    measured_since = min(
+        (event.created_at for event in events
+         if isinstance((event.payload_json or {}).get("usage"), dict)),
+        default=now,
+    )
+
     orders = db.scalar(
         select(func.count())
         .select_from(Order)
         .where(
             Order.store_id == store.id,
-            Order.created_at >= since,
+            Order.created_at >= measured_since,
         )
     ) or 0
 

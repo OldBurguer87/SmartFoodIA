@@ -8,6 +8,7 @@ from app.api.deps import require_store_access
 from app.database.session import get_db
 from app.models.customer import Customer
 from app.models.order import Order
+from app.models.payment import PaymentReceipt
 from app.services.auth import StoreAccess
 
 
@@ -145,6 +146,27 @@ def get_customer(
         ).all()
     )
 
+    confirmed_pix_order_ids = set()
+    pix_order_ids = [
+        order.id
+        for order in orders
+        if order.payment_method == "PIX"
+    ]
+
+    if pix_order_ids:
+        confirmed_pix_order_ids = set(
+            db.scalars(
+                select(PaymentReceipt.order_id).where(
+                    PaymentReceipt.store_id == store_id,
+                    PaymentReceipt.order_id.in_(pix_order_ids),
+                    PaymentReceipt.status.in_(
+                        ["AUTO_CONFIRMED", "HUMAN_CONFIRMED"]
+                    ),
+                )
+            ).all()
+        )
+
+
     return {
         **customer_to_dict(customer),
         "addresses": [
@@ -159,6 +181,10 @@ def get_customer(
                 "status": order.status,
                 "service_mode": order.service_mode,
                 "payment_method": order.payment_method,
+                "pix_confirmed": (
+                    order.payment_method == "PIX"
+                    and order.id in confirmed_pix_order_ids
+                ),
                 "total": order.total,
                 "scheduled_for": order.scheduled_for,
                 "created_at": order.created_at,

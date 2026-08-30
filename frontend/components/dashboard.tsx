@@ -136,8 +136,8 @@ export function Dashboard({
         <div className="sidebarFoot">
           <div className="statusDot" />
           <div>
-            <strong>Olívia em operação</strong>
-            <span>Monitoramento do piloto</span>
+            <strong>WhatsApp em operação</strong>
+            <span>Central de atendimento conectada</span>
           </div>
         </div>
       </aside>
@@ -265,7 +265,7 @@ export function Dashboard({
                 />
                 <div className="progressList">
                   <Progress
-                    label="Olívia"
+                    label="Conversas abertas"
                     value={overview.conversations.open}
                     total={Math.max(overview.conversations.total, 1)}
                   />

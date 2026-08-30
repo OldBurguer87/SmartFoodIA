@@ -47,6 +47,25 @@ class OrderRepository:
         )
         return db.scalar(statement)
 
+    def get_latest_active_for_customer(
+        self,
+        db: Session,
+        *,
+        store_id: UUID,
+        customer_id: UUID,
+    ) -> Order | None:
+        statement = (
+            select(Order)
+            .where(
+                Order.store_id == store_id,
+                Order.customer_id == customer_id,
+                ~Order.status.in_(("CONCLUDED", "CANCELLED")),
+            )
+            .order_by(Order.created_at.desc())
+            .limit(1)
+        )
+        return db.scalar(statement)
+
     def next_display_id(self, db: Session, store_id: UUID) -> str:
         count = db.scalar(
             select(func.count(Order.id)).where(Order.store_id == store_id)

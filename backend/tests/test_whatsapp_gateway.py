@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from app.database.base import Base
 from app.models.catalog import Company, Store
 from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage
 from app.models.conversation import AIEvent, Conversation, Message, HumanTicket
+from app.models.customer import Customer
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
 from app.models.staff import StoreStaffMember
@@ -444,7 +446,7 @@ def test_rejected_duplicate_pix_asks_for_new_transaction():
     assert "registrado para conferência" not in outbound[0].content
 
 
-def test_human_image_is_forwarded_to_staff_without_pix_receipt():
+def test_human_image_is_forwarded_to_staff_without_pix_receipt(tmp_path):
     db, store, _ = setup_db()
 
     customer_phone = "5597999999999"
@@ -473,9 +475,16 @@ def test_human_image_is_forwarded_to_staff_without_pix_receipt():
 
     client = FakeClient()
 
+    from app.services.conversation_media import (
+        ConversationMediaStorage,
+    )
+
     service = WhatsAppGatewayService(
         orchestrator_factory=lambda: FakeOrchestrator(),
         client_factory=lambda: client,
+        conversation_media_storage=ConversationMediaStorage(
+            root_path=tmp_path,
+        ),
     )
 
     result = service.process_payload(
@@ -509,6 +518,15 @@ def test_human_image_is_forwarded_to_staff_without_pix_receipt():
     assert messages[0].content == "[Imagem recebida]"
     assert messages[0].metadata_json["media_id"] == "media-1"
     assert messages[0].metadata_json["media_type"] == "image"
+    assert messages[0].metadata_json["stored_media"] is True
+    assert messages[0].metadata_json["mime_type"] == "image/png"
+
+    stored_path = (
+        tmp_path
+        / messages[0].metadata_json["stored_media_path"]
+    )
+
+    assert stored_path.read_bytes() == b"imagem-teste-whatsapp"
 
     outbound = db.scalar(
         select(OutboundChannelMessage)
@@ -945,7 +963,7 @@ def test_localizar_pedido_does_not_steal_other_staff_conversation():
     assert customer_messages == []
 
 
-def test_human_media_without_linked_staff_fails_safely():
+def test_human_media_without_linked_staff_is_saved_for_web_central(tmp_path):
     db, store, _ = setup_db()
 
     customer_phone = "5597999999999"
@@ -959,9 +977,16 @@ def test_human_media_without_linked_staff_fails_safely():
     db.add(conversation)
     db.commit()
 
+    from app.services.conversation_media import (
+        ConversationMediaStorage,
+    )
+
     service = WhatsAppGatewayService(
         orchestrator_factory=lambda: FakeOrchestrator(),
         client_factory=lambda: FakeClient(),
+        conversation_media_storage=ConversationMediaStorage(
+            root_path=tmp_path,
+        ),
     )
 
     result = service.process_payload(
@@ -973,15 +998,13 @@ def test_human_media_without_linked_staff_fails_safely():
     )
 
     assert result.received == 1
-    assert result.processed == 0
-    assert result.failed == 1
+    assert result.processed == 1
+    assert result.failed == 0
 
     assert list(db.scalars(select(PaymentReceipt))) == []
 
     assert list(
-        db.scalars(
-            select(OutboundChannelMessage)
-        )
+        db.scalars(select(OutboundChannelMessage))
     ) == []
 
     event = db.scalar(
@@ -992,63 +1015,30 @@ def test_human_media_without_linked_staff_fails_safely():
     )
 
     assert event is not None
-    assert event.status == "FAILED"
-    assert "HUMAN sem atendente vinculado" in (
-        event.error_message or ""
-    )
+    assert event.status == "PROCESSED"
+    assert event.error_message is None
 
-
-def test_human_media_without_linked_staff_fails_safely():
-    db, store, _ = setup_db()
-
-    customer_phone = "5597999999999"
-
-    conversation = Conversation(
-        store_id=store.id,
-        channel="WHATSAPP",
-        external_conversation_id=customer_phone,
-        status="HUMAN",
-    )
-    db.add(conversation)
-    db.commit()
-
-    service = WhatsAppGatewayService(
-        orchestrator_factory=lambda: FakeOrchestrator(),
-        client_factory=lambda: FakeClient(),
-    )
-
-    result = service.process_payload(
-        db,
-        inbound_payload(
-            message_id="wamid.human-image-no-staff",
-            message_type="image",
-        ),
-    )
-
-    assert result.received == 1
-    assert result.processed == 0
-    assert result.failed == 1
-
-    assert list(db.scalars(select(PaymentReceipt))) == []
-
-    assert list(
+    messages = list(
         db.scalars(
-            select(OutboundChannelMessage)
-        )
-    ) == []
-
-    event = db.scalar(
-        select(ChannelEvent).where(
-            ChannelEvent.external_event_id
-            == "wamid.human-image-no-staff"
+            select(Message).where(
+                Message.conversation_id == conversation.id
+            )
         )
     )
 
-    assert event is not None
-    assert event.status == "FAILED"
-    assert "HUMAN sem atendente vinculado" in (
-        event.error_message or ""
+    assert len(messages) == 1
+    assert messages[0].direction == "INBOUND"
+    assert messages[0].sender_type == "CUSTOMER"
+    assert messages[0].content_type == "IMAGE"
+    assert messages[0].metadata_json["stored_media"] is True
+    assert messages[0].metadata_json["mime_type"] == "image/png"
+
+    stored_path = (
+        tmp_path
+        / messages[0].metadata_json["stored_media_path"]
     )
+
+    assert stored_path.read_bytes() == b"imagem-teste-whatsapp"
 
 
 def test_open_location_is_not_sent_to_olivia():
@@ -1102,20 +1092,51 @@ def test_open_location_is_not_sent_to_olivia():
     assert result.processed == 1
     assert result.failed == 0
 
-    # A localização nunca chega à Olívia.
+    # A localização nunca chega à Olívia/OpenAI.
     assert orchestrator.calls == []
 
-    # Localização em conversa OPEN não vira comprovante PIX.
+    # Localização não vira comprovante PIX.
     assert list(db.scalars(select(PaymentReceipt))) == []
 
-    # Latitude, longitude e mapa não entram no histórico da Olívia.
-    messages = list(db.scalars(select(Message)))
-    assert messages == []
+    conversation = db.scalar(select(Conversation))
+    assert conversation is not None
+    assert conversation.status == "WAITING_HUMAN"
 
-    outbound = db.scalar(select(OutboundChannelMessage))
+    # A localização fica disponível para o atendimento humano.
+    messages = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id
+            )
+        )
+    )
+    assert len(messages) == 1
+    assert messages[0].sender_type == "CUSTOMER"
+    assert messages[0].content_type == "LOCATION"
+    assert "Localização compartilhada" in messages[0].content
+    assert "-4.0944" in messages[0].content
+    assert "-63.1411" in messages[0].content
+    assert "google.com/maps" in messages[0].content
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id
+            )
+        )
+    )
+    assert len(tickets) == 1
+    assert tickets[0].priority == "URGENT"
+    assert tickets[0].reason == "Localização compartilhada pelo cliente"
+
+    # Cliente recebe apenas o aviso de encaminhamento ao humano.
+    outbound = db.scalar(
+        select(OutboundChannelMessage).where(
+            OutboundChannelMessage.conversation_id == conversation.id
+        )
+    )
     assert outbound is not None
-    assert "endereço em texto" in outbound.content
-    assert "ponto de referência" in outbound.content
+    assert "atendente" in outbound.content.lower()
     assert "Latitude" not in outbound.content
     assert "google.com/maps" not in outbound.content
 
@@ -1348,3 +1369,830 @@ def test_sanitize_whatsapp_text_removes_replacement_character():
     )
 
     assert "�" not in result
+
+
+def test_human_only_mode_routes_text_without_olivia(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "human_only_mode", True)
+
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    result = service.process_payload(
+        db,
+        inbound_payload(message_id="wamid.human-only-text"),
+    )
+
+    assert result.received == 1
+    assert result.processed == 1
+    assert result.failed == 0
+
+    conversation = db.scalar(select(Conversation))
+    assert conversation.store_id == store.id
+    assert conversation.status == "WAITING_HUMAN"
+
+    # A prova principal: nenhuma chamada à Olívia/OpenAI.
+    assert orchestrator.calls == []
+
+    messages = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id
+            )
+        )
+    )
+    assert len(messages) == 1
+    assert messages[0].sender_type == "CUSTOMER"
+    assert messages[0].content == "Oi"
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id
+            )
+        )
+    )
+    assert len(tickets) == 1
+    assert tickets[0].priority == "URGENT"
+
+
+def test_human_only_mode_image_skips_pix_and_olivia(monkeypatch, tmp_path):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "human_only_mode", True)
+
+    db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    from app.services.conversation_media import (
+        ConversationMediaStorage,
+    )
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+        conversation_media_storage=ConversationMediaStorage(
+            root_path=tmp_path,
+        ),
+    )
+
+    result = service.process_payload(
+        db,
+        inbound_payload(
+            message_id="wamid.human-only-image",
+            message_type="image",
+        ),
+    )
+
+    assert result.received == 1
+    assert result.processed == 1
+    assert result.failed == 0
+
+    conversation = db.scalar(select(Conversation))
+    assert conversation.status == "WAITING_HUMAN"
+
+    # Não chama Olívia.
+    assert orchestrator.calls == []
+
+    # Não cria comprovante para análise PIX.
+    receipts = list(db.scalars(select(PaymentReceipt)))
+    assert receipts == []
+
+    messages = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id
+            )
+        )
+    )
+    assert len(messages) == 1
+    assert messages[0].sender_type == "CUSTOMER"
+    assert messages[0].content_type == "IMAGE"
+    assert messages[0].metadata_json["media_id"] == "media-1"
+    assert messages[0].metadata_json["stored_media"] is True
+    assert messages[0].metadata_json["mime_type"] == "image/png"
+
+    stored_path = (
+        tmp_path
+        / messages[0].metadata_json["stored_media_path"]
+    )
+
+    assert stored_path.read_bytes() == b"imagem-teste-whatsapp"
+
+def test_inbound_profile_creates_and_links_customer():
+    db, store, _ = setup_db()
+    payload = inbound_payload(message_id="wamid.profile-1")
+    payload["entry"][0]["changes"][0]["value"]["contacts"] = [
+        {
+            "wa_id": "5597999999999",
+            "profile": {"name": "Maria Teste"},
+        }
+    ]
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: FakeOrchestrator(),
+        client_factory=lambda: FakeClient(),
+    )
+    result = service.process_payload(db, payload)
+    assert result.processed == 1
+    assert result.failed == 0
+    customer = db.scalar(select(Customer).where(Customer.store_id == store.id, Customer.phone == "5597999999999"))
+    assert customer is not None
+    assert customer.name == "Maria Teste"
+    conversation = db.scalar(select(Conversation).where(Conversation.store_id == store.id))
+    assert conversation is not None
+    assert conversation.customer_id == customer.id
+
+
+def test_active_order_after_checkout_routes_directly_to_human_without_olivia():
+    db, store, _ = setup_db()
+
+    sender = "5597999999999"
+    customer = Customer(
+        store_id=store.id,
+        name="Cliente Pós Checkout",
+        phone=sender,
+        active=True,
+    )
+    db.add(customer)
+    db.flush()
+
+    order = Order(
+        store_id=store.id,
+        customer_id=customer.id,
+        cart_id=uuid4(),
+        display_id="000990",
+        status="READY_FOR_INTEGRATION",
+        service_mode="DELIVERY",
+        payment_method="PIX",
+        payment_type="PREPAID",
+        subtotal=Decimal("30.00"),
+        delivery_fee=Decimal("5.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("35.00"),
+        customer_name=customer.name,
+        customer_phone=sender,
+    )
+    db.add(order)
+    db.commit()
+
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    payload = inbound_payload(message_id="wamid.post-checkout-active-1")
+    message = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+    message["text"]["body"] = "coloca uma batata também"
+
+    result = service.process_payload(db, payload)
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+            Conversation.customer_id == customer.id,
+        )
+    )
+    ticket = db.scalar(
+        select(HumanTicket).where(
+            HumanTicket.conversation_id == conversation.id,
+        )
+    )
+
+    assert result.processed == 1
+    assert result.failed == 0
+    assert orchestrator.calls == []
+    assert conversation.status == "WAITING_HUMAN"
+    assert ticket is not None
+    assert ticket.priority == "URGENT"
+    assert "Pedido #000990 ativo após checkout" in ticket.reason
+    assert ticket.customer_message == "coloca uma batata também"
+
+
+def test_terminal_order_after_checkout_does_not_block_olivia():
+    for index, terminal_status in enumerate(("CONCLUDED", "CANCELLED"), start=1):
+        db, store, _ = setup_db()
+
+        sender = "5597999999999"
+        customer = Customer(
+            store_id=store.id,
+            name="Cliente Pedido Finalizado",
+            phone=sender,
+            active=True,
+        )
+        db.add(customer)
+        db.flush()
+
+        order = Order(
+            store_id=store.id,
+            customer_id=customer.id,
+            cart_id=uuid4(),
+            display_id=f"00099{index}",
+            status=terminal_status,
+            service_mode="DELIVERY",
+            payment_method="PIX",
+            payment_type="PREPAID",
+            subtotal=Decimal("30.00"),
+            delivery_fee=Decimal("5.00"),
+            discount=Decimal("0.00"),
+            total=Decimal("35.00"),
+            customer_name=customer.name,
+            customer_phone=sender,
+        )
+        db.add(order)
+        db.commit()
+
+        orchestrator = FakeOrchestrator()
+        client = FakeClient()
+        service = WhatsAppGatewayService(
+            orchestrator_factory=lambda: orchestrator,
+            client_factory=lambda: client,
+        )
+
+        payload = inbound_payload(
+            message_id=f"wamid.post-checkout-terminal-{index}"
+        )
+        message = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+        message["text"]["body"] = "quero fazer outro pedido"
+
+        result = service.process_payload(db, payload)
+
+        conversation = db.scalar(
+            select(Conversation).where(
+                Conversation.store_id == store.id,
+                Conversation.customer_id == customer.id,
+            )
+        )
+
+        assert result.processed == 1
+        assert result.failed == 0
+        assert orchestrator.calls == []
+        assert conversation.status == "OPEN"
+
+        db.close()
+
+
+# ORDER COLLECTION COST OPTIMIZATION
+
+def _order_collection_payload(message_id, body):
+    payload = inbound_payload(message_id=message_id)
+    message = payload["entry"][0]["changes"][0]["value"]["messages"][0]
+    message["text"]["body"] = body
+    return payload
+
+
+def test_order_collection_zero_gpt_until_extra_answer():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    # Inicia coleta: zero GPT.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-1",
+            "quero 2 x salada",
+        ),
+    )
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    # Segundo item: continua zero GPT.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-2",
+            "e uma batata",
+        ),
+    )
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    # Cliente encerra: pergunta de adicional, ainda zero GPT.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-3",
+            "só isso",
+        ),
+    )
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "AWAITING_EXTRA"
+
+    # Resposta sobre adicional libera UMA chamada da Olivia.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-4",
+            "não, pode fechar",
+        ),
+    )
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+
+    # Na chamada final, a Olivia volta com capacidade total.
+    assert orchestrator.calls[0]["extra_instructions"] is None
+    assert orchestrator.calls[0]["excluded_tools"] is None
+
+    messages = list(
+        db.scalars(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "INBOUND",
+            )
+            .order_by(Message.created_at)
+        )
+    )
+
+    contents = [message.content for message in messages]
+
+    assert "quero 2 x salada" in contents
+    assert "e uma batata" in contents
+    assert "só isso" in contents
+    assert "não, pode fechar" in contents
+
+    db.close()
+
+
+def test_order_collection_question_uses_olivia_once_and_keeps_collecting():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    # Inicia coleta sem GPT.
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-question-1",
+            "quero 2 x salada",
+        ),
+    )
+    assert orchestrator.calls == []
+
+    # Pergunta no meio do pedido precisa da Olivia.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-question-2",
+            "tem coca 1 litro?",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+    assert (
+        orchestrator.calls[0]["customer_message"]
+        == "tem coca 1 litro?"
+    )
+
+    assert (
+        "COLETA DE PEDIDO"
+        in orchestrator.calls[0]["extra_instructions"]
+    )
+
+    blocked = orchestrator.calls[0]["excluded_tools"]
+
+    assert "add_cart_item" in blocked
+    assert "update_cart_item" in blocked
+    assert "remove_cart_item" in blocked
+    assert "checkout_cart" in blocked
+
+    assert "search_catalog" not in blocked
+    assert "get_product" not in blocked
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    # A pergunta foi respondida, mas a coleta continua.
+    assert state.payload_json["state"] == "COLLECTING_ORDER"
+
+    # Próximo item volta a ser coletado sem nova chamada GPT.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-question-3",
+            "então coloca uma coca 1 litro",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+
+    messages = list(
+        db.scalars(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "INBOUND",
+            )
+            .order_by(Message.created_at)
+        )
+    )
+    contents = [message.content for message in messages]
+
+    assert "quero 2 x salada" in contents
+    assert "tem coca 1 litro?" in contents
+    assert "então coloca uma coca 1 litro" in contents
+
+    db.close()
+
+
+def test_order_collection_human_request_while_awaiting_extra_uses_zero_gpt():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    # Inicia pedido sem GPT.
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-human-extra-1",
+            "quero 2 x salada",
+        ),
+    )
+
+    # Encerra coleta e recebe pergunta deterministica de adicional.
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-human-extra-2",
+            "só isso",
+        ),
+    )
+
+    assert orchestrator.calls == []
+
+    # Em vez de responder sobre adicional, pede uma pessoa.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-human-extra-3",
+            "quero falar com atendente",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    assert conversation.status == "WAITING_HUMAN"
+
+    ticket = db.scalar(
+        select(HumanTicket).where(
+            HumanTicket.conversation_id == conversation.id,
+        )
+    )
+
+    assert ticket is not None
+    assert "antes da confirmacao do pedido" in ticket.reason.lower()
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "NORMAL"
+
+    db.close()
+
+
+def test_order_collection_same_message_order_and_finish_uses_zero_gpt():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-same-finish-1",
+            "quero 2 x salada, só isso",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state is not None
+    assert state.payload_json["state"] == "AWAITING_EXTRA"
+
+    db.close()
+
+
+def test_order_collection_information_request_does_not_start_collection():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-info-1",
+            "quero saber o preço do x salada",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+    assert (
+        orchestrator.calls[0]["customer_message"]
+        == "quero saber o preço do x salada"
+    )
+    assert orchestrator.calls[0]["extra_instructions"] is None
+    assert orchestrator.calls[0]["excluded_tools"] is None
+
+    db.close()
+
+
+def test_order_collection_complaint_does_not_start_collection():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-complaint-1",
+            "quero reclamar do atendimento",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+    assert (
+        orchestrator.calls[0]["customer_message"]
+        == "quero reclamar do atendimento"
+    )
+    assert orchestrator.calls[0]["extra_instructions"] is None
+    assert orchestrator.calls[0]["excluded_tools"] is None
+
+    db.close()
+
+
+def test_order_collection_delivery_question_keeps_collecting():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-delivery-1",
+            "quero 2 x salada",
+        ),
+    )
+    assert orchestrator.calls == []
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-delivery-2",
+            "e sobre a entrega?",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "COLLECTING_ORDER"
+    assert orchestrator.calls[0]["excluded_tools"] is not None
+
+    db.close()
+
+
+def test_order_collection_expired_state_returns_to_normal_olivia():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    # Inicia uma coleta normalmente, sem GPT.
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-expired-1",
+            "quero 2 x salada",
+        ),
+    )
+
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    # Simula coleta abandonada ha mais de 2 horas.
+    state.created_at = (
+        datetime.now(timezone.utc) - timedelta(hours=3)
+    )
+    db.commit()
+
+    # Nao deve continuar preso na coleta antiga.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-expired-2",
+            "e uma batata",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+    assert (
+        orchestrator.calls[0]["customer_message"]
+        == "e uma batata"
+    )
+    assert orchestrator.calls[0]["extra_instructions"] is None
+    assert orchestrator.calls[0]["excluded_tools"] is None
+
+    db.close()
+
+
+def test_order_collection_menu_request_keeps_full_non_order_capability():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-menu-1",
+            "quero 2 x salada",
+        ),
+    )
+    assert orchestrator.calls == []
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-menu-2",
+            "manda o cardápio",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+
+    blocked = orchestrator.calls[0]["excluded_tools"]
+    assert blocked == {
+        "get_or_create_cart",
+        "add_cart_item",
+        "update_cart_item",
+        "remove_cart_item",
+        "checkout_cart",
+    }
+    assert "send_menu_pdf" not in blocked
+    assert "request_human_help" not in blocked
+    assert "report_order_issue" not in blocked
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "COLLECTING_ORDER"
+
+    db.close()

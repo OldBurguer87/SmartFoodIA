@@ -69,3 +69,4 @@ services:
 volumes:
   smartfoodia_pgdata:
   smartfoodia_receipts:
+  smartfoodia_conversation_media:

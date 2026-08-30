@@ -273,11 +273,66 @@ export type ConversationSummary = {
   channel: string;
   external_conversation_id: string | null;
   status: "OPEN" | "WAITING_HUMAN" | "HUMAN" | "CLOSED";
+  unread_count: number;
   last_message_at: string;
   last_message: { sender_type: string; content: string; created_at: string } | null;
 };
 
 export type ConversationDetail = ConversationSummary & { messages: ConversationMessage[] };
+
+export type StoreOperationModeValue =
+  | "OLIVIA"
+  | "HUMAN_ONLY";
+
+export type StoreOperationMode = {
+  configured_mode: StoreOperationModeValue;
+  effective_mode: StoreOperationModeValue;
+  server_forced_human: boolean;
+  can_change: boolean;
+};
+
+export async function getStoreOperationMode(
+  storeId: string,
+): Promise<StoreOperationMode> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/stores/${storeId}/operation-mode`,
+    { cache: "no-store" },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Não foi possível carregar o modo de atendimento.",
+    );
+  }
+
+  return data as StoreOperationMode;
+}
+
+export async function updateStoreOperationMode(
+  storeId: string,
+  operationMode: StoreOperationModeValue,
+): Promise<StoreOperationMode> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/stores/${storeId}/operation-mode`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operation_mode: operationMode }),
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || "Não foi possível alterar o modo de atendimento.",
+    );
+  }
+
+  return data as StoreOperationMode;
+}
 
 export async function listConversations(storeId: string, status?: string): Promise<ConversationSummary[]> {
   const params = status ? `?status=${encodeURIComponent(status)}` : "";
@@ -292,7 +347,42 @@ export async function getConversation(conversationId: string): Promise<Conversat
   return response.json();
 }
 
-async function postConversationAction(conversationId: string, action: "takeover" | "release", body: Record<string, unknown>): Promise<ConversationSummary> {
+export async function markConversationRead(
+  conversationId: string,
+): Promise<{ id: string; unread_count: number }> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/conversations/${conversationId}/read`,
+    { method: "POST" },
+  );
+
+  if (!response.ok) {
+    throw new Error("Não foi possível marcar a conversa como lida.");
+  }
+
+  return response.json();
+}
+
+
+export async function getConversationMessageMediaBlob(
+  conversationId: string,
+  messageId: string,
+): Promise<Blob> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/conversations/${conversationId}/messages/${messageId}/media`,
+    { cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      "Não foi possível carregar a mídia da conversa.",
+    );
+  }
+
+  return response.blob();
+}
+
+
+async function postConversationAction(conversationId: string, action: "takeover" | "release" | "close", body: Record<string, unknown>): Promise<ConversationSummary> {
   const response = await apiFetch(`${API_URL}/api/v1/operations/conversations/${conversationId}/${action}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
@@ -308,12 +398,59 @@ export function releaseConversation(conversationId: string, assignedTo: string) 
   return postConversationAction(conversationId, "release", { assigned_to: assignedTo });
 }
 
+export function closeConversation(conversationId: string, assignedTo: string) {
+  return postConversationAction(conversationId, "close", { assigned_to: assignedTo });
+}
+
 export async function sendHumanReply(conversationId: string, assignedTo: string, content: string) {
   const response = await apiFetch(`${API_URL}/api/v1/operations/conversations/${conversationId}/reply`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ assigned_to: assignedTo, content }),
   });
   if (!response.ok) throw new Error((await response.text()) || "Não foi possível enviar a mensagem.");
+  return response.json();
+}
+
+
+export type HumanMediaReplyResult = {
+  message_id: string;
+  outbound_id: string;
+  status: string;
+  content_type: string;
+  filename: string;
+  mime_type: string;
+  file_size: number;
+};
+
+export async function sendHumanMedia(
+  conversationId: string,
+  assignedTo: string,
+  file: File,
+  caption = "",
+): Promise<HumanMediaReplyResult> {
+  const form = new FormData();
+
+  form.append("file", file);
+  form.append("assigned_to", assignedTo);
+  form.append("caption", caption);
+
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/conversations/${conversationId}/media`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível enviar o arquivo.",
+      ),
+    );
+  }
+
   return response.json();
 }
 
@@ -350,6 +487,7 @@ export type CustomerOrder = {
   status: string;
   service_mode: string;
   payment_method: string;
+  pix_confirmed: boolean;
   total: number | string;
   scheduled_for: string | null;
   created_at: string;
@@ -414,6 +552,297 @@ export async function getCustomerDetail(
 }
 
 
+
+export type HumanOrderServiceMode = "DELIVERY" | "TAKEOUT";
+export type HumanOrderPaymentMethod =
+  | "PIX"
+  | "CREDIT"
+  | "DEBIT"
+  | "CASH";
+
+export type HumanOrderModifierSelection = {
+  external_code: string;
+  quantity: number;
+};
+
+export type HumanOrderCartItem = {
+  id: string;
+  product_external_code: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number | string;
+  observations: string | null;
+  modifiers: Array<{
+    id: string;
+    external_code: string;
+    name: string;
+    quantity: number;
+    unit_price: number | string;
+    total: number | string;
+  }>;
+  total: number | string;
+};
+
+export type HumanOrderCart = {
+  id: string;
+  store_id: string;
+  customer_id: string;
+  status: string;
+  service_mode: HumanOrderServiceMode;
+  items: HumanOrderCartItem[];
+  subtotal: number | string;
+};
+
+
+export type HumanOrderCatalogModifier = {
+  id: string;
+  external_code: string;
+  name: string;
+  description: string | null;
+  price: number | string;
+  min_quantity: number;
+  max_quantity: number;
+  default_quantity: number;
+  display_order: number;
+};
+
+export type HumanOrderCatalogGroup = {
+  id: string;
+  name: string;
+  description: string | null;
+  min_select: number;
+  max_select: number;
+  allow_repeat: boolean;
+  display_order: number;
+  modifiers: HumanOrderCatalogModifier[];
+};
+
+export type HumanOrderCatalogProduct = {
+  id: string;
+  store_id: string;
+  external_code: string;
+  name: string;
+  description: string | null;
+  price: number | string;
+  category: string | null;
+  available_for_delivery: boolean;
+  available_for_takeout: boolean;
+  modifier_groups: HumanOrderCatalogGroup[];
+};
+
+
+export async function listHumanOrderProducts(
+  storeId: string,
+  serviceMode: HumanOrderServiceMode,
+): Promise<HumanOrderCatalogProduct[]> {
+  const params = new URLSearchParams({
+    store_id: storeId,
+  });
+
+  if (serviceMode === "DELIVERY") {
+    params.set("delivery", "true");
+  } else {
+    params.set("takeout", "true");
+  }
+
+  const response = await apiFetch(
+    `${API_URL}/api/v1/products?${params}`,
+    { cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível carregar o cardápio.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+
+export async function createHumanOrderCart(
+  storeId: string,
+  customerId: string,
+  serviceMode: HumanOrderServiceMode,
+): Promise<HumanOrderCart> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/carts`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        store_id: storeId,
+        customer_id: customerId,
+        service_mode: serviceMode,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível iniciar o pedido.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+
+export async function addHumanOrderItem(
+  cartId: string,
+  payload: {
+    product_external_code: string;
+    quantity: number;
+    observations?: string | null;
+    modifiers?: HumanOrderModifierSelection[];
+  },
+): Promise<HumanOrderCart> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/carts/${cartId}/items`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível adicionar o produto.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+
+export async function updateHumanOrderItem(
+  cartId: string,
+  itemId: string,
+  payload: {
+    quantity: number;
+    observations?: string | null;
+  },
+): Promise<HumanOrderCart> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/carts/${cartId}/items/${itemId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível alterar o item.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+export async function removeHumanOrderItem(
+  cartId: string,
+  itemId: string,
+): Promise<HumanOrderCart> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/carts/${cartId}/items/${itemId}`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível remover o item.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+
+export async function clearHumanOrderCart(
+  cartId: string,
+): Promise<HumanOrderCart> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/carts/${cartId}/items`,
+    {
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível limpar o pedido.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+export async function checkoutHumanOrder(
+  cartId: string,
+  payload: {
+    address_id?: string | null;
+    payment_method: HumanOrderPaymentMethod;
+    change_for?: number | null;
+    discount?: number;
+  },
+) {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/orders/checkout/${cartId}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        address_id: payload.address_id ?? null,
+        payment_method: payload.payment_method,
+        change_for: payload.change_for ?? null,
+        discount: payload.discount ?? 0,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível confirmar o pedido.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
 export type StoreAnalytics = {
   store_id: string;
   period_hours: number;
@@ -436,6 +865,7 @@ export type StoreAnalytics = {
   }>;
   payment_methods: Array<{
     payment_method: string;
+  pix_confirmed: boolean;
     orders: number;
     revenue: number;
   }>;
@@ -513,6 +943,27 @@ export type PlatformAnalytics = {
     revenue: number;
     average_ticket: number;
   };
+  ai_costs: {
+    calls: number;
+    unpriced_calls: number;
+    input_tokens: number;
+    cached_input_tokens: number;
+    output_tokens: number;
+    reasoning_tokens: number;
+    total_tokens: number;
+    conversations: number;
+    estimated_cost_usd: number;
+    olivia: {
+      calls: number;
+      estimated_cost_usd: number;
+    };
+    pix_analysis: {
+      calls: number;
+      estimated_cost_usd: number;
+    };
+    cost_per_conversation_usd: number;
+    cost_per_order_usd: number;
+  };
   service_modes: Array<{
     service_mode: string;
     orders: number;
@@ -520,6 +971,7 @@ export type PlatformAnalytics = {
   }>;
   payment_methods: Array<{
     payment_method: string;
+  pix_confirmed: boolean;
     orders: number;
     revenue: number;
   }>;
@@ -582,4 +1034,141 @@ export async function getPlatformAnalytics(
   }
 
   return response.json() as Promise<PlatformAnalytics>;
+}
+
+export type HumanPixConfirmationResult = {
+  receipt_id: string;
+  order_id: string;
+  display_id: string;
+  status: string;
+  message_id: string;
+  already_confirmed: boolean;
+};
+
+export async function confirmHumanPix(
+  conversationId: string,
+  orderId: string,
+  messageId: string,
+  assignedTo: string,
+): Promise<HumanPixConfirmationResult> {
+  const form = new FormData();
+  form.append("message_id", messageId);
+  form.append("assigned_to", assignedTo);
+
+  const url =
+    `${API_URL}/api/v1/operations/conversations/${conversationId}` +
+    `/orders/${orderId}/pix/confirm`;
+
+  const response = await apiFetch(url, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível confirmar o PIX.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+
+// HUMAN_ORDER_MANAGEMENT_HOTFIX
+export type HumanCustomerAddressPayload = {
+  label: string;
+  street: string;
+  number: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  postal_code?: string | null;
+  complement?: string | null;
+  reference?: string | null;
+  is_default: boolean;
+};
+
+export async function createHumanCustomerAddress(
+  conversationId: string,
+  payload: HumanCustomerAddressPayload,
+): Promise<CustomerAddress> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/conversations/${conversationId}/customer/addresses`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível cadastrar o endereço.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+export async function updateHumanCustomerAddress(
+  conversationId: string,
+  addressId: string,
+  payload: HumanCustomerAddressPayload,
+): Promise<CustomerAddress> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/conversations/${conversationId}/customer/addresses/${addressId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível editar o endereço.",
+      ),
+    );
+  }
+
+  return response.json();
+}
+
+export async function cancelHumanPendingOrder(
+  conversationId: string,
+  orderId: string,
+): Promise<{
+  id: string;
+  display_id: string;
+  status: string;
+}> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/conversations/${conversationId}/orders/${orderId}/cancel`,
+    {
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível cancelar o pedido.",
+      ),
+    );
+  }
+
+  return response.json();
 }

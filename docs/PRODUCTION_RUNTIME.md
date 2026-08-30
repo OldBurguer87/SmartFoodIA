@@ -333,3 +333,17 @@ Prioridades:
 3. validar o template gerencial quando a Meta decidir;
 4. registrar incidentes reais e corrigir somente problemas reproduzíveis;
 5. após período de estabilidade, declarar os critérios da V1 cumpridos.
+
+## Atualização operacional — 2026-08-29
+
+- WhatsApp Cloud e Olívia estão ativos e homologados em produção real.
+- Fluxo real validado: WhatsApp → Olívia → carrinho → checkout → Consumer → retorno de status → cliente.
+- Takeover humano está ativo e operacional.
+- PIX no Consumer foi corrigido para ONLINE/prepaid e validado em pedido real sem o alerta anterior.
+- A produção está na migration Alembic 0022.
+- Combos usam product_combo_components e order_item_combo_components, separando composição técnica do preço comercial.
+- Seis TRIOs estão configurados com 18 componentes técnicos.
+- O checkout valida a soma da composição e grava snapshot dos componentes no pedido.
+- Pedido real #000038, Trio Old Jr., foi aceito pelo Consumer pelo valor correto de R$ 25,00; o problema anterior de R$ 0,01 foi eliminado.
+- A bateria direcionada de regressão chegou a 44 testes aprovados antes do deploy.
+- Próxima prioridade: auditar custo OpenAI por turno, conversa e pedido, além do percentual sobre o faturamento, reduzindo chamadas desnecessárias sem comprometer o atendimento ou o checkout.

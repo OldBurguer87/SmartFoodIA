@@ -8,9 +8,11 @@ from app.ai.tools.knowledge import SearchKnowledgeTool
 from app.database.base import Base
 from app.models.catalog import Company, Store
 from app.schemas.conversation import (
+    ConversationCreate,
     HumanTicketCreate,
     KnowledgeGapCreate,
     KnowledgeGapResolve,
+    MessageCreate,
 )
 from app.services.conversation import ConversationService
 
@@ -119,3 +121,53 @@ def test_knowledge_tool_returns_only_approved_answer():
     found = tool.execute(question="tem opcao sem lactose?")
     assert found.ok is True
     assert "não temos" in found.data["answer"]
+
+def test_unread_count_tracks_customer_messages_and_mark_read():
+    db, store = setup_db()
+    service = ConversationService()
+
+    conversation = service.get_or_create(
+        db,
+        ConversationCreate(
+            store_id=store.id,
+            channel="WHATSAPP",
+            external_conversation_id="5597999999999",
+        ),
+    )
+
+    assert conversation.unread_count == 0
+
+    for content in ["Oi", "Quero fazer um pedido"]:
+        service.add_message(
+            db,
+            conversation_id=conversation.id,
+            payload=MessageCreate(
+                direction="INBOUND",
+                sender_type="CUSTOMER",
+                content=content,
+            ),
+        )
+
+    db.refresh(conversation)
+    assert conversation.unread_count == 2
+
+    service.add_message(
+        db,
+        conversation_id=conversation.id,
+        payload=MessageCreate(
+            direction="OUTBOUND",
+            sender_type="HUMAN",
+            content="Olá! Vou te atender.",
+        ),
+    )
+
+    db.refresh(conversation)
+    assert conversation.unread_count == 2
+
+    service.mark_read(
+        db,
+        conversation_id=conversation.id,
+    )
+
+    db.refresh(conversation)
+    assert conversation.unread_count == 0

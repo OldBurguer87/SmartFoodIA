@@ -93,6 +93,52 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="order_item",
         cascade="all, delete-orphan",
     )
+    combo_components: Mapped[list["OrderItemComboComponent"]] = relationship(
+        back_populates="order_item",
+        cascade="all, delete-orphan",
+        order_by="OrderItemComboComponent.display_order",
+    )
+
+
+class OrderItemComboComponent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Snapshot da composição técnica de um combo no checkout."""
+
+    __tablename__ = "order_item_combo_components"
+
+    order_item_id: Mapped[UUID] = mapped_column(
+        ForeignKey("order_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    component_external_code: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+    component_name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    unit_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+    total_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+    display_order: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    order_item: Mapped["OrderItem"] = relationship(
+        back_populates="combo_components"
+    )
 
 
 class OrderItemModifier(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -23,3 +23,7 @@ cardapioConsumer-*.xlsx
 .env.bak-*
 .env.save
 backups/
+
+# Backups locais gerados durante manutenção/hotfix
+*.bak-*
+*.bak_*

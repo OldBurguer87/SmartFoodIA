@@ -303,6 +303,7 @@ def test_non_pix_payment_does_not_require_receipt():
     )
 
     assert payload["item"]["payments"]["methods"][0]["method"] == "CASH"
+    assert payload["item"]["payments"]["methods"][0]["type"] == "OFFLINE"
 
 
 def test_takeout_pix_without_confirmation_is_hidden():
@@ -342,7 +343,7 @@ def test_confirmed_pix_is_sent_to_consumer_as_prepaid():
     method = payments["methods"][0]
 
     assert method["method"] == "PIX"
-    assert method["type"] == "PREPAID"
+    assert method["type"] == "ONLINE"
     assert method["prepaid"] is True
     assert payments["pending"] == 0.0
     assert payments["prepaid"] == float(order.total)

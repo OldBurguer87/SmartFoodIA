@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.5"
     openai_timeout_seconds: float = 45.0
+    human_only_mode: bool = False
     olivia_max_tool_rounds: int = 8
     whatsapp_access_token: str | None = None
     whatsapp_app_secret: str | None = None
@@ -19,6 +20,8 @@ class Settings(BaseSettings):
     whatsapp_graph_api_version: str = "v23.0"
     whatsapp_timeout_seconds: float = 30.0
     payment_receipt_storage_path: str = "/data/receipts"
+    conversation_media_storage_path: str = "/data/conversation-media"
+    conversation_media_max_bytes: int = 10_485_760
     payment_receipt_max_bytes: int = 10_485_760
     payment_receipt_retention_days: int = 15
     payment_receipt_retention_interval_seconds: int = 3600

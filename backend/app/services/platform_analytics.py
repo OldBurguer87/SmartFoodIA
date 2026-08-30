@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.catalog import Company, Store
+from app.models.conversation import AIEvent
 from app.models.order import (
     Order,
     OrderItem,
@@ -381,6 +382,149 @@ class PlatformAnalyticsService:
             valid_filter=valid_filter,
         )
 
+        # ----------------------------------------------------
+        # CUSTOS DE IA — SOMENTE ANALYTICS DA PLATAFORMA
+        # ----------------------------------------------------
+
+        ai_events = list(
+            db.scalars(
+                select(AIEvent).where(
+                    AIEvent.created_at >= since,
+                    AIEvent.event_type.in_(
+                        (
+                            "AI_RESPONSE",
+                            "PIX_AI_ANALYSIS",
+                        )
+                    ),
+                )
+            ).all()
+        )
+
+        total_cost = Decimal("0")
+        olivia_cost = Decimal("0")
+        pix_cost = Decimal("0")
+
+        calls = 0
+        olivia_calls = 0
+        pix_calls = 0
+        unpriced_calls = 0
+
+        input_tokens = 0
+        cached_tokens = 0
+        output_tokens = 0
+        reasoning_tokens = 0
+        total_tokens = 0
+
+        conversation_ids = set()
+        for event in ai_events:
+            payload = event.payload_json or {}
+            usage = payload.get("usage")
+
+            if not isinstance(usage, dict):
+                continue
+
+            calls += 1
+
+            if event.event_type == "PIX_AI_ANALYSIS":
+                pix_calls += 1
+            else:
+                olivia_calls += 1
+
+            input_tokens += int(
+                usage.get("input_tokens") or 0
+            )
+            cached_tokens += int(
+                usage.get("cached_input_tokens") or 0
+            )
+            output_tokens += int(
+                usage.get("output_tokens") or 0
+            )
+            reasoning_tokens += int(
+                usage.get("reasoning_tokens") or 0
+            )
+            total_tokens += int(
+                usage.get("total_tokens") or 0
+            )
+
+            if event.conversation_id:
+                conversation_ids.add(
+                    event.conversation_id
+                )
+
+            raw_cost = usage.get(
+                "estimated_cost_usd"
+            )
+
+            event_cost = Decimal("0")
+            priced = False
+
+            if raw_cost not in (None, ""):
+                try:
+                    event_cost = Decimal(
+                        str(raw_cost)
+                    )
+                    priced = True
+                except (
+                    InvalidOperation,
+                    TypeError,
+                    ValueError,
+                ):
+                    priced = False
+
+            if priced:
+                total_cost += event_cost
+
+                if event.event_type == "PIX_AI_ANALYSIS":
+                    pix_cost += event_cost
+                else:
+                    olivia_cost += event_cost
+            else:
+                unpriced_calls += 1
+
+        ai_costs = {
+            "calls": calls,
+            "unpriced_calls": unpriced_calls,
+            "input_tokens": input_tokens,
+            "cached_input_tokens": cached_tokens,
+            "output_tokens": output_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "total_tokens": total_tokens,
+            "conversations": len(
+                conversation_ids
+            ),
+            "estimated_cost_usd": float(
+                total_cost
+            ),
+            "olivia": {
+                "calls": olivia_calls,
+                "estimated_cost_usd": float(
+                    olivia_cost
+                ),
+            },
+            "pix_analysis": {
+                "calls": pix_calls,
+                "estimated_cost_usd": float(
+                    pix_cost
+                ),
+            },
+            "cost_per_conversation_usd": (
+                float(
+                    total_cost
+                    / len(conversation_ids)
+                )
+                if conversation_ids
+                else 0.0
+            ),
+            "cost_per_order_usd": (
+                float(
+                    total_cost
+                    / int(orders_total)
+                )
+                if orders_total
+                else 0.0
+            ),
+        }
+
         return {
             "scope": "platform",
             "period_hours": hours,
@@ -429,6 +573,7 @@ class PlatformAnalyticsService:
             "cities": cities,
             "top_products": top_products,
             "top_modifiers": top_modifiers,
+            "ai_costs": ai_costs,
             "orders_by_weekday": (
                 time_distribution["weekdays"]
             ),

@@ -39,3 +39,13 @@
 ## Regra de governança
 
 Uma decisão nova que altere arquitetura, escopo V1, contrato de integração, infraestrutura pública, segurança, regras de pagamento ou escalonamento operacional deve ser registrada aqui antes de ser tratada como padrão oficial do projeto.
+
+## Decisões adicionais — 2026-08-29
+
+- **DEC-036 — Composição técnica de combos separada do preço comercial:** aprovada. Componentes de combo não devem alterar o preço normal do produto.
+- **DEC-037 — Snapshot da composição do combo no pedido:** aprovado. O pedido preserva a composição e os preços utilizados no checkout.
+- **DEC-038 — Representação específica do Consumer fica no adapter:** aprovada. Requisitos do Consumer não devem contaminar a regra financeira do Core.
+- **DEC-039 — Custo OpenAI é métrica operacional de primeira classe:** aprovada. Devem ser auditados custo por turno, conversa, pedido e percentual do faturamento.
+- **DEC-040 — Otimização de custo não pode reduzir a segurança do checkout:** aprovada.
+- **DEC-041 — Preferir regra determinística quando interpretação por IA não for necessária:** aprovada, desde que não degrade o atendimento.
+- **DEC-042 — Estabilidade e custo previsível precedem expansão comercial:** aprovada.

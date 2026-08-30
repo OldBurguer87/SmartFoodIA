@@ -111,3 +111,21 @@ Prioridades imediatas:
 - `docs/PRODUCTION_RUNTIME.md`
 - `docs/CONSUMER_PARTNER_API.md`
 - `docs/CONSUMER_HOMOLOGATION.md`
+
+## Estado operacional — 2026-08-29
+
+O SmartFoodIA já opera em produção assistida na Old Burguer 87 com WhatsApp Cloud, Olívia, carrinho, checkout, Consumer, retorno de status e takeover humano.
+
+O fluxo principal validado é:
+
+WhatsApp → Olívia → catálogo/carrinho → confirmação → checkout → Consumer → status → cliente.
+
+PIX foi homologado no Consumer com o contrato ONLINE/prepaid.
+
+A migration Alembic atual é 0022, incluindo composição técnica e snapshot de combos/TRIOs.
+
+O pedido real #000038 validou o Trio Old Jr. no Consumer pelo valor correto de R$ 25,00, eliminando o comportamento anterior de R$ 0,01.
+
+A prioridade atual do roadmap é o Gate I: eficiência operacional e redução do custo da IA, medindo custo por turno, conversa, pedido e percentual sobre o faturamento antes de ampliar a operação.
+
+Documentação principal: docs/ROADMAP.md, docs/PRODUCTION_RUNTIME.md, docs/DECISIONS.md e CHANGELOG.md.

@@ -9,14 +9,18 @@ from tests_support import configure_store_open
 from app.integrations.notifications import WhatsAppOrderStatusNotifier
 from app.models.catalog import Company, Product, Store
 from app.models.channel import ChannelAccount, OutboundChannelMessage
+from app.models.conversation import Message
 from app.models.integration import StoreIntegration
+from app.models.order import Order
 from app.models.payment import PaymentReceipt
 from app.schemas.cart import CartItemAdd
+from app.schemas.conversation import ConversationCreate
 from app.schemas.customer import AddressCreate, CustomerCreate
 from app.schemas.order import CheckoutRequest
 from app.services.cart import CartService
 from app.services.checkout import CheckoutService
 from app.services.consumer_partner import ConsumerPartnerService
+from app.services.conversation import ConversationService
 from app.services.customer import CustomerService
 
 
@@ -27,7 +31,7 @@ class Payload:
         self.justification = None
 
 
-def setup_context():
+def setup_context(service_mode="DELIVERY"):
     db = Session(create_engine("sqlite+pysqlite:///:memory:"))
     Base.metadata.create_all(db.get_bind())
     company = Company(name="Old")
@@ -94,7 +98,7 @@ def setup_context():
         db,
         store_id=store.id,
         customer_id=customer.id,
-        service_mode="DELIVERY",
+        service_mode=service_mode,
     )
     CartService().add_item(
         db,
@@ -160,3 +164,121 @@ def test_notifier_skips_when_whatsapp_account_is_missing():
         status="DISPATCHED",
     )
     assert sent is False
+
+
+def test_ready_delivery_says_waiting_for_delivery():
+    db, store, order = setup_context()
+
+    sent = WhatsAppOrderStatusNotifier().notify_status_change(
+        db,
+        store_id=store.id,
+        order_id=order.id,
+        status="READY",
+    )
+
+    message = db.scalar(
+        select(OutboundChannelMessage)
+        .order_by(OutboundChannelMessage.created_at.desc())
+    )
+
+    assert sent is True
+    assert message is not None
+    assert "aguardando sair para entrega" in message.content.lower()
+    assert "pronto para retirada" not in message.content.lower()
+
+
+def test_ready_takeout_says_ready_for_pickup():
+    db, store, order = setup_context(service_mode="TAKEOUT")
+
+    assert order.service_mode == "TAKEOUT"
+    assert order.delivery_fee == Decimal("0.00")
+
+    sent = WhatsAppOrderStatusNotifier().notify_status_change(
+        db,
+        store_id=store.id,
+        order_id=order.id,
+        status="READY",
+    )
+
+    message = db.scalar(
+        select(OutboundChannelMessage)
+        .order_by(OutboundChannelMessage.created_at.desc())
+    )
+
+    assert sent is True
+    assert message is not None
+    assert "pronto para retirada" in message.content.lower()
+    assert "aguardando sair para entrega" not in message.content.lower()
+
+
+
+def test_notifier_links_status_to_conversation_history():
+    db, store, order = setup_context()
+
+    persisted_order = db.get(Order, order.id)
+    assert persisted_order is not None
+
+    conversation = ConversationService().get_or_create(
+        db,
+        ConversationCreate(
+            store_id=store.id,
+            customer_id=persisted_order.customer_id,
+            channel="WHATSAPP",
+            external_conversation_id=order.customer_phone,
+        ),
+    )
+    previous_last_message_at = conversation.last_message_at
+
+    sent = WhatsAppOrderStatusNotifier().notify_status_change(
+        db,
+        store_id=store.id,
+        order_id=order.id,
+        status="DISPATCHED",
+    )
+
+    outbound = db.scalar(
+        select(OutboundChannelMessage)
+        .order_by(OutboundChannelMessage.created_at.desc())
+    )
+    system_message = db.scalar(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(Message.created_at.desc())
+    )
+
+    db.refresh(conversation)
+
+    assert sent is True
+    assert outbound is not None
+    assert outbound.conversation_id == conversation.id
+
+    assert system_message is not None
+    assert system_message.direction == "OUTBOUND"
+    assert system_message.sender_type == "SYSTEM"
+    assert system_message.content == outbound.content
+    assert system_message.metadata_json["status"] == "DISPATCHED"
+    assert system_message.metadata_json["order_display_id"] == order.display_id
+
+    assert conversation.last_message_at >= previous_last_message_at
+
+
+def test_notifier_without_conversation_still_queues_whatsapp():
+    db, store, order = setup_context()
+
+    sent = WhatsAppOrderStatusNotifier().notify_status_change(
+        db,
+        store_id=store.id,
+        order_id=order.id,
+        status="CONCLUDED",
+    )
+
+    outbound = db.scalar(
+        select(OutboundChannelMessage)
+        .order_by(OutboundChannelMessage.created_at.desc())
+    )
+    messages = list(db.scalars(select(Message)).all())
+
+    assert sent is True
+    assert outbound is not None
+    assert outbound.conversation_id is None
+    assert messages == []

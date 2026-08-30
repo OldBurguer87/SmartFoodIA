@@ -2,6 +2,10 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from app.api import customer_operations as customer_operations_api
+from app.models.cart import Cart
+from app.models.order import Order
+from app.models.payment import PaymentReceipt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -238,3 +242,128 @@ def test_cart_updates_and_removes_item() -> None:
     cart = service.remove_item(db, cart_id=cart.id, item_id=item_id)
     assert cart.items == []
     assert cart.subtotal == Decimal("0.00")
+
+
+def test_cart_with_items_keeps_original_service_mode() -> None:
+    db, store = make_db()
+    add_product_with_modifiers(db, store)
+
+    customer = CustomerService().find_or_create(
+        db,
+        CustomerCreate(
+            store_id=store.id,
+            name="Cliente",
+            phone="97955554444",
+        ),
+    )
+
+    service = CartService()
+
+    cart = service.create_or_get_open(
+        db,
+        store_id=store.id,
+        customer_id=customer.id,
+        service_mode="TAKEOUT",
+    )
+
+    cart = service.add_item(
+        db,
+        cart_id=cart.id,
+        payload=CartItemAdd(
+            product_external_code="235",
+        ),
+    )
+
+    reopened = service.create_or_get_open(
+        db,
+        store_id=store.id,
+        customer_id=customer.id,
+        service_mode="DELIVERY",
+    )
+
+    assert reopened.id == cart.id
+    assert reopened.service_mode == "TAKEOUT"
+    assert len(reopened.items) == 1
+
+@pytest.mark.parametrize(
+    "receipt_status",
+    ["HUMAN_CONFIRMED", "AUTO_CONFIRMED"],
+)
+def test_customer_detail_marks_confirmed_pix(
+    receipt_status: str,
+) -> None:
+    db, store = make_db()
+    customer = CustomerService().find_or_create(
+        db,
+        CustomerCreate(
+            store_id=store.id,
+            name="Cliente PIX",
+            phone="97911112222",
+        ),
+    )
+
+    def make_order(
+        display_id: str,
+        payment_method: str,
+    ) -> Order:
+        cart = Cart(
+            store_id=store.id,
+            customer_id=customer.id,
+            status="CHECKED_OUT",
+            service_mode="DELIVERY",
+        )
+        db.add(cart)
+        db.flush()
+        order = Order(
+            store_id=store.id,
+            customer_id=customer.id,
+            cart_id=cart.id,
+            display_id=display_id,
+            status="READY_FOR_INTEGRATION",
+            service_mode="DELIVERY",
+            payment_method=payment_method,
+            payment_type=(
+                "PREPAID"
+                if payment_method == "PIX"
+                else "POSTPAID"
+            ),
+            subtotal=Decimal("30.00"),
+            delivery_fee=Decimal("5.00"),
+            discount=Decimal("0.00"),
+            total=Decimal("35.00"),
+            customer_name=customer.name,
+            customer_phone=customer.phone,
+        )
+        db.add(order)
+        db.flush()
+        return order
+
+    confirmed_pix = make_order("000951", "PIX")
+    pending_pix = make_order("000952", "PIX")
+    credit_order = make_order("000953", "CREDIT")
+
+    db.add(
+        PaymentReceipt(
+            store_id=store.id,
+            order_id=confirmed_pix.id,
+            media_type="DOCUMENT",
+            file_sha256="b" * 64,
+            status=receipt_status,
+        )
+    )
+    db.commit()
+
+    detail = customer_operations_api.get_customer(
+        store_id=store.id,
+        customer_id=customer.id,
+        db=db,
+        _access=None,
+    )
+    orders = {
+        order["display_id"]: order
+        for order in detail["orders"]
+    }
+
+    assert orders["000951"]["pix_confirmed"] is True
+    assert orders["000952"]["pix_confirmed"] is False
+    assert orders["000953"]["pix_confirmed"] is False

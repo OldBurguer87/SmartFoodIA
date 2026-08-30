@@ -51,3 +51,19 @@
 ## 0.3.2
 
 - Endurecido o contrato Consumer e removidas dependências fixas de loja.
+
+## Consolidação operacional — 2026-08-29
+
+- WhatsApp Cloud homologado em produção real com a Old Burguer 87.
+- Fluxo real validado: WhatsApp → Olívia → carrinho → checkout → Consumer → retorno de status.
+- Takeover humano validado em produção.
+- Modos OLIVIA e HUMAN_ONLY formalizados.
+- PIX corrigido no adapter Consumer para ONLINE/prepaid e validado em pedido real.
+- Importador Consumer endurecido para preservar preços normais de produtos usados também em combos.
+- Adicionados ProductComboComponent e OrderItemComboComponent para separar composição técnica do preço comercial.
+- Migration Alembic 0022 aplicada em produção.
+- Seis TRIOs configurados com 18 componentes técnicos.
+- Mapper Consumer ajustado para enviar combos compostos com pai técnico zerado e componentes como opções.
+- Pedido real #000038, Trio Old Jr., homologado no Consumer por R$ 25,00, eliminando o problema anterior de R$ 0,01.
+- Bateria direcionada de regressão chegou a 44 testes aprovados antes do deploy.
+- Próxima prioridade operacional: auditoria e redução do custo da IA sem degradar atendimento ou segurança do checkout.

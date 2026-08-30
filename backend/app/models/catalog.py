@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -21,6 +21,12 @@ class Company(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class Store(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "stores"
+    __table_args__ = (
+        CheckConstraint(
+            "operation_mode IN ('OLIVIA', 'HUMAN_ONLY')",
+            name="ck_stores_operation_mode",
+        ),
+    )
 
     company_id: Mapped[UUID] = mapped_column(
         ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
@@ -33,6 +39,9 @@ class Store(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(50), default="America/Manaus", nullable=False
     )
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    operation_mode: Mapped[str] = mapped_column(
+        String(20), default="OLIVIA", nullable=False
+    )
 
     company: Mapped[Company] = relationship(back_populates="stores")
     categories: Mapped[list["Category"]] = relationship(
@@ -168,6 +177,53 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     modifier_group_links: Mapped[list["ProductModifierGroup"]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
+    )
+    combo_components: Mapped[list["ProductComboComponent"]] = relationship(
+        back_populates="combo_product",
+        cascade="all, delete-orphan",
+        order_by="ProductComboComponent.display_order",
+    )
+
+
+class ProductComboComponent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Componente técnico de um combo com preço específico naquele combo.
+
+    O preço aqui não altera o preço normal do produto/componente.
+    Esta estrutura é usada para reconstruir o combo na integração Consumer.
+    """
+
+    __tablename__ = "product_combo_components"
+
+    combo_product_id: Mapped[UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    component_external_code: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+    )
+    component_name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        nullable=False,
+    )
+    unit_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+    display_order: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    combo_product: Mapped[Product] = relationship(
+        back_populates="combo_components"
     )
 
 

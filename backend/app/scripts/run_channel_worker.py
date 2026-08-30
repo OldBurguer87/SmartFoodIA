@@ -13,6 +13,9 @@ from app.services.pix_review_monitor import PixReviewMonitor
 from app.services.pix_receipt_retention import (
     PixReceiptRetentionService,
 )
+from app.services.pix_shift_closing import (
+    PixShiftClosingService,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,6 +51,7 @@ def main() -> None:
     handoff_monitor = HumanHandoffMonitor()
     pix_review_monitor = PixReviewMonitor()
     pix_retention = PixReceiptRetentionService()
+    pix_shift_closing = PixShiftClosingService()
 
     retention_interval = max(
         60,
@@ -83,6 +87,14 @@ def main() -> None:
                         limit=settings.channel_worker_batch_size,
                     )
 
+                closing = None
+                try:
+                    closing = pix_shift_closing.run_once(db)
+                except Exception:
+                    logger.exception(
+                        "Falha no fechamento PIX do turno."
+                    )
+
                 result = processor.run_once(
                     db,
                     limit=settings.channel_worker_batch_size,
@@ -112,6 +124,15 @@ def main() -> None:
                 logger.info(
                     "Retenção de comprovantes PIX: %s",
                     retention,
+                )
+
+            if (
+                closing is not None
+                and closing.queued_messages
+            ):
+                logger.info(
+                    "Fechamento PIX do turno: %s",
+                    closing,
                 )
 
             processed = (

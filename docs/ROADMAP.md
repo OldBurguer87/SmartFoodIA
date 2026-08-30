@@ -171,3 +171,45 @@ Critério para declarar **v1.0.0**:
 Painel ampliado, fidelidade, campanhas, pagamentos avançados, novos ERPs e eventual ERP próprio permanecem evolução futura. A arquitetura deve continuar permitindo adapters sem acoplar o Core ao Consumer.
 
 Consulte também `docs/PRODUCTION_RUNTIME.md`.
+
+## Atualização operacional — 2026-08-29
+
+### Gate H — Produção assistida via WhatsApp — ATIVA
+
+Já validado em produção real:
+
+- WhatsApp Cloud;
+- Olívia atendendo clientes;
+- catálogo e carrinho;
+- confirmação explícita;
+- checkout TAKEOUT e DELIVERY;
+- dinheiro e PIX;
+- integração Consumer;
+- retorno de status;
+- takeover humano;
+- console operacional;
+- combos/TRIOs com composição técnica;
+- pedido real #000038 com Trio Old Jr. aceito pelo Consumer por R$ 25,00.
+
+O foco agora deixa de ser ativar o canal e passa a ser estabilidade, custo e eficiência da operação.
+
+### Gate I — Eficiência operacional e custo da IA — PRIORIDADE ATUAL
+
+Objetivo: reduzir o custo da Olívia sem prejudicar atendimento, checkout ou segurança.
+
+Indicadores que devem ser auditados:
+
+- custo OpenAI por turno;
+- custo por conversa;
+- custo por pedido concluído;
+- custo da IA como percentual do faturamento;
+- chamadas por conversa;
+- tokens de entrada, saída e reasoning;
+- percentual de cache;
+- custo das validações auxiliares;
+- conversas de maior custo;
+- chamadas desnecessárias ou repetidas.
+
+A estratégia de otimização deve priorizar regras determinísticas quando interpretação por IA não for necessária.
+
+A expansão para novas lojas só deve acelerar quando o piloto apresentar custo previsível e estabilidade operacional.

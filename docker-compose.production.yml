@@ -4,6 +4,7 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes: !override
       - smartfoodia_receipts:/data/receipts
+      - smartfoodia_conversation_media:/data/conversation-media
 
   web:
     build:
@@ -14,6 +15,7 @@ services:
   worker:
     volumes: !override
       - smartfoodia_receipts:/data/receipts
+      - smartfoodia_conversation_media:/data/conversation-media
 
   db:
     ports: !reset []

@@ -161,3 +161,130 @@ def test_equal_duplicates_are_deduplicated(tmp_path: Path) -> None:
 
     assert report.products_created == 1
     assert report.duplicates_ignored == 1
+
+
+def test_combo_parent_placeholder_price_is_sum_of_required_components(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "catalog.xlsx"
+
+    create_workbook(
+        file_path,
+        [
+            (
+                True,
+                "Modelo Padrão (Combo)",
+                "Gourmet´s",
+                "133",
+                "Trio Old Burguer 87",
+                0.01,
+                "1 lanche, 1 batata e 1 refrigerante.",
+            ),
+            (
+                True,
+                "Modelo Padrão (Combo) - Opção Obrigatória de Combo",
+                "Gourmet´s",
+                "92",
+                "Old Burguer 87",
+                27,
+                "",
+            ),
+            (
+                True,
+                "Modelo Padrão (Combo) - Opção Obrigatória de Combo",
+                "Bebida",
+                "109",
+                "Refrigerante Coca Cola Lata",
+                5,
+                "",
+            ),
+            (
+                True,
+                "Modelo Padrão (Combo) - Opção Obrigatória de Combo",
+                "Tradicionais",
+                "122",
+                "Batata Frita - Porção",
+                8,
+                "",
+            ),
+        ],
+    )
+
+    db, store = make_database()
+
+    report = ConsumerCatalogImportService().import_workbook(
+        db,
+        store_id=store.id,
+        file_path=file_path,
+    )
+
+    product = db.scalar(
+        select(Product).where(
+            Product.external_code == "133"
+        )
+    )
+
+    assert report.invalid_rows == 0
+    assert product is not None
+    assert product.price == Decimal("40.00")
+
+
+def test_ambiguous_combo_parent_placeholder_is_not_imported(
+    tmp_path: Path,
+) -> None:
+    file_path = tmp_path / "catalog.xlsx"
+
+    create_workbook(
+        file_path,
+        [
+            (
+                True,
+                "Modelo Padrão (Combo)",
+                "Gourmet´s",
+                "900",
+                "Combo Ambíguo",
+                0.01,
+                "",
+            ),
+            (
+                True,
+                "Modelo Padrão (Combo) - Opção Obrigatória de Combo",
+                "Bebida",
+                "901",
+                "Coca Cola",
+                5,
+                "",
+            ),
+            (
+                True,
+                "Modelo Padrão (Combo) - Opção Obrigatória de Combo",
+                "Bebida",
+                "902",
+                "Guaraná",
+                5,
+                "",
+            ),
+        ],
+    )
+
+    db, store = make_database()
+
+    report = ConsumerCatalogImportService().import_workbook(
+        db,
+        store_id=store.id,
+        file_path=file_path,
+    )
+
+    product = db.scalar(
+        select(Product).where(
+            Product.external_code == "900"
+        )
+    )
+
+    assert product is None
+    assert report.invalid_rows == 1
+    assert any(
+        issue.external_code == "900"
+        and issue.issue_type == "combo_price_ambiguous"
+        for issue in report.issues
+    )

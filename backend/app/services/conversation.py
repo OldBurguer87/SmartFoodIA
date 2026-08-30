@@ -99,10 +99,39 @@ class ConversationService:
             metadata_json=payload.metadata_json,
         )
         conversation.last_message_at = datetime.now(timezone.utc)
+
+        if (
+            payload.direction == "INBOUND"
+            and payload.sender_type == "CUSTOMER"
+        ):
+            conversation.unread_count = (
+                conversation.unread_count or 0
+            ) + 1
+
         db.add(message)
         db.commit()
         db.refresh(message)
         return message
+
+    def mark_read(
+        self,
+        db: Session,
+        *,
+        conversation_id: UUID,
+    ) -> Conversation:
+        conversation = self.repository.get(
+            db,
+            conversation_id,
+        )
+        if conversation is None:
+            raise ConversationNotFoundError(
+                str(conversation_id)
+            )
+
+        conversation.unread_count = 0
+        db.commit()
+        db.refresh(conversation)
+        return conversation
 
     def wait_for_human(
         self,
@@ -205,6 +234,73 @@ class ConversationService:
         )
         db.commit()
         db.refresh(conversation)
+        return conversation
+
+    def close_human_conversation(
+        self,
+        db: Session,
+        *,
+        conversation_id: UUID,
+        assigned_to: str,
+    ) -> Conversation:
+        conversation = self.repository.get(
+            db,
+            conversation_id,
+        )
+
+        if conversation is None:
+            raise ConversationNotFoundError(
+                str(conversation_id)
+            )
+
+        if conversation.status != "HUMAN":
+            raise ConversationStateError(
+                "Somente conversa em atendimento humano "
+                "pode ser finalizada."
+            )
+
+        conversation.status = "CLOSED"
+
+        db.execute(
+            update(StoreStaffMember)
+            .where(
+                StoreStaffMember.current_conversation_id
+                == conversation.id
+            )
+            .values(current_conversation_id=None)
+        )
+
+        db.execute(
+            update(HumanTicket)
+            .where(
+                HumanTicket.conversation_id
+                == conversation.id,
+                HumanTicket.status.in_(
+                    ["OPEN", "IN_PROGRESS"]
+                ),
+            )
+            .values(
+                status="RESOLVED",
+                assigned_to=assigned_to,
+                resolution="Atendimento humano finalizado.",
+            )
+        )
+
+        db.add(
+            AIEvent(
+                store_id=conversation.store_id,
+                conversation_id=conversation.id,
+                event_type="HUMAN_CLOSED",
+                success=True,
+                payload_json={
+                    "assigned_to": assigned_to,
+                },
+            )
+        )
+
+        db.commit()
+        db.refresh(conversation)
+
         return conversation
 
     def add_human_message(

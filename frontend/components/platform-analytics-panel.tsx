@@ -18,6 +18,13 @@ const currency = new Intl.NumberFormat("pt-BR", {
 
 const number = new Intl.NumberFormat("pt-BR");
 
+const usd = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
+});
+
 const PERIODS = [
   { hours: 24, label: "24 horas" },
   { hours: 168, label: "7 dias" },
@@ -225,6 +232,129 @@ export function PlatformAnalyticsPanel() {
                 analytics.summary.orders_cancelled > 0
               }
             />
+          </div>
+
+          <div
+            id="custos-ia"
+            style={{
+              marginTop: 28,
+              marginBottom: 28,
+            }}
+          >
+            <div
+              className="analyticsHeader"
+              style={{ marginBottom: 16 }}
+            >
+              <div>
+                <p className="eyebrow">
+                  TELEMETRIA ADMINISTRATIVA
+                </p>
+
+                <h2>Custos IA</h2>
+
+                <p>
+                  Estimativa interna de consumo da OpenAI.
+                  Visível somente ao administrador da plataforma.
+                </p>
+              </div>
+            </div>
+
+            <div className="analyticsMetrics">
+              <Metric
+                label="Custo estimado total"
+                value={usd.format(
+                  analytics.ai_costs.estimated_cost_usd,
+                )}
+                detail={`${number.format(
+                  analytics.ai_costs.calls,
+                )} chamadas OpenAI`}
+              />
+
+              <Metric
+                label="Olívia"
+                value={usd.format(
+                  analytics.ai_costs.olivia
+                    .estimated_cost_usd,
+                )}
+                detail={`${number.format(
+                  analytics.ai_costs.olivia.calls,
+                )} chamadas de atendimento`}
+              />
+
+              <Metric
+                label="Análise PIX"
+                value={usd.format(
+                  analytics.ai_costs.pix_analysis
+                    .estimated_cost_usd,
+                )}
+                detail={`${number.format(
+                  analytics.ai_costs.pix_analysis.calls,
+                )} análises`}
+              />
+
+              <Metric
+                label="Tokens"
+                value={number.format(
+                  analytics.ai_costs.total_tokens,
+                )}
+                detail={`${number.format(
+                  analytics.ai_costs.input_tokens,
+                )} entrada • ${number.format(
+                  analytics.ai_costs.output_tokens,
+                )} saída`}
+              />
+
+              <Metric
+                label="Tokens em cache"
+                value={number.format(
+                  analytics.ai_costs.cached_input_tokens,
+                )}
+                detail="entrada reaproveitada"
+              />
+
+              <Metric
+                label="Conversas com IA"
+                value={number.format(
+                  analytics.ai_costs.conversations,
+                )}
+                detail="no período selecionado"
+              />
+
+              <Metric
+                label="Custo por conversa"
+                value={usd.format(
+                  analytics.ai_costs
+                    .cost_per_conversation_usd,
+                )}
+                detail="média estimada"
+              />
+
+              <Metric
+                label="Custo por pedido"
+                value={usd.format(
+                  analytics.ai_costs
+                    .cost_per_order_usd,
+                )}
+                detail="média estimada"
+              />
+            </div>
+
+            {analytics.ai_costs.unpriced_calls > 0 && (
+              <div
+                className="errorBox"
+                style={{ marginTop: 14 }}
+              >
+                <strong>
+                  Telemetria parcial
+                </strong>
+                <span>
+                  {number.format(
+                    analytics.ai_costs.unpriced_calls,
+                  )} chamada(s) não possuem custo
+                  estimado registrado.
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="analyticsGrid">

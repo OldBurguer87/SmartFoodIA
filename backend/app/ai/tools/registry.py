@@ -29,7 +29,6 @@ from app.ai.tools.order_support import (
 )
 from app.ai.tools.menu_document import SendMenuPdfTool
 from app.ai.tools.knowledge import SearchKnowledgeTool
-from app.ai.tools.place import LookupDeliveryPlaceTool
 
 
 class UnknownToolError(LookupError):
@@ -45,7 +44,6 @@ class OliviaToolRegistry:
             FindOrCreateCustomerTool(context),
             ListCustomerAddressesTool(context),
             AddCustomerAddressTool(context),
-            LookupDeliveryPlaceTool(context),
             GetOrCreateCartTool(context),
             GetCartTool(context),
             AddCartItemTool(context),

@@ -53,6 +53,12 @@ class ConversationTakeoverRequest(BaseModel):
     assigned_to: str = Field(min_length=2, max_length=160)
 
 
+class StoreOperationModeRequest(BaseModel):
+    operation_mode: str = Field(
+        pattern="^(OLIVIA|HUMAN_ONLY)$"
+    )
+
+
 class HumanReplyRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
     assigned_to: str = Field(min_length=2, max_length=160)

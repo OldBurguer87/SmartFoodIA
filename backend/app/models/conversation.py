@@ -24,6 +24,11 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    unread_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",

@@ -18,6 +18,7 @@ from app.schemas.conversation import MessageCreate
 from app.models.staff import StoreStaffMember
 from app.repositories.channel import ChannelRepository
 from app.repositories.conversation import ConversationRepository
+from app.repositories.order import OrderRepository
 from app.repositories.staff import StaffRepository
 from app.services.conversation import ConversationService
 from app.services.pix_receipt_review import PixReceiptReviewService
@@ -42,6 +43,7 @@ class HumanRelayService:
         self.channels = ChannelRepository()
         self.conversations = ConversationService()
         self.conversation_repository = ConversationRepository()
+        self.orders = OrderRepository()
         self.pix_review = PixReceiptReviewService()
 
     @staticmethod
@@ -1065,6 +1067,14 @@ class HumanRelayService:
             ),
         )
 
+        active_order = None
+        if conversation.customer_id is not None:
+            active_order = self.orders.get_latest_active_for_customer(
+                db,
+                store_id=conversation.store_id,
+                customer_id=conversation.customer_id,
+            )
+
         self.conversations.release_to_olivia(
             db,
             conversation_id=conversation.id,
@@ -1074,15 +1084,26 @@ class HumanRelayService:
         staff.current_conversation_id = None
         db.commit()
 
+        if active_order is not None:
+            post_resolution_note = (
+                "A Ol\u00edvia permanecer\u00e1 em espera enquanto o pedido "
+                f"#{active_order.display_id} estiver ativo. "
+                "As atualiza\u00e7\u00f5es de status do pedido continuar\u00e3o autom\u00e1ticas."
+            )
+        else:
+            post_resolution_note = (
+                "A conversa foi devolvida para a Ol\u00edvia e ela ter\u00e1 "
+                "esse resultado no contexto do atendimento."
+            )
+
         self._send_internal(
             db,
             account=account,
             staff=staff,
             content=(
-                "✅ Chamado resolvido e registrado.\n\n"
-                f"Solução: {resolution}\n\n"
-                "A conversa foi devolvida para a Olívia e ela terá "
-                "esse resultado no contexto do atendimento."
+                "\u2705  Chamado resolvido e registrado.\n\n"
+                f"Solu\u00e7\u00e3o: {resolution}\n\n"
+                f"{post_resolution_note}"
             ),
         )
 

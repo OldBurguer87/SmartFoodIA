@@ -551,6 +551,101 @@ h1 {
   }
 }
 
+.humanOrderPixReceipts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.humanOrderPixReceipts > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.humanOrderPixReceipts > header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.humanOrderPixReceipts > header small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.humanOrderPixReceiptList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.humanOrderPixReceipt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+}
+
+.humanOrderPixReceipt > div,
+.humanOrderPixWaiting,
+.humanOrderPixConfirmed {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.humanOrderPixReceipt span,
+.humanOrderPixWaiting span,
+.humanOrderPixConfirmed span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.humanOrderPixReceipt button {
+  min-height: 36px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--green);
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.humanOrderPixReceipt button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.humanOrderPixWaiting,
+.humanOrderPixConfirmed {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.humanOrderPixConfirmed {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.humanOrderPixConfirmed strong {
+  color: var(--green);
+}
+
+
 @media (max-width: 760px) {
   .shell {
     display: block;
@@ -1610,4 +1705,1458 @@ h1 {
   .analyticsFoot {
     flex-direction: column;
   }
+}
+
+
+/* CENTRAL DE ATENDIMENTO V2 */
+
+.conversationsConsoleV2 {
+  height: calc(100vh - 24px);
+  min-height: 680px;
+  max-height: 980px;
+  border-radius: 18px;
+}
+
+.conversationsConsoleV2 .consoleHeaderV2 {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 15px;
+  padding: 18px 20px 14px;
+}
+
+.consoleTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.consoleTitleRow h2 {
+  margin: 2px 0 0;
+}
+
+.humanModeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.humanModeBadge > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.operationModeControl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.humanModeBadge.oliviaModeBadge {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+
+.humanModeBadge.oliviaModeBadge > span {
+  background: #2563eb;
+}
+
+.operationModeButton {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.operationModeButton:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.04);
+  border-color: rgba(15, 23, 42, 0.24);
+}
+
+.operationModeButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.consoleSearchRow {
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 1fr)
+    minmax(170px, 230px)
+    auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.consoleSearchBox,
+.operatorField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.consoleSearchBox > span,
+.operatorField > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.consoleSearchBox input,
+.operatorField input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  font: inherit;
+}
+
+.consoleRefreshButton {
+  min-height: 42px;
+  padding: 0 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--green);
+  font-weight: 800;
+}
+
+.consoleTabs {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.consoleTabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.consoleTabs button strong {
+  display: grid;
+  place-items: center;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #edf0ec;
+  font-size: 10px;
+}
+
+.consoleTabs button.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.conversationsConsoleV2 .conversationWorkspace {
+  grid-template-columns:
+    minmax(330px, 390px)
+    minmax(0, 1fr);
+  background: white;
+}
+
+.conversationsConsoleV2 .conversationList {
+  background: white;
+}
+
+.conversationListHeader {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: white;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.conversationListHeader > span {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: 800;
+}
+
+.conversationsConsoleV2 .conversationRow {
+  position: relative;
+  gap: 11px;
+  min-height: 94px;
+  padding: 13px 14px;
+  cursor: pointer;
+}
+
+.conversationsConsoleV2 .conversationRow.waiting::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--warning);
+}
+
+.conversationsConsoleV2 .conversationRow.selected {
+  background: var(--green-soft);
+}
+
+.conversationsConsoleV2 .avatar {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  font-size: 12px;
+}
+
+.conversationsConsoleV2
+.conversationRow.needsReply
+.avatar::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.conversationPreviewTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.conversationPreviewTop strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.conversationPreviewTop time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.conversationPhone {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.conversationsConsoleV2 .conversationPreview p {
+  margin: 5px 0 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.conversationRowMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.needsReplyBadge {
+  display: inline-flex;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.conversationsConsoleV2 .chatPanel {
+  background: #f5f7f4;
+}
+
+.chatHeaderV2 {
+  min-height: 70px;
+  gap: 10px;
+  padding: 11px 16px;
+}
+
+.chatCustomerAvatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 43px;
+  height: 43px;
+  border-radius: 50%;
+  background: var(--green);
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chatCustomerIdentity {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chatCustomerIdentity > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.chatCustomerIdentity > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chatStatus {
+  width: fit-content;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.chatStatus.WAITING_HUMAN,
+.chatStatus.OPEN {
+  color: var(--warning);
+}
+
+.chatStatus.HUMAN {
+  color: var(--green);
+}
+
+.chatHeaderAction {
+  flex: 0 0 auto;
+}
+
+.chatHeaderAction button {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--green);
+  color: white;
+  font-weight: 800;
+}
+
+.conversationOwned,
+.conversationClosed {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.conversationOwned {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.conversationClosed {
+  background: #edf0ec;
+  color: var(--muted);
+}
+
+.mobileBack {
+  display: none;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #edf0ec;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.conversationsConsoleV2 .messageTimeline {
+  gap: 8px;
+  padding: 18px 20px;
+}
+
+.conversationsConsoleV2 .messageBubble {
+  max-width: min(78%, 620px);
+  padding: 9px 11px 7px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(35, 50, 39, .04);
+}
+
+.conversationsConsoleV2 .messageBubble.customer {
+  border-top-left-radius: 4px;
+  background: white;
+}
+
+.conversationsConsoleV2 .messageBubble.human {
+  border-top-right-radius: 4px;
+  background: var(--green-soft);
+}
+
+.conversationsConsoleV2 .messageBubble.olivia {
+  border-top-right-radius: 4px;
+  background: #edf0ec;
+}
+
+.conversationsConsoleV2 .messageBubble.system {
+  align-self: center;
+  max-width: min(90%, 680px);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  text-align: center;
+}
+
+.conversationsConsoleV2
+.messageBubble.system > span {
+  display: none;
+}
+
+.conversationsConsoleV2
+.messageBubble.system time {
+  text-align: center;
+}
+
+.conversationImageLink {
+  display: block;
+  margin-top: 7px;
+  color: var(--green);
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.conversationImage {
+  display: block;
+  width: auto;
+  max-width: min(100%, 380px);
+  max-height: 380px;
+  margin-bottom: 5px;
+  border-radius: 10px;
+  object-fit: contain;
+}
+
+.conversationDocument {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: min(310px, 100%);
+  margin-top: 7px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.conversationDocumentIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #edf0ec;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.conversationDocument > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conversationDocument strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.conversationDocument small {
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.conversationMediaLoading,
+.conversationMediaUnavailable {
+  margin-top: 7px;
+  padding: 10px;
+  border-radius: 9px;
+  background: #edf0ec;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.conversationMediaUnavailable {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.replyComposerWrap {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  background: white;
+}
+
+.conversationsConsoleV2 .replyComposer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 9px;
+  padding: 11px 13px 5px;
+  border-top: 0;
+}
+
+.conversationsConsoleV2 .replyComposer textarea {
+  min-height: 48px;
+  max-height: 120px;
+  padding: 12px;
+  resize: none;
+}
+
+.conversationsConsoleV2 .replyComposer button {
+  min-width: 90px;
+  min-height: 48px;
+}
+
+.composerNotice {
+  padding: 8px 13px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.composerHint {
+  display: block;
+  padding: 0 13px 8px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.chatEmptyV2 {
+  min-height: 100%;
+}
+
+.chatEmptyIcon {
+  margin-bottom: 8px;
+  font-size: 36px;
+}
+
+.chatEmptyV2 h3 {
+  margin: 0 0 5px;
+  color: var(--text);
+}
+
+.chatEmptyV2 p {
+  max-width: 380px;
+  margin: 0;
+}
+
+.chatEmptyV2 > span {
+  margin-top: 12px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.conversationsConsoleV2 .consoleEmpty {
+  display: flex;
+  min-height: 230px;
+  flex-direction: column;
+  gap: 5px;
+}
+
+@media (max-width: 900px) {
+  .conversationsConsoleV2 .conversationWorkspace {
+    grid-template-columns:
+      320px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .conversationsConsoleV2 {
+    height: calc(100dvh - 12px);
+    min-height: 560px;
+    max-height: none;
+    border-radius: 12px;
+  }
+
+  .conversationsConsoleV2 .consoleHeaderV2 {
+    gap: 11px;
+    padding: 13px;
+  }
+
+  .consoleTitleRow {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .humanModeBadge {
+    padding: 6px 9px;
+    font-size: 10px;
+  }
+
+  .consoleSearchRow {
+    grid-template-columns: 1fr;
+  }
+
+  .consoleRefreshButton {
+    display: none;
+  }
+
+  .consoleTabs {
+    margin-right: -13px;
+    padding-right: 13px;
+  }
+
+  .conversationsConsoleV2 .conversationWorkspace {
+    display: block;
+    min-height: 0;
+  }
+
+  .conversationsConsoleV2 .conversationList,
+  .conversationsConsoleV2 .chatPanel {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+  }
+
+  .conversationsConsoleV2
+  .conversationWorkspace.hasSelection
+  .conversationList {
+    display: none;
+  }
+
+  .conversationsConsoleV2
+  .conversationWorkspace:not(.hasSelection)
+  .chatPanel {
+    display: none;
+  }
+
+  .mobileBack {
+    display: grid;
+  }
+
+  .chatHeaderV2 {
+    min-height: 64px;
+    padding: 9px 10px;
+  }
+
+  .chatCustomerAvatar {
+    width: 38px;
+    height: 38px;
+  }
+
+  .chatCustomerIdentity > strong {
+    font-size: 13px;
+  }
+
+  .chatHeaderAction button {
+    min-height: 34px;
+    max-width: 115px;
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .conversationOwned,
+  .conversationClosed {
+    max-width: 105px;
+    min-height: 30px;
+    padding: 4px 8px;
+    text-align: center;
+    font-size: 9px;
+  }
+
+  .conversationsConsoleV2 .messageTimeline {
+    padding: 13px 10px;
+  }
+
+  .conversationsConsoleV2 .messageBubble {
+    max-width: 88%;
+  }
+
+  .conversationImage {
+    max-height: 310px;
+  }
+
+  .conversationsConsoleV2 .replyComposer {
+    padding: 8px 8px 4px;
+  }
+
+  .conversationsConsoleV2
+  .replyComposer button {
+    min-width: 68px;
+    padding: 0 9px;
+  }
+
+  .composerHint {
+    display: none;
+  }
+}
+
+
+/* CENTRAL V2 - AJUSTES DE FILA E RODAPE */
+
+/* O usuário logado nunca deve cobrir conteúdo da página. */
+.sessionBadge {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: 1;
+  width: fit-content;
+  max-width: min(390px, calc(100% - 44px));
+  margin: 18px 22px 22px auto;
+}
+
+/* Rolagem horizontal das abas sem barra cinza. */
+.consoleTabs {
+  scrollbar-width: none;
+}
+
+.consoleTabs::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .sessionBadge {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: auto;
+    max-width: none;
+    margin: 10px 16px 16px;
+  }
+
+  .conversationsConsoleV2 .consoleHeaderV2 {
+    gap: 8px;
+    padding: 10px 12px 8px;
+  }
+
+  .consoleTitleRow h2 {
+    font-size: 26px;
+    line-height: 1.05;
+  }
+
+  .conversationsConsoleV2 .eyebrow {
+    margin-bottom: 3px;
+    font-size: 10px;
+  }
+
+  .humanModeBadge {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .consoleSearchRow {
+    gap: 7px;
+  }
+
+  .consoleSearchBox,
+  .operatorField {
+    gap: 3px;
+  }
+
+  .consoleSearchBox input,
+  .operatorField input {
+    min-height: 38px;
+    padding: 8px 10px;
+  }
+
+  .consoleTabs button {
+    min-height: 31px;
+    padding: 5px 9px;
+  }
+
+  .conversationListHeader {
+    min-height: 38px;
+    padding: 7px 12px;
+  }
+}
+
+
+/* CENTRAL V2 - FINALIZAR ATENDIMENTO */
+
+.conversationOwnedActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.chatHeaderAction .closeConversationButton {
+  border: 1px solid rgba(181, 52, 52, 0.24);
+  background: rgba(181, 52, 52, 0.07);
+  color: #9f2f2f;
+}
+
+.chatHeaderAction .closeConversationButton:hover:not(:disabled) {
+  border-color: rgba(181, 52, 52, 0.42);
+  background: rgba(181, 52, 52, 0.12);
+}
+
+.chatHeaderAction .closeConversationButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 760px) {
+  .conversationOwnedActions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .conversationOwnedActions .conversationOwned {
+    text-align: center;
+  }
+
+  .chatHeaderAction .closeConversationButton {
+    width: 100%;
+  }
+}
+
+
+/* CENTRAL - ANEXOS HUMANOS */
+
+.conversationsConsoleV2 .replyComposer {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.composerFileInput {
+  display: none;
+}
+
+.conversationsConsoleV2 .replyComposer .attachmentButton {
+  width: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: #edf0ec;
+  color: var(--text);
+  font-size: 19px;
+}
+
+.composerAttachment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 13px 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f7f8f6;
+}
+
+.composerAttachment > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.composerAttachmentIcon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.composerAttachment > div > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.composerAttachment strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.composerAttachment small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.composerAttachmentRemove {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  background: #e8ebe7;
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .conversationsConsoleV2 .replyComposer .attachmentButton {
+    width: 44px;
+    min-width: 44px;
+  }
+
+  .composerAttachment {
+    margin: 7px 8px 0;
+  }
+}
+
+
+/* CENTRAL - PEDIDO DO CLIENTE */
+
+.conversationsConsoleV2 .chatPanel {
+  position: relative;
+}
+
+.conversationOwnedActions {
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chatHeaderAction .launchOrderButton {
+  background: var(--green);
+  color: white;
+}
+
+.conversationOrderOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(20, 30, 23, .22);
+  backdrop-filter: blur(2px);
+}
+
+.conversationOrderPanel {
+  width: min(610px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: 18px;
+  background: white;
+  box-shadow: -12px 0 35px rgba(30, 45, 34, .15);
+}
+
+.conversationOrderPanel > header {
+  position: sticky;
+  top: -18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: -18px -18px 16px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--border);
+  background: white;
+}
+
+.conversationOrderPanel > header > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conversationOrderPanel > header small {
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.conversationOrderPanel > header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+}
+
+.conversationOrderPanel > header button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #f4f6f3;
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.orderServiceMode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.orderServiceMode button {
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.orderServiceMode button.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.orderServiceMode button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.orderProductSearch {
+  width: 100%;
+  min-height: 42px;
+  margin-bottom: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  font: inherit;
+}
+
+.orderCatalogSummary {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.orderProductList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.orderProductCard {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+}
+
+.orderProductCard:hover {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.orderProductCard strong,
+.orderProductCard span,
+.orderProductCard small {
+  display: block;
+}
+
+.orderProductCard strong {
+  margin-bottom: 5px;
+  font-size: 13px;
+}
+
+.orderProductCard span {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.orderProductCard small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.orderProductEditor {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafbf9;
+}
+
+.orderProductEditorHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.orderModifierGroup {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.orderModifierRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+}
+
+.orderModifierRow > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.orderModifierRow small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.orderModifierQuantity,
+.humanOrderCartQuantity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.orderModifierQuantity button,
+.humanOrderCartQuantity button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.orderProductEditor textarea {
+  width: 100%;
+  min-height: 65px;
+  margin-top: 5px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  resize: vertical;
+  font: inherit;
+}
+
+.addOrderItemButton,
+.humanOrderConfirmButton {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--green);
+  color: white;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.addOrderItemButton:disabled,
+.humanOrderConfirmButton:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.humanOrderCartItems {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.humanOrderCartItem {
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: white;
+}
+
+.humanOrderCartItemTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.humanOrderCartItemActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.humanOrderCartModifiers {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.humanOrderRemoveItem {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.humanOrderCartSummary,
+.humanOrderCheckout,
+.humanOrderSuccess {
+  margin-top: 15px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafbf9;
+}
+
+.humanOrderCartTotal {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.humanOrderField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.humanOrderField select,
+.humanOrderField input {
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: white;
+  font: inherit;
+}
+
+.humanOrderPaymentOptions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.humanOrderPaymentOptions button {
+  min-height: 39px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.humanOrderPaymentOptions button.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.humanOrderPixNotice,
+.humanOrderWarning,
+.humanOrderCheckoutHint {
+  display: block;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.humanOrderWarning {
+  color: var(--warning);
+}
+
+.humanOrderCheckoutSummary {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.humanOrderSuccess {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.humanOrderSuccess strong {
+  color: var(--green);
+}
+
+@media (max-width: 760px) {
+  .conversationOrderOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: white;
+  }
+
+  .conversationOrderPanel {
+    width: 100%;
+    height: 100dvh;
+    padding: 14px;
+    box-shadow: none;
+  }
+
+  .conversationOrderPanel > header {
+    top: -14px;
+    margin: -14px -14px 14px;
+    padding: 13px 14px;
+  }
+
+  .orderProductList {
+    grid-template-columns: 1fr;
+  }
+
+  .humanOrderPaymentOptions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .chatHeaderAction .launchOrderButton,
+  .chatHeaderAction .closeConversationButton {
+    min-height: 34px;
+    padding: 0 9px;
+    font-size: 10px;
+  }
+}
+
+
+/* SMARTFOODIA UNREAD CONVERSATIONS */
+.conversationsConsoleV2
+.conversationRow.unread
+.conversationPreviewTop strong {
+  font-weight: 900;
+}
+
+.conversationsConsoleV2
+.conversationRow.unread
+.conversationPreview p {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.conversationsConsoleV2
+.conversationRow.unread
+.conversationPreviewTop time {
+  color: var(--green);
+  font-weight: 800;
+}
+
+.conversationsConsoleV2
+.conversationPreviewTop strong {
+  flex: 1 1 auto;
+}
+
+.conversationUnreadBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--green);
+  color: white;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
 }

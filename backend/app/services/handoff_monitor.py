@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.models.conversation import AIEvent, Conversation, HumanTicket
 from app.repositories.channel import ChannelRepository
 from app.services.human_relay import HumanRelayService
+from app.services.operation_mode import is_store_human_only
 from app.services.manager_escalation import ManagerEscalationService
 
 
@@ -117,6 +118,10 @@ class HumanHandoffMonitor:
 
                 if (
                     not urgent_handoff
+                    and not is_store_human_only(
+                        db,
+                        store_id=conversation.store_id,
+                    )
                     and age_since_handoff_seconds
                     >= settings.human_wait_timeout_seconds
                 ):
@@ -199,6 +204,10 @@ class HumanHandoffMonitor:
 
                 if (
                     not urgent_handoff
+                    and not is_store_human_only(
+                        db,
+                        store_id=conversation.store_id,
+                    )
                     and age_seconds
                     >= settings.human_wait_timeout_seconds
                 ):

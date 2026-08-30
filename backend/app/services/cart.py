@@ -59,9 +59,15 @@ class CartService:
                 service_mode=service_mode,
             )
         elif cart.service_mode != service_mode:
-            cart.service_mode = service_mode
-            db.commit()
-            cart = self._get_cart(db, cart.id)
+            # Depois que o carrinho possui itens, o modo de serviço
+            # não pode ser alterado silenciosamente. Isso evita
+            # transformar um pedido de retirada em entrega (ou vice-versa)
+            # ao reabrir o atendimento.
+            if not cart.items:
+                cart.service_mode = service_mode
+                db.commit()
+                cart = self._get_cart(db, cart.id)
+
         return self._to_dto(cart)
 
     def get(self, db: Session, cart_id: UUID) -> CartRead:

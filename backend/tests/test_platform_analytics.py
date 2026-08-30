@@ -15,6 +15,7 @@ from app.models.catalog import (
     Store,
 )
 from app.models.customer import Customer
+from app.models.conversation import AIEvent
 from app.models.order import (
     Order,
     OrderItem,
@@ -296,6 +297,63 @@ def test_platform_analytics_aggregates_without_tenant_identity():
         modifier_quantity=10,
     )
 
+    db.add_all(
+        [
+            AIEvent(
+                store_id=store_a.id,
+                event_type="AI_RESPONSE",
+                success=True,
+                payload_json={
+                    "usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 60,
+                        "output_tokens": 20,
+                        "reasoning_tokens": 5,
+                        "total_tokens": 120,
+                        "estimated_cost_usd": "0.10000000",
+                    }
+                },
+                created_at=valid_a_at,
+                updated_at=valid_a_at,
+            ),
+            AIEvent(
+                store_id=store_a.id,
+                event_type="PIX_AI_ANALYSIS",
+                tool_name="pix_receipt_validation",
+                success=True,
+                payload_json={
+                    "usage": {
+                        "input_tokens": 10,
+                        "cached_input_tokens": 0,
+                        "output_tokens": 5,
+                        "reasoning_tokens": 0,
+                        "total_tokens": 15,
+                        "estimated_cost_usd": "0.02000000",
+                    }
+                },
+                created_at=valid_a_at,
+                updated_at=valid_a_at,
+            ),
+            AIEvent(
+                store_id=store_b.id,
+                event_type="AI_RESPONSE",
+                success=True,
+                payload_json={
+                    "usage": {
+                        "input_tokens": 200,
+                        "cached_input_tokens": 100,
+                        "output_tokens": 30,
+                        "reasoning_tokens": 10,
+                        "total_tokens": 230,
+                        "estimated_cost_usd": "0.05000000",
+                    }
+                },
+                created_at=valid_b_at,
+                updated_at=valid_b_at,
+            ),
+        ]
+    )
+
     db.commit()
 
     result = PlatformAnalyticsService().overview(
@@ -321,6 +379,33 @@ def test_platform_analytics_aggregates_without_tenant_identity():
 
     assert summary["revenue"] == 84.0
     assert summary["average_ticket"] == 28.0
+
+    ai_costs = result["ai_costs"]
+
+    assert ai_costs["calls"] == 3
+    assert ai_costs["unpriced_calls"] == 0
+    assert ai_costs["input_tokens"] == 310
+    assert ai_costs["cached_input_tokens"] == 160
+    assert ai_costs["output_tokens"] == 55
+    assert ai_costs["reasoning_tokens"] == 15
+    assert ai_costs["total_tokens"] == 365
+
+    assert ai_costs["estimated_cost_usd"] == 0.17
+    assert ai_costs["olivia"]["calls"] == 2
+    assert (
+        ai_costs["olivia"]["estimated_cost_usd"]
+        == 0.15
+    )
+
+    assert ai_costs["pix_analysis"]["calls"] == 1
+    assert (
+        ai_costs["pix_analysis"][
+            "estimated_cost_usd"
+        ]
+        == 0.02
+    )
+
+    assert ai_costs["cost_per_order_usd"] == 0.0425
 
     modes = {
         item["service_mode"]: item

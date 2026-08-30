@@ -2,7 +2,7 @@ import json
 import re
 import time
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
 from uuid import UUID
@@ -19,9 +19,13 @@ from app.models.catalog import Store
 from app.models.commercial import StoreCommercialRules
 from app.models.menu import StoreMenuDocument
 from app.models.order import Order
+from app.models.conversation import AIEvent
+from app.repositories.catalog import ProductRepository
+from app.repositories.cart import CartRepository
 from app.repositories.conversation import ConversationRepository
 from app.repositories.customer import CustomerRepository
 from app.schemas.conversation import AIEventCreate, MessageCreate
+from app.services.cart import CartService
 from app.services.conversation import ConversationService
 from app.services.commercial_context import CommercialContextService
 
@@ -409,13 +413,32 @@ def _customer_context(
             "Peça somente o nome quando precisar criar o cadastro."
         )
 
-    addresses = [address for address in customer.addresses if address.active]
+    addresses = [
+        address
+        for address in customer.addresses
+        if address.active
+    ]
+
     if addresses:
         address_text = "; ".join(
-            f"{address.label}: {address.street}, {address.number}, "
+            f"address_id={address.id}; {address.label}: "
+            f"{address.street}, {address.number}, "
             f"{address.neighborhood}, {address.city}-{address.state}"
-            + (f", compl. {address.complement}" if address.complement else "")
-            + (f", ref. {address.reference}" if address.reference else "")
+            + (
+                f", compl. {address.complement}"
+                if address.complement
+                else ""
+            )
+            + (
+                f", ref. {address.reference}"
+                if address.reference
+                else ""
+            )
+            + (
+                ", padrão=true"
+                if address.is_default
+                else ""
+            )
             for address in addresses[:3]
         )
     else:
@@ -432,6 +455,7 @@ def _customer_context(
             .limit(3)
         ).all()
     )
+
     if recent_orders:
         order_text = "; ".join(
             f"pedido {order.display_id}: "
@@ -442,12 +466,283 @@ def _customer_context(
     else:
         order_text = "nenhum pedido anterior"
 
+    open_cart = CartRepository().get_open_for_customer(
+        db,
+        store_id=store_id,
+        customer_id=customer.id,
+    )
+
+    if open_cart is not None:
+        cart = CartService._to_dto(open_cart)
+
+        if cart.items:
+            item_rows = []
+
+            for item in cart.items:
+                modifiers = ", ".join(
+                    f"{modifier.quantity}x {modifier.name} "
+                    f"(codigo={modifier.external_code})"
+                    for modifier in item.modifiers
+                )
+
+                item_text = (
+                    f"item_id={item.id}; "
+                    f"codigo={item.product_external_code}; "
+                    f"{item.quantity}x {item.product_name}; "
+                    f"unitario={item.unit_price}; "
+                    f"total={item.total}"
+                )
+
+                if item.observations:
+                    item_text += f"; observacao={item.observations}"
+
+                if modifiers:
+                    item_text += f"; adicionais=[{modifiers}]"
+
+                item_rows.append(item_text)
+
+            cart_items = " | ".join(item_rows)
+        else:
+            cart_items = "sem itens"
+
+        cart_text = (
+            f"cart_id={cart.id}; "
+            f"modalidade={cart.service_mode}; "
+            f"subtotal={cart.subtotal}; "
+            f"itens=[{cart_items}]"
+        )
+    else:
+        cart_text = "nenhum carrinho aberto"
+
     return (
         "CONTEXTO DO CLIENTE JÁ CADASTRADO: "
+        f"customer_id={customer.id}; "
         f"nome={customer.name}; telefone já conhecido pelo canal; "
-        f"endereços={address_text}; últimos pedidos={order_text}. "
-        "Não peça novamente nome ou telefone. Para entrega, ofereça endereço salvo antes de pedir outro. "
-        "Use pedidos anteriores apenas para facilitar sugestões; nunca repita item, pagamento ou endereço sem confirmação."
+        f"endereços={address_text}; "
+        f"últimos pedidos={order_text}. "
+        "ESTADO OPERACIONAL ATUAL: "
+        f"carrinho_aberto={cart_text}. "
+        "Não peça novamente nome ou telefone. "
+        "Para entrega, ofereça endereço salvo antes de pedir outro. "
+        "Use pedidos anteriores apenas para facilitar sugestões; "
+        "nunca repita item, pagamento ou endereço sem confirmação. "
+        "Os IDs e dados do ESTADO OPERACIONAL ATUAL vieram diretamente "
+        "do SmartFoodIA e podem ser reutilizados nas ferramentas quando "
+        "continuarem válidos; não é necessário consultar novamente apenas "
+        "para redescobrir esses mesmos identificadores."
+    )
+
+
+def _recent_validated_products_context(
+    db: Session,
+    *,
+    store_id: UUID,
+    conversation_id: UUID,
+) -> str:
+    cutoff = datetime.now(ZoneInfo("UTC")) - timedelta(minutes=10)
+
+    last_checkout = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.store_id == store_id,
+            AIEvent.conversation_id == conversation_id,
+            AIEvent.event_type == "TOOL_EXECUTION",
+            AIEvent.tool_name == "checkout_cart",
+            AIEvent.success.is_(True),
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    conditions = [
+        AIEvent.store_id == store_id,
+        AIEvent.conversation_id == conversation_id,
+        AIEvent.event_type == "TOOL_EXECUTION",
+        AIEvent.tool_name == "search_catalog",
+        AIEvent.success.is_(True),
+        AIEvent.created_at >= cutoff,
+    ]
+
+    if last_checkout is not None:
+        conditions.append(AIEvent.created_at > last_checkout.created_at)
+
+    events = list(
+        db.scalars(
+            select(AIEvent)
+            .where(*conditions)
+            .order_by(AIEvent.created_at.desc())
+            .limit(20)
+        ).all()
+    )
+
+    repository = ProductRepository()
+    rows = []
+    seen_codes = set()
+    family_rows = []
+    seen_families = set()
+
+    for event in events:
+        payload = event.payload_json or {}
+        arguments = payload.get("arguments") or {}
+        result = payload.get("result") or {}
+
+        if not result.get("ok"):
+            continue
+
+        data = result.get("data") or {}
+        query = data.get("query") or arguments.get("query") or ""
+        service_mode = arguments.get("service_mode")
+
+        families = data.get("families") or []
+
+        if families:
+            first_family = families[0]
+            first_family_score = float(
+                first_family.get("relevance_score") or 0
+            )
+            second_family_score = (
+                float(families[1].get("relevance_score") or 0)
+                if len(families) > 1
+                else 0.0
+            )
+            family_name = str(first_family.get("name") or "").strip()
+
+            if (
+                family_name
+                and family_name not in seen_families
+                and first_family_score >= 0.85
+                and first_family_score - second_family_score >= 0.20
+            ):
+                option_rows = []
+
+                for option in first_family.get("options") or []:
+                    code = option.get("external_code")
+
+                    if not code:
+                        continue
+
+                    product = repository.get_by_external_code(
+                        db,
+                        store_id=store_id,
+                        external_code=code,
+                    )
+
+                    if product is None or not product.active:
+                        continue
+
+                    if (
+                        service_mode == "DELIVERY"
+                        and not product.available_for_delivery
+                    ):
+                        continue
+
+                    if (
+                        service_mode == "TAKEOUT"
+                        and not product.available_for_takeout
+                    ):
+                        continue
+
+                    option_rows.append(
+                        f"codigo={product.external_code}; "
+                        f"nome={product.name}; "
+                        f"preco_atual={product.price}"
+                    )
+
+                if option_rows:
+                    family_rows.append(
+                        f"familia={family_name}; "
+                        f"selecao={first_family.get("selection_name") or "Opção"}; "
+                        f"opcoes=[{" | ".join(option_rows)}]"
+                    )
+                    seen_families.add(family_name)
+
+        products = data.get("products") or []
+
+        if not products:
+            continue
+
+        first = products[0]
+        first_score = float(first.get("relevance_score") or 0)
+        second_score = (
+            float(products[1].get("relevance_score") or 0)
+            if len(products) > 1
+            else 0.0
+        )
+
+        if first_score < 0.90:
+            continue
+
+        if first_score - second_score < 0.20:
+            continue
+
+        codes = [first.get("external_code")]
+
+        for code in codes:
+            if not code or code in seen_codes:
+                continue
+
+            product = repository.get_by_external_code(
+                db,
+                store_id=store_id,
+                external_code=code,
+            )
+
+            if product is None or not product.active:
+                continue
+
+            if service_mode == "DELIVERY" and not product.available_for_delivery:
+                continue
+
+            if service_mode == "TAKEOUT" and not product.available_for_takeout:
+                continue
+
+            rows.append(
+                f"codigo={product.external_code}; "
+                f"nome={product.name}; "
+                f"preco_atual={product.price}; "
+                f"consulta={query}"
+            )
+            seen_codes.add(code)
+
+            if len(rows) >= 6:
+                break
+
+        if len(rows) >= 6:
+            break
+
+    if not rows and not family_rows:
+        return (
+            "PRODUTOS RECENTEMENTE VALIDADOS: nenhum produto recente "
+            "disponível para reutilização."
+        )
+
+    sections = []
+
+    if rows:
+        sections.append(
+            "PRODUTOS INEQUÍVOCOS: " + " | ".join(rows)
+        )
+
+    if family_rows:
+        sections.append(
+            "FAMÍLIAS E OPÇÕES VENDÁVEIS: " + " | ".join(family_rows)
+        )
+
+    return (
+        "PRODUTOS RECENTEMENTE VALIDADOS PELO SMARTFOODIA: "
+        + " || ".join(sections)
+        + ". Estes dados foram revalidados no banco agora. "
+        "Para PRODUTO INEQUÍVOCO, reutilize o código somente quando o cliente "
+        "estiver se referindo claramente ao mesmo produto já apresentado. "
+        "Para FAMÍLIA, nunca escolha uma opção, tamanho, sabor ou volume "
+        "automaticamente. Se o cliente mencionar apenas a família, pergunte "
+        "qual opção deseja. Se o cliente indicar inequivocamente uma opção "
+        "que esteja listada aqui, como 1 litro ou 2 litros, reutilize somente "
+        "o código vendável daquela opção e não execute search_catalog apenas "
+        "para redescobrir a mesma opção. Nunca use family_external_code. "
+        "Para produto novo, dúvida, ambiguidade, alteração não coberta pelas "
+        "opções listadas ou adicionais, consulte o catálogo normalmente. "
+        "Nunca mostre código PDV ao cliente."
     )
 
 
@@ -532,6 +827,12 @@ class OliviaOrchestrator:
                 db,
                 store_id=store_id,
                 customer_phone=customer_phone,
+            )
+            + "\n\n"
+            + _recent_validated_products_context(
+                db,
+                store_id=store_id,
+                conversation_id=conversation_id,
             )
         )
         if extra_instructions:

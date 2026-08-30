@@ -15,6 +15,7 @@ from app.schemas.customer import AddressCreate, CustomerCreate
 from app.schemas.order import CheckoutRequest
 from app.services.cart import CartService
 from app.services.checkout import CheckoutService, CheckoutValidationError
+from app.repositories.order import OrderRepository
 from app.services.customer import CustomerService
 
 
@@ -175,3 +176,114 @@ def test_non_pix_checkout_request_is_pending():
     )
 
     assert request.payment_type == "PENDING"
+
+
+def test_order_repository_finds_latest_active_order_for_customer():
+    db, cart, address = setup_order_context()
+    CheckoutService().checkout(
+        db,
+        cart_id=cart.id,
+        payload=CheckoutRequest(
+            address_id=address.id,
+            payment_method="PIX",
+        ),
+    )
+
+    repository = OrderRepository()
+    order = repository.get_by_cart(db, cart.id)
+    assert order is not None
+
+    found = repository.get_latest_active_for_customer(
+        db,
+        store_id=order.store_id,
+        customer_id=order.customer_id,
+    )
+
+    assert found is not None
+    assert found.id == order.id
+    assert found.status == "READY_FOR_INTEGRATION"
+
+
+@pytest.mark.parametrize("terminal_status", ["CONCLUDED", "CANCELLED"])
+def test_order_repository_ignores_terminal_orders(terminal_status):
+    db, cart, address = setup_order_context()
+    CheckoutService().checkout(
+        db,
+        cart_id=cart.id,
+        payload=CheckoutRequest(
+            address_id=address.id,
+            payment_method="PIX",
+        ),
+    )
+
+    repository = OrderRepository()
+    order = repository.get_by_cart(db, cart.id)
+    assert order is not None
+
+    order.status = terminal_status
+    db.commit()
+
+    found = repository.get_latest_active_for_customer(
+        db,
+        store_id=order.store_id,
+        customer_id=order.customer_id,
+    )
+
+    assert found is None
+
+
+def test_order_repository_prefers_new_active_order_over_old_terminal_order():
+    db, first_cart, address = setup_order_context()
+
+    CheckoutService().checkout(
+        db,
+        cart_id=first_cart.id,
+        payload=CheckoutRequest(
+            address_id=address.id,
+            payment_method="PIX",
+        ),
+    )
+
+    repository = OrderRepository()
+    first_order = repository.get_by_cart(db, first_cart.id)
+    assert first_order is not None
+
+    first_order.status = "CONCLUDED"
+    db.commit()
+
+    second_cart = CartService().create_or_get_open(
+        db,
+        store_id=first_order.store_id,
+        customer_id=first_order.customer_id,
+        service_mode="DELIVERY",
+    )
+    second_cart = CartService().add_item(
+        db,
+        cart_id=second_cart.id,
+        payload=CartItemAdd(
+            product_external_code="235",
+            quantity=1,
+        ),
+    )
+
+    CheckoutService().checkout(
+        db,
+        cart_id=second_cart.id,
+        payload=CheckoutRequest(
+            address_id=address.id,
+            payment_method="PIX",
+        ),
+    )
+
+    second_order = repository.get_by_cart(db, second_cart.id)
+    assert second_order is not None
+
+    found = repository.get_latest_active_for_customer(
+        db,
+        store_id=second_order.store_id,
+        customer_id=second_order.customer_id,
+    )
+
+    assert found is not None
+    assert found.id == second_order.id
+    assert found.id != first_order.id

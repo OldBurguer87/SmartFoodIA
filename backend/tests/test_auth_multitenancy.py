@@ -35,6 +35,7 @@ from app.models.conversation import (
     Conversation,
     HumanTicket,
     KnowledgeGap,
+    Message,
 )
 
 
@@ -2033,3 +2034,209 @@ def test_platform_admin_cannot_cross_store_product_category(
     assert response.json()["detail"] == (
         "Categoria não encontrada nesta loja."
     )
+
+
+
+def _create_media_message(
+    environment,
+    *,
+    conversation,
+    relative_path: str,
+) -> Message:
+    message = Message(
+        conversation_id=conversation.id,
+        direction="INBOUND",
+        sender_type="CUSTOMER",
+        content_type="IMAGE",
+        content="[Imagem recebida]",
+        metadata_json={
+            "stored_media": True,
+            "stored_media_path": relative_path,
+            "mime_type": "image/jpeg",
+            "filename": "foto.jpg",
+        },
+    )
+
+    environment["db"].add(message)
+    environment["db"].commit()
+    environment["db"].refresh(message)
+
+    return message
+
+
+def test_conversation_media_authorized_user_can_read(
+    environment,
+    tmp_path,
+    monkeypatch,
+):
+    conversation = Conversation(
+        store_id=environment["store_a"].id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999991111",
+        status="HUMAN",
+    )
+
+    environment["db"].add(conversation)
+    environment["db"].commit()
+    environment["db"].refresh(conversation)
+
+    relative_path = (
+        f"{environment['store_a'].id}/"
+        f"{conversation.id}/teste.jpg"
+    )
+
+    destination = tmp_path / relative_path
+    destination.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    destination.write_bytes(
+        b"conteudo-imagem-teste"
+    )
+
+    monkeypatch.setattr(
+        settings,
+        "conversation_media_storage_path",
+        str(tmp_path),
+    )
+
+    message = _create_media_message(
+        environment,
+        conversation=conversation,
+        relative_path=relative_path,
+    )
+
+    response = environment["client"].get(
+        (
+            f"/api/v1/operations/conversations/"
+            f"{conversation.id}/messages/"
+            f"{message.id}/media"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"conteudo-imagem-teste"
+    assert response.headers["content-type"].startswith(
+        "image/jpeg"
+    )
+
+
+def test_conversation_media_other_company_gets_403(
+    environment,
+):
+    response = environment["client"].get(
+        (
+            f"/api/v1/operations/conversations/"
+            f"{environment['conversation_b'].id}/messages/"
+            f"00000000-0000-0000-0000-000000000001/media"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["manager"],
+        ),
+    )
+
+    assert response.status_code == 403
+
+
+def test_conversation_media_message_from_other_conversation_is_404(
+    environment,
+    tmp_path,
+    monkeypatch,
+):
+    conversation_a = Conversation(
+        store_id=environment["store_a"].id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999992222",
+        status="HUMAN",
+    )
+
+    conversation_b = Conversation(
+        store_id=environment["store_a"].id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999993333",
+        status="HUMAN",
+    )
+
+    environment["db"].add_all([
+        conversation_a,
+        conversation_b,
+    ])
+    environment["db"].commit()
+    environment["db"].refresh(conversation_a)
+    environment["db"].refresh(conversation_b)
+
+    monkeypatch.setattr(
+        settings,
+        "conversation_media_storage_path",
+        str(tmp_path),
+    )
+
+    message = _create_media_message(
+        environment,
+        conversation=conversation_b,
+        relative_path=(
+            f"{environment['store_a'].id}/"
+            f"{conversation_b.id}/foto.jpg"
+        ),
+    )
+
+    response = environment["client"].get(
+        (
+            f"/api/v1/operations/conversations/"
+            f"{conversation_a.id}/messages/"
+            f"{message.id}/media"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 404
+
+
+def test_conversation_media_missing_file_is_404(
+    environment,
+    tmp_path,
+    monkeypatch,
+):
+    conversation = Conversation(
+        store_id=environment["store_a"].id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999994444",
+        status="HUMAN",
+    )
+
+    environment["db"].add(conversation)
+    environment["db"].commit()
+    environment["db"].refresh(conversation)
+
+    monkeypatch.setattr(
+        settings,
+        "conversation_media_storage_path",
+        str(tmp_path),
+    )
+
+    message = _create_media_message(
+        environment,
+        conversation=conversation,
+        relative_path=(
+            f"{environment['store_a'].id}/"
+            f"{conversation.id}/arquivo-inexistente.jpg"
+        ),
+    )
+
+    response = environment["client"].get(
+        (
+            f"/api/v1/operations/conversations/"
+            f"{conversation.id}/messages/"
+            f"{message.id}/media"
+        ),
+        headers=auth_headers(
+            environment["tokens"]["viewer"],
+        ),
+    )
+
+    assert response.status_code == 404

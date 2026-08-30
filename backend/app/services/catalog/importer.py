@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -46,8 +46,24 @@ class ParsedCatalogRow:
     description: str | None
 
     @property
+    def is_combo_parent(self) -> bool:
+        context = self.source_context.casefold()
+        return (
+            "combo" in context
+            and "opção" not in context
+            and "opcao" not in context
+        )
+
+    @property
     def is_combo_option(self) -> bool:
-        return "combo" in self.source_context.casefold()
+        context = self.source_context.casefold()
+        return (
+            "combo" in context
+            and (
+                "opção" in context
+                or "opcao" in context
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -133,7 +149,129 @@ class ConsumerCatalogWorkbookParser:
                 continue
             rows.append(parsed)
 
+        rows, combo_issues = self._normalize_combo_parent_prices(
+            rows
+        )
+        issues.extend(combo_issues)
+
         return rows, issues, total_rows
+
+    @staticmethod
+    def _normalize_combo_parent_prices(
+        rows: list[ParsedCatalogRow],
+    ) -> tuple[list[ParsedCatalogRow], list[ImportIssue]]:
+        normalized: list[ParsedCatalogRow] = []
+        issues: list[ImportIssue] = []
+
+        for index, row in enumerate(rows):
+            # O Consumer usa R$ 0,01 como preço técnico do produto-pai
+            # de alguns combos. O preço comercial real está distribuído
+            # nos componentes obrigatórios logo abaixo do pai.
+            if (
+                not row.is_combo_parent
+                or row.price != Decimal("0.01")
+            ):
+                normalized.append(row)
+                continue
+
+            children: list[ParsedCatalogRow] = []
+
+            for candidate in rows[index + 1:]:
+                # Um novo pai encerra o combo atual.
+                if candidate.is_combo_parent:
+                    break
+
+                # Os componentes do combo precisam ser consecutivos.
+                if not candidate.is_combo_option:
+                    break
+
+                children.append(candidate)
+
+            if not children:
+                issues.append(
+                    ImportIssue(
+                        source_row=row.source_row,
+                        external_code=row.external_code,
+                        issue_type="combo_price_unresolved",
+                        message=(
+                            "Produto-pai de combo com preço técnico "
+                            "R$ 0,01 não possui componentes consecutivos. "
+                            "O produto não foi importado para evitar "
+                            "alteração incorreta de preço."
+                        ),
+                    )
+                )
+                continue
+
+            # Só somamos componentes explicitamente obrigatórios.
+            # Se aparecer item opcional, não é seguro inferir o preço.
+            if any(
+                "obrigat"
+                not in child.source_context.casefold()
+                for child in children
+            ):
+                issues.append(
+                    ImportIssue(
+                        source_row=row.source_row,
+                        external_code=row.external_code,
+                        issue_type="combo_price_unresolved",
+                        message=(
+                            "Combo possui componente não obrigatório. "
+                            "O preço do pai não foi inferido automaticamente."
+                        ),
+                    )
+                )
+                continue
+
+            # Mais de um componente da mesma categoria pode representar
+            # alternativas de escolha. Nesse caso não devemos somar todos.
+            category_keys = [
+                child.category.casefold()
+                for child in children
+            ]
+
+            if len(set(category_keys)) != len(category_keys):
+                issues.append(
+                    ImportIssue(
+                        source_row=row.source_row,
+                        external_code=row.external_code,
+                        issue_type="combo_price_ambiguous",
+                        message=(
+                            "Combo possui mais de um componente obrigatório "
+                            "na mesma categoria. O preço do pai não foi "
+                            "inferido automaticamente."
+                        ),
+                    )
+                )
+                continue
+
+            derived_price = sum(
+                (child.price for child in children),
+                Decimal("0.00"),
+            ).quantize(Decimal("0.01"))
+
+            if derived_price <= 0:
+                issues.append(
+                    ImportIssue(
+                        source_row=row.source_row,
+                        external_code=row.external_code,
+                        issue_type="combo_price_unresolved",
+                        message=(
+                            "A soma dos componentes do combo não gerou "
+                            "um preço válido."
+                        ),
+                    )
+                )
+                continue
+
+            normalized.append(
+                replace(
+                    row,
+                    price=derived_price,
+                )
+            )
+
+        return normalized, issues
 
     @staticmethod
     def _parse_row(
@@ -330,7 +468,12 @@ class ConsumerCatalogImportService:
             # principal, a linha normal é a fonte de verdade. Linhas de combo só
             # entram na disputa quando não existe nenhuma linha normal.
             regular_candidates = [
-                candidate for candidate in candidates if not candidate.is_combo_option
+                candidate
+                for candidate in candidates
+                if (
+                    not candidate.is_combo_parent
+                    and not candidate.is_combo_option
+                )
             ]
             preferred = regular_candidates or candidates
             report.duplicates_ignored += len(candidates) - len(preferred)

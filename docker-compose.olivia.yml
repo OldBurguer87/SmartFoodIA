@@ -1,0 +1,7 @@
+services:
+  api:
+    environment:
+      HUMAN_ONLY_MODE: "false"
+  worker:
+    environment:
+      HUMAN_ONLY_MODE: "false"
