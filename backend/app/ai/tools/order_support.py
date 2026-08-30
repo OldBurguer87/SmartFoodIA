@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
 from app.models.commercial import StoreCommercialRules
-from app.models.conversation import Conversation, HumanTicket
+from app.models.conversation import AIEvent, Conversation, HumanTicket
 from app.models.order import Order, OrderItem
 from app.models.payment import PaymentReceipt
 from app.schemas.conversation import HumanTicketCreate
@@ -336,6 +336,122 @@ class GetOrderStatusTool:
         )
 
         if order is None:
+            recent_failure = None
+
+            if self.context.conversation_id is not None:
+                cutoff = (
+                    datetime.now(timezone.utc)
+                    - timedelta(minutes=10)
+                )
+
+                recent_failure = self.context.db.scalar(
+                    select(AIEvent.id)
+                    .where(
+                        AIEvent.store_id == self.context.store_id,
+                        AIEvent.conversation_id
+                        == self.context.conversation_id,
+                        AIEvent.event_type == "TOOL_EXECUTION",
+                        AIEvent.tool_name == "get_order_status",
+                        AIEvent.success.is_(False),
+                        AIEvent.created_at >= cutoff,
+                    )
+                    .order_by(AIEvent.created_at.desc())
+                    .limit(1)
+                )
+
+            if (
+                recent_failure is not None
+                and self.context.conversation_id is not None
+            ):
+                reason = (
+                    "Pedido não localizado automaticamente após "
+                    "duas tentativas recentes de consulta."
+                )
+
+                ticket = self.context.db.scalar(
+                    select(HumanTicket)
+                    .where(
+                        HumanTicket.store_id == self.context.store_id,
+                        HumanTicket.conversation_id
+                        == self.context.conversation_id,
+                        HumanTicket.status.in_(
+                            ["OPEN", "IN_PROGRESS"]
+                        ),
+                        HumanTicket.reason == reason,
+                    )
+                    .order_by(HumanTicket.created_at.desc())
+                    .limit(1)
+                )
+
+                if ticket is None:
+                    ticket = ConversationService().create_ticket(
+                        self.context.db,
+                        store_id=self.context.store_id,
+                        payload=HumanTicketCreate(
+                            conversation_id=(
+                                self.context.conversation_id
+                            ),
+                            customer_id=None,
+                            category="OTHER",
+                            priority="NORMAL",
+                            reason=reason,
+                            customer_message=(
+                                "Cliente precisa de conferência "
+                                "manual de pedido não localizado."
+                            ),
+                        ),
+                    )
+
+                conversation = self.context.db.get(
+                    Conversation,
+                    self.context.conversation_id,
+                )
+
+                staff_notified = 0
+
+                if (
+                    conversation is not None
+                    and conversation.status not in {
+                        "WAITING_HUMAN",
+                        "HUMAN",
+                        "RESUMING_OLIVIA",
+                        "CLOSED",
+                    }
+                ):
+                    ConversationService().wait_for_human(
+                        self.context.db,
+                        conversation_id=(
+                            self.context.conversation_id
+                        ),
+                        reason=reason,
+                        ticket_id=ticket.id,
+                    )
+
+                    staff_notified = (
+                        HumanRelayService().notify_waiting(
+                            self.context.db,
+                            store_id=self.context.store_id,
+                            conversation_id=(
+                                self.context.conversation_id
+                            ),
+                            reason=reason,
+                        )
+                    )
+
+                return ToolResult(
+                    ok=False,
+                    error=(
+                        "Pedido não localizado automaticamente. "
+                        "A equipe foi acionada para conferência."
+                    ),
+                    requires_human=True,
+                    data={
+                        "ticket_id": str(ticket.id),
+                        "staff_notified": staff_notified,
+                        "automatic_handoff": True,
+                    },
+                )
+
             return ToolResult(
                 ok=False,
                 error=(

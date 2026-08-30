@@ -786,3 +786,110 @@ def test_olivia_prompt_blocks_ambiguous_product_selection():
     assert "payment_confirmed" in OLIVIA_INSTRUCTIONS
     assert "pix_receipt_status" in OLIVIA_INSTRUCTIONS
     assert "Faça UMA pergunta por vez" in OLIVIA_INSTRUCTIONS
+
+def test_repeated_missing_order_status_escalates_to_human(monkeypatch):
+    db, store, _ = setup_registry()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999007788",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999007788",
+        )
+    )
+
+    notifications = []
+
+    def fake_notify_waiting(self, db, **kwargs):
+        notifications.append(kwargs)
+        return 1
+
+    monkeypatch.setattr(
+        "app.ai.tools.order_support.HumanRelayService.notify_waiting",
+        fake_notify_waiting,
+    )
+
+    first = registry.execute(
+        "get_order_status",
+        {"order_number": "999999"},
+    )
+
+    assert first.ok is False
+    assert first.requires_human is False
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="get_order_status",
+            success=False,
+            payload_json={
+                "result": {
+                    "ok": False,
+                    "error": first.error,
+                    "requires_human": False,
+                },
+            },
+            error_message=first.error,
+        )
+    )
+    db.commit()
+
+    second = registry.execute(
+        "get_order_status",
+        {"order_number": "999999"},
+    )
+
+    assert second.ok is False
+    assert second.requires_human is True
+    assert second.data["automatic_handoff"] is True
+    assert second.data["staff_notified"] == 1
+
+    db.refresh(conversation)
+    assert conversation.status == "WAITING_HUMAN"
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id
+            )
+        )
+    )
+
+    assert len(tickets) == 1
+    ticket_id = str(tickets[0].id)
+    assert second.data["ticket_id"] == ticket_id
+    assert len(notifications) == 1
+
+    third = registry.execute(
+        "get_order_status",
+        {"order_number": "999999"},
+    )
+
+    assert third.ok is False
+    assert third.requires_human is True
+    assert third.data["ticket_id"] == ticket_id
+    assert third.data["staff_notified"] == 0
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id
+            )
+        )
+    )
+
+    assert len(tickets) == 1
+    assert len(notifications) == 1
