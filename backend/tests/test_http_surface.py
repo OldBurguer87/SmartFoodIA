@@ -57,6 +57,7 @@ def test_mutating_http_routes_are_explicitly_classified() -> None:
         ("POST", "/api/v1/operations/conversations/{conversation_id}/takeover"),
         ("POST", "/api/v1/operations/knowledge-gaps/{gap_id}/resolve"),
         ("POST", "/api/v1/operations/stores/{store_id}/catalog/import/consumer"),
+        ("POST", "/api/v1/operations/stores/{store_id}/customers/{customer_id}/conversation"),
         ("PUT", "/api/v1/operations/stores/{store_id}/operation-mode"),
         ("PUT", "/api/v1/operations/stores/{store_id}/commercial-rules"),
         ("PUT", "/api/v1/operations/stores/{store_id}/commercial-rules/hours/{weekday}"),

@@ -4,9 +4,10 @@ from uuid import uuid4
 import pytest
 from app.api import customer_operations as customer_operations_api
 from app.models.cart import Cart
+from app.models.conversation import Conversation
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database.base import Base
@@ -20,6 +21,7 @@ from app.models.catalog import (
     Store,
 )
 from app.schemas.cart import CartItemAdd, CartItemUpdate, ModifierSelection
+from app.schemas.conversation import ConversationTakeoverRequest
 from app.schemas.customer import AddressCreate, CustomerCreate
 from app.services.cart import CartService, CartValidationError
 from app.services.customer import CustomerService
@@ -367,3 +369,57 @@ def test_customer_detail_marks_confirmed_pix(
     assert orders["000951"]["pix_confirmed"] is True
     assert orders["000952"]["pix_confirmed"] is False
     assert orders["000953"]["pix_confirmed"] is False
+
+def test_customer_conversation_is_reused_and_taken_over() -> None:
+    db, store = make_db()
+
+    customer = CustomerService().find_or_create(
+        db,
+        CustomerCreate(
+            store_id=store.id,
+            name="Cliente WhatsApp",
+            phone="97999999999",
+        ),
+    )
+
+    payload = ConversationTakeoverRequest(
+        assigned_to="Atendente"
+    )
+
+    first = (
+        customer_operations_api
+        .open_customer_conversation(
+            store_id=store.id,
+            customer_id=customer.id,
+            payload=payload,
+            db=db,
+            _access=None,
+        )
+    )
+
+    second = (
+        customer_operations_api
+        .open_customer_conversation(
+            store_id=store.id,
+            customer_id=customer.id,
+            payload=payload,
+            db=db,
+            _access=None,
+        )
+    )
+
+    conversations = list(
+        db.scalars(
+            select(Conversation).where(
+                Conversation.store_id == store.id,
+                Conversation.customer_id
+                == customer.id,
+            )
+        ).all()
+    )
+
+    assert first["conversation_id"] == second["conversation_id"]
+    assert first["status"] == "HUMAN"
+    assert second["status"] == "HUMAN"
+    assert first["external_conversation_id"] == "5597999999999"
+    assert len(conversations) == 1

@@ -759,6 +759,52 @@ export function ConversationsConsole({
   }, []);
 
   useEffect(() => {
+    function handleCustomerConversation(
+      event: Event,
+    ) {
+      const requested = event as CustomEvent<{
+        conversationId?: string;
+      }>;
+
+      const conversationId =
+        requested.detail?.conversationId;
+
+      if (!conversationId) return;
+
+      setFilter("ALL");
+      setSearch("");
+
+      void (async () => {
+        await loadList(true);
+        await openConversation(conversationId);
+
+        window.requestAnimationFrame(() => {
+          document
+            .getElementById("conversas")
+            ?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+        });
+      })();
+    }
+
+    window.addEventListener(
+      "smartfoodia:open-conversation",
+      handleCustomerConversation,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "smartfoodia:open-conversation",
+        handleCustomerConversation,
+      );
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId]);
+
+
+  useEffect(() => {
     setOperationMode(null);
     void loadOperationMode();
 

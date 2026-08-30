@@ -553,6 +553,44 @@ export async function getCustomerDetail(
 
 
 
+export type CustomerConversationResult = {
+  conversation_id: string;
+  customer_id: string;
+  status: string;
+  external_conversation_id: string;
+};
+
+export async function openCustomerConversation(
+  storeId: string,
+  customerId: string,
+  assignedTo: string,
+): Promise<CustomerConversationResult> {
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/stores/${storeId}/customers/${customerId}/conversation`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assigned_to: assignedTo,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível abrir a conversa do cliente.",
+      ),
+    );
+  }
+
+  return response.json() as Promise<CustomerConversationResult>;
+}
+
+
 export type HumanOrderServiceMode = "DELIVERY" | "TAKEOUT";
 export type HumanOrderPaymentMethod =
   | "PIX"

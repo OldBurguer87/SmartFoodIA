@@ -11,6 +11,7 @@ import {
   CustomerSummary,
   getCustomerDetail,
   listCustomers,
+  openCustomerConversation,
 } from "@/lib/api";
 
 
@@ -32,6 +33,7 @@ export function CustomerWalletPanel({
   const [selected, setSelected] = useState<CustomerDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [conversationBusy, setConversationBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function loadCustomers(nextSearch = search) {
@@ -85,6 +87,44 @@ export function CustomerWalletPanel({
       );
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function startCustomerConversation(
+    customer: CustomerDetail,
+  ) {
+    if (conversationBusy) return;
+
+    setConversationBusy(true);
+    setError(null);
+
+    try {
+      const assignedTo =
+        window.localStorage
+          .getItem("smartfoodia-conversation-operator")
+          ?.trim() || "Atendente";
+
+      const result = await openCustomerConversation(
+        storeId,
+        customer.id,
+        assignedTo,
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("smartfoodia:open-conversation", {
+          detail: {
+            conversationId: result.conversation_id,
+          },
+        }),
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Não foi possível abrir a conversa.",
+      );
+    } finally {
+      setConversationBusy(false);
     }
   }
 
@@ -222,9 +262,25 @@ export function CustomerWalletPanel({
                   <p>{formatPhone(selected.phone)}</p>
                 </div>
 
-                <span className="customerStatus">
-                  Ativo
-                </span>
+                <div className="customerDetailActions">
+                  <span className="customerStatus">
+                    Ativo
+                  </span>
+
+                  <button
+                    type="button"
+                    className="customerWhatsappButton"
+                    onClick={() =>
+                      void startCustomerConversation(selected)
+                    }
+                    disabled={conversationBusy}
+                    aria-label={`Conversar com ${selected.name} no WhatsApp`}
+                  >
+                    {conversationBusy
+                      ? "Abrindo conversa..."
+                      : "Conversar no WhatsApp"}
+                  </button>
+                </div>
               </header>
 
               <div className="customerSection">

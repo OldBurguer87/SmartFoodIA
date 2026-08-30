@@ -1239,6 +1239,48 @@ h1 {
   font-weight: 800;
 }
 
+.customerDetailActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.customerWhatsappButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 8px 13px;
+  border: 0;
+  border-radius: 10px;
+  background: #25d366;
+  color: #10361f;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
+}
+
+.customerWhatsappButton:not(:disabled):hover {
+  filter: brightness(0.96);
+  transform: translateY(-1px);
+}
+
+.customerWhatsappButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.customerWhatsappButton:focus-visible {
+  outline: 3px solid rgba(37, 211, 102, 0.25);
+  outline-offset: 2px;
+}
+
 .customerSection {
   padding-top: 20px;
 }
