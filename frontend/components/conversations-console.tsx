@@ -21,6 +21,7 @@ import {
   listConversations,
   listCustomers,
   markConversationRead,
+  releaseConversation,
   sendHumanMedia,
   sendHumanReply,
   takeOverConversation,
@@ -518,6 +519,58 @@ export function ConversationsConsole({
     }
   }
 
+  async function returnConversationToOlivia() {
+    if (
+      !selected ||
+      selected.status !== "HUMAN" ||
+      busy
+    ) {
+      return;
+    }
+
+    if (
+      operationMode?.effective_mode !== "OLIVIA"
+    ) {
+      setError(
+        "A Olívia precisa estar ativa na loja antes de receber esta conversa.",
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Devolver o atendimento de ${displayName(selected)} para a Olívia?`,
+    );
+
+    if (!confirmed) return;
+
+    const conversationId = selected.id;
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      await releaseConversation(
+        conversationId,
+        operator.trim() || "Atendente",
+      );
+
+      setReply("");
+
+      await Promise.all([
+        openConversation(conversationId, true),
+        loadList(true),
+      ]);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao devolver atendimento para a Olívia.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function finishConversation() {
     if (
       !selected ||
@@ -991,6 +1044,10 @@ export function ConversationsConsole({
   }, [selected?.id, lastMessageId]);
 
   const counts = useMemo(() => {
+    const open = items.filter(
+      (item) => item.status === "OPEN",
+    ).length;
+
     const waiting = items.filter(
       (item) => item.status === "WAITING_HUMAN",
     ).length;
@@ -1004,6 +1061,7 @@ export function ConversationsConsole({
     ).length;
 
     return {
+      open,
       waiting,
       human,
       closed,
@@ -1039,6 +1097,7 @@ export function ConversationsConsole({
 
         if (filter === "ACTIVE") {
           return (
+            item.status === "OPEN" ||
             item.status === "WAITING_HUMAN" ||
             item.status === "HUMAN"
           );
@@ -1197,7 +1256,7 @@ export function ConversationsConsole({
           >
             Ativas
             <strong>
-              {counts.waiting + counts.human}
+              {counts.open + counts.waiting + counts.human}
             </strong>
           </button>
 
@@ -1432,13 +1491,32 @@ export function ConversationsConsole({
                       </button>
                       <button
                         type="button"
+                        className="releaseConversationButton"
+                        onClick={() =>
+                          void returnConversationToOlivia()
+                        }
+                        disabled={
+                          busy ||
+                          operationMode?.effective_mode !== "OLIVIA"
+                        }
+                        title={
+                          operationMode?.effective_mode === "OLIVIA"
+                            ? "Devolver esta conversa para a Olívia"
+                            : "A Olívia não está ativa nesta loja"
+                        }
+                      >
+                        Devolver para Olívia
+                      </button>
+
+                      <button
+                        type="button"
                         className="closeConversationButton"
                         onClick={() =>
                           void finishConversation()
                         }
                         disabled={busy}
                       >
-                        Finalizar atendimento
+                        Encerrar conversa
                       </button>
                     </div>
                   ) : selected.status === "CLOSED" ? (

@@ -183,8 +183,11 @@ def test_ready_delivery_says_waiting_for_delivery():
 
     assert sent is True
     assert message is not None
-    assert "aguardando sair para entrega" in message.content.lower()
-    assert "pronto para retirada" not in message.content.lower()
+    content = message.content.lower()
+    assert "prontinho" in content
+    assert "organizando a saída para entrega" in content
+    assert "entregador sair" in content
+    assert "retirada" not in content
 
 
 def test_ready_takeout_says_ready_for_pickup():
@@ -207,8 +210,11 @@ def test_ready_takeout_says_ready_for_pickup():
 
     assert sent is True
     assert message is not None
-    assert "pronto para retirada" in message.content.lower()
-    assert "aguardando sair para entrega" not in message.content.lower()
+    content = message.content.lower()
+    assert "prontinho para retirada" in content
+    assert "pode vir buscar" in content
+    assert "estamos te esperando" in content
+    assert "saída para entrega" not in content
 
 
 
@@ -282,3 +288,52 @@ def test_notifier_without_conversation_still_queues_whatsapp():
     assert outbound is not None
     assert outbound.conversation_id is None
     assert messages == []
+
+
+def test_customer_friendly_messages_for_order_statuses():
+    expectations = {
+        "CONFIRMED": (
+            "preparando tudo com muito carinho",
+            "eu te aviso por aqui",
+        ),
+        "DISPATCHED": (
+            "saiu para entrega",
+            "campainha",
+            "telefone",
+            "já está a caminho",
+        ),
+        "CONCLUDED": (
+            "pedido finalizado",
+            "muito obrigado",
+            "até o próximo pedido",
+        ),
+        "CANCELLED": (
+            "pedido foi cancelado",
+            "fazer um novo pedido",
+        ),
+    }
+
+    for status, phrases in expectations.items():
+        db, store, order = setup_context()
+
+        sent = WhatsAppOrderStatusNotifier().notify_status_change(
+            db,
+            store_id=store.id,
+            order_id=order.id,
+            status=status,
+        )
+
+        message = db.scalar(
+            select(OutboundChannelMessage)
+            .order_by(OutboundChannelMessage.created_at.desc())
+        )
+
+        assert sent is True
+        assert message is not None
+
+        content = message.content.lower()
+
+        for phrase in phrases:
+            assert phrase in content
+
+        db.close()

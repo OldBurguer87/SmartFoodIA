@@ -13,12 +13,29 @@ from app.services.conversation import ConversationService
 
 
 STATUS_MESSAGES = {
-    "CONFIRMED": "Seu pedido foi confirmado pela {store_name}.",
-    "READY": "Seu pedido está pronto para retirada.",
-    "DISPATCHED": "Seu pedido saiu para entrega.",
-    "CONCLUDED": "Seu pedido foi finalizado. Obrigado pela preferência!",
+    "CONFIRMED": (
+        "🍔 Pedido confirmado! A {store_name} já está preparando tudo "
+        "com muito carinho para ficar do jeitinho que você espera. 😋 "
+        "Assim que houver novidade no seu pedido, eu te aviso por aqui. 💚"
+    ),
+    "READY": (
+        "✅ Seu pedido está prontinho para retirada! 🍔😋 "
+        "Pode vir buscar quando quiser. Estamos te esperando! 💚"
+    ),
+    "DISPATCHED": (
+        "🛵 Seu pedido saiu para entrega! Fique de olho e, se puder, "
+        "atento à campainha e ao telefone. 🔔📱 "
+        "Nosso entregador já está a caminho e daqui a pouquinho "
+        "seu pedido chega até você. 😋🍔"
+    ),
+    "CONCLUDED": (
+        "💚 Pedido finalizado! Esperamos que esteja tudo delicioso e "
+        "que você aproveite bastante. 😋🍔 "
+        "Muito obrigado por escolher a {store_name}. Até o próximo pedido!"
+    ),
     "CANCELLED": (
-        "Seu pedido foi cancelado. Entre em contato caso precise de ajuda."
+        "⚠️ Seu pedido foi cancelado. Se precisar de ajuda ou quiser "
+        "fazer um novo pedido, é só falar com a gente por aqui. 💚"
     ),
 }
 
@@ -73,7 +90,11 @@ class WhatsAppOrderStatusNotifier:
             return False
 
         if status == "READY" and order.service_mode == "DELIVERY":
-            template = "Seu pedido está pronto e aguardando sair para entrega."
+            template = (
+                "✅ Seu pedido está prontinho! 🍔 "
+                "Agora estamos organizando a saída para entrega. 🛵 "
+                "Assim que o entregador sair, eu te aviso por aqui. 💚"
+            )
 
         message = template.format(store_name=store.name)
         content = f"Pedido #{order.display_id}: {message}"

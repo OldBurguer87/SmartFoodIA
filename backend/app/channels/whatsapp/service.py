@@ -242,6 +242,39 @@ class WhatsAppGatewayService:
             ),
         )
 
+    def _is_explicit_new_order_request(
+        self,
+        value: str,
+    ) -> bool:
+        text = self._normalize_order_collection_text(value)
+
+        if not text:
+            return False
+
+        if (
+            self._is_order_collection_human_request(text)
+            or self._is_order_collection_cancel(text)
+        ):
+            return False
+
+        phrases = (
+            "quero fazer outro pedido",
+            "quero fazer um novo pedido",
+            "quero outro pedido",
+            "quero um novo pedido",
+            "vou fazer outro pedido",
+            "vou fazer um novo pedido",
+            "fazer outro pedido",
+            "fazer um novo pedido",
+            "adicionar outro pedido",
+            "abrir outro pedido",
+            "iniciar outro pedido",
+            "comecar outro pedido",
+            "mais um pedido",
+        )
+
+        return any(phrase in text for phrase in phrases)
+
     def _is_order_collection_start(self, value: str) -> bool:
         text = self._normalize_order_collection_text(value)
 
@@ -253,6 +286,9 @@ class WhatsAppGatewayService:
             or self._is_order_collection_cancel(text)
         ):
             return False
+
+        if self._is_explicit_new_order_request(text):
+            return True
 
         # Intencoes claramente informativas/operacionais devem continuar
         # sendo respondidas pela Olivia, e nunca iniciar coleta silenciosa.
@@ -1224,7 +1260,19 @@ class WhatsAppGatewayService:
                 store_id=account.store_id,
                 customer_id=customer.id,
             )
-            if active_order is not None:
+            collection_in_progress = (
+                self._order_collection_state(
+                    db,
+                    conversation_id=conversation.id,
+                )
+                != "NORMAL"
+            )
+
+            if (
+                active_order is not None
+                and not collection_in_progress
+                and not self._is_explicit_new_order_request(body)
+            ):
                 self._route_human_only(
                     db,
                     account=account,

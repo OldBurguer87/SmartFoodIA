@@ -1578,6 +1578,142 @@ def test_active_order_after_checkout_routes_directly_to_human_without_olivia():
     assert ticket.customer_message == "coloca uma batata também"
 
 
+def test_explicit_new_order_bypasses_active_previous_order():
+    db, store, _ = setup_db()
+
+    sender = "5597999999999"
+    customer = Customer(
+        store_id=store.id,
+        name="Cliente Novo Pedido",
+        phone=sender,
+        active=True,
+    )
+    db.add(customer)
+    db.flush()
+
+    previous_order = Order(
+        store_id=store.id,
+        customer_id=customer.id,
+        cart_id=uuid4(),
+        display_id="000990",
+        status="CONFIRMED",
+        service_mode="DELIVERY",
+        payment_method="PIX",
+        payment_type="PREPAID",
+        subtotal=Decimal("67.00"),
+        delivery_fee=Decimal("3.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("70.00"),
+        customer_name=customer.name,
+        customer_phone=sender,
+    )
+    db.add(previous_order)
+    db.commit()
+
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    first = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.new-order-after-checkout-1",
+            "Quero adicionar outro pedido",
+        ),
+    )
+
+    assert first.processed == 1
+    assert first.failed == 0
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+            Conversation.customer_id == customer.id,
+        )
+    )
+
+    assert conversation is not None
+    assert conversation.status == "OPEN"
+
+    first_state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert first_state is not None
+    assert first_state.payload_json["state"] == "COLLECTING_ORDER"
+
+    second = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.new-order-after-checkout-2",
+            "Adicionar um x-salada e uma batata junto com esse outro pedido",
+        ),
+    )
+
+    assert second.processed == 1
+    assert second.failed == 0
+    assert orchestrator.calls == []
+
+    db.refresh(conversation)
+
+    assert conversation.status == "OPEN"
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id
+            )
+        )
+    )
+
+    assert tickets == []
+
+    messages = list(
+        db.scalars(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "INBOUND",
+            )
+            .order_by(Message.created_at)
+        )
+    )
+
+    contents = [message.content for message in messages]
+
+    assert "Quero adicionar outro pedido" in contents
+    assert (
+        "Adicionar um x-salada e uma batata junto com esse outro pedido"
+        in contents
+    )
+
+    final_state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert final_state is not None
+    assert final_state.payload_json["state"] == "COLLECTING_ORDER"
+
+    db.close()
+
+
 def test_terminal_order_after_checkout_does_not_block_olivia():
     for index, terminal_status in enumerate(("CONCLUDED", "CANCELLED"), start=1):
         db, store, _ = setup_db()
