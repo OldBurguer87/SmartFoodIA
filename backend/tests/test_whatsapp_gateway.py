@@ -2332,3 +2332,34 @@ def test_order_collection_menu_request_keeps_full_non_order_capability():
     assert state.payload_json["state"] == "COLLECTING_ORDER"
 
     db.close()
+
+
+def test_order_collection_payment_finish_triggers():
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: FakeOrchestrator(),
+        client_factory=lambda: FakeClient(),
+    )
+
+    finish_messages = (
+        "Pagamento no pix",
+        "Vou pagar no pix",
+        "PIX",
+        "Chave pix",
+        "Manda a chave pix",
+        "Esperando a chave",
+        "Pagamento no cartão",
+        "Pagamento no crédito",
+        "Pagamento no débito",
+        "Pagamento em dinheiro",
+        "Troco para 50",
+    )
+
+    for message in finish_messages:
+        assert service._is_order_collection_finish_trigger(message)
+
+    assert not service._is_order_collection_finish_trigger(
+        "Aceita pix?"
+    )
+    assert not service._is_order_collection_finish_trigger(
+        "Tem desconto no pix?"
+    )

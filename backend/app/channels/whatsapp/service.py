@@ -395,7 +395,61 @@ class WhatsAppGatewayService:
             "preco do item",
         )
 
-        return any(term in compact for term in value_triggers)
+        if any(term in compact for term in value_triggers):
+            return True
+
+        payment_exact = {
+            "pix",
+            "no pix",
+            "pelo pix",
+            "cartao",
+            "credito",
+            "debito",
+            "dinheiro",
+        }
+
+        if compact in payment_exact:
+            return True
+
+        payment_triggers = (
+            "pagamento no pix",
+            "pagamento pix",
+            "pagar no pix",
+            "vou pagar no pix",
+            "pago no pix",
+            "pode ser pix",
+            "vai ser pix",
+            "via pix",
+            "pagamento via pix",
+            "pagar via pix",
+            "chave pix",
+            "manda a chave pix",
+            "manda a chave",
+            "manda o pix",
+            "me passa a chave pix",
+            "me passa a chave",
+            "qual a chave pix",
+            "qual e a chave pix",
+            "esperando a chave",
+            "aguardando a chave",
+            "pagamento no cartao",
+            "pagamento em cartao",
+            "vou pagar no cartao",
+            "pode ser cartao",
+            "pagar no credito",
+            "pagamento no credito",
+            "pagar no debito",
+            "pagamento no debito",
+            "pagamento em dinheiro",
+            "vou pagar em dinheiro",
+            "pagar em dinheiro",
+            "troco para",
+        )
+
+        return any(
+            term in compact
+            for term in payment_triggers
+        )
 
     def _is_order_collection_general_question(
         self,

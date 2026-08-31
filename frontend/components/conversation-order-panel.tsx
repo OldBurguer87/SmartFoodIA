@@ -101,6 +101,9 @@ export function ConversationOrderPanel({
     useState<{
       id: string;
       display_id: string;
+      subtotal?: number | string;
+      delivery_fee?: number | string;
+      service_mode?: HumanOrderServiceMode;
       total: number | string;
       status: string;
       payment_method: HumanOrderPaymentMethod;
@@ -682,6 +685,9 @@ export function ConversationOrderPanel({
       setCompletedOrder({
         id: String(order.id),
         display_id: String(order.display_id),
+        subtotal: order.subtotal,
+        delivery_fee: order.delivery_fee,
+        service_mode: order.service_mode,
         total: order.total,
         status: String(order.status),
         payment_method: paymentMethod,
@@ -912,11 +918,38 @@ export function ConversationOrderPanel({
             Pedido #{completedOrder.display_id} criado
           </strong>
 
+          {completedOrder.subtotal !== undefined && (
+            <span>
+              Produtos:{" "}
+              {Number(completedOrder.subtotal).toLocaleString(
+                "pt-BR",
+                {
+                  style: "currency",
+                  currency: "BRL",
+                },
+              )}
+            </span>
+          )}
+
+          {completedOrder.service_mode === "DELIVERY" &&
+            completedOrder.delivery_fee !== undefined && (
+              <span>
+                Taxa de entrega:{" "}
+                {Number(
+                  completedOrder.delivery_fee,
+                ).toLocaleString(
+                  "pt-BR",
+                  {
+                    style: "currency",
+                    currency: "BRL",
+                  },
+                )}
+              </span>
+            )}
+
           <span>
             Total:{" "}
-            {Number(
-              completedOrder.total,
-            ).toLocaleString(
+            {Number(completedOrder.total).toLocaleString(
               "pt-BR",
               {
                 style: "currency",
