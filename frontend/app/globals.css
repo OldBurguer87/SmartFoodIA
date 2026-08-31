@@ -3344,3 +3344,36 @@ h1 {
     padding: 12px;
   }
 }
+
+
+/* CENTRAL - ACOES DO ATENDIMENTO RESPONSIVAS */
+
+.chatHeaderV2 {
+  flex-wrap: wrap;
+}
+
+.chatHeaderAction {
+  flex: 1 1 520px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.conversationOwnedActions {
+  width: 100%;
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.conversationOwnedActions > * {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1100px) {
+  .chatHeaderAction {
+    flex-basis: 100%;
+  }
+
+  .conversationOwnedActions {
+    justify-content: flex-start;
+  }
+}
