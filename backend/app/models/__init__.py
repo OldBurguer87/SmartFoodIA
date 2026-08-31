@@ -36,6 +36,7 @@ from app.models.commercial import (
     StoreBusinessHours,
     StoreCommercialRules,
     StoreDeliveryZone,
+    StoreDeliveryPlace,
 )
 from app.models.menu import StoreMenuDocument
 from app.models.staff import StoreStaffMember
@@ -86,6 +87,7 @@ __all__ = [
     "StoreCatalogConfig",
     "StoreCommercialRules",
     "StoreDeliveryZone",
+    "StoreDeliveryPlace",
     "StoreIntegration",
     "StoreMenuDocument",
     "StoreStaffMember",

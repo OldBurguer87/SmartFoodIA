@@ -37,6 +37,7 @@ from app.models.commercial import (  # noqa: F401
     StoreBusinessHours,
     StoreCommercialRules,
     StoreDeliveryZone,
+    StoreDeliveryPlace,
 )
 from app.models.menu import StoreMenuDocument  # noqa: F401
 from app.models.staff import StoreStaffMember  # noqa: F401

@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.models.channel import ChannelAccount, ChannelEvent
 from app.models.customer import Customer
 from app.models.conversation import AIEvent
+from app.models.commercial import StoreCommercialRules
 from app.repositories.channel import ChannelRepository
 from app.repositories.order import OrderRepository
 from app.schemas.conversation import (
@@ -372,6 +373,16 @@ class WhatsAppGatewayService:
             "finaliza",
             "finalizar",
             "fechar pedido",
+            "nao",
+            "nao obrigado",
+            "nao obrigada",
+            "nao so isso",
+            "ja pode montar",
+            "pode montar",
+            "pode montar o pedido",
+            "pode montar meu pedido",
+            "monta o pedido",
+            "monta meu pedido",
         }
 
         if (
@@ -450,6 +461,59 @@ class WhatsAppGatewayService:
             term in compact
             for term in payment_triggers
         )
+
+    def _is_order_collection_wait_time_question(
+        self,
+        value: str,
+    ) -> bool:
+        text = self._normalize_order_collection_text(value)
+
+        if not text:
+            return False
+
+        triggers = (
+            "vai demorar",
+            "vai demora",
+            "demora muito",
+            "quanto demora",
+            "quanto vai demorar",
+            "quanto tempo",
+            "qual o tempo",
+            "tempo de preparo",
+            "tempo para ficar pronto",
+            "tempo pra ficar pronto",
+            "quando fica pronto",
+            "quando vai ficar pronto",
+        )
+
+        return any(
+            trigger in text
+            for trigger in triggers
+        )
+
+    def _order_collection_average_prep_minutes(
+        self,
+        db: Session,
+        *,
+        store_id: Any,
+    ) -> int | None:
+        value = db.scalar(
+            select(
+                StoreCommercialRules.average_prep_minutes
+            ).where(
+                StoreCommercialRules.store_id == store_id,
+            )
+        )
+
+        if value is None:
+            return None
+
+        try:
+            minutes = int(value)
+        except (TypeError, ValueError):
+            return None
+
+        return minutes if minutes > 0 else None
 
     def _is_order_collection_general_question(
         self,
@@ -1431,6 +1495,48 @@ class WhatsAppGatewayService:
                 )
                 return
 
+            if self._is_order_collection_wait_time_question(body):
+                self._save_order_collection_customer_message(
+                    db,
+                    conversation_id=conversation.id,
+                    event=event,
+                    content=body,
+                )
+
+                prep_minutes = (
+                    self._order_collection_average_prep_minutes(
+                        db,
+                        store_id=account.store_id,
+                    )
+                )
+
+                if prep_minutes is not None:
+                    prep_message = (
+                        "Nosso tempo médio de preparo é de cerca de "
+                        f"{prep_minutes} minutos 👍 "
+                        "Pode continuar me enviando os itens. "
+                        "Quando terminar, diga 'só isso' ou "
+                        "'já pode montar'."
+                    )
+                else:
+                    prep_message = (
+                        "O tempo de preparo pode variar conforme "
+                        "o movimento 👍 "
+                        "Pode continuar me enviando os itens. "
+                        "Quando terminar, diga 'só isso' ou "
+                        "'já pode montar'."
+                    )
+
+                self._send_order_collection_message(
+                    db,
+                    account=account,
+                    conversation=conversation,
+                    recipient=sender,
+                    content=prep_message,
+                    prompt_type="ORDER_COLLECTION_PREP_TIME",
+                )
+                return
+
             if self._is_order_collection_general_question(body):
                 olivia_extra_instructions = (
                     "CONTEXTO TEMPORARIO DE COLETA DE PEDIDO: "
@@ -1450,20 +1556,24 @@ class WhatsAppGatewayService:
                 }
 
             else:
-                self._save_order_collection_customer_message(
-                    db,
-                    conversation_id=conversation.id,
-                    event=event,
-                    content=body,
-                )
-
                 if self._is_order_collection_finish_trigger(body):
+                    # A pergunta "mais alguma coisa?" ja foi feita
+                    # deterministicamente apos o ultimo item.
+                    # Agora libera a Olivia uma unica vez para montar
+                    # todo o historico acumulado.
                     self._set_order_collection_state(
                         db,
                         store_id=account.store_id,
                         conversation_id=conversation.id,
-                        state="AWAITING_EXTRA",
-                        reason="customer_finished_collection",
+                        state="NORMAL",
+                        reason="customer_ready_to_mount",
+                    )
+                else:
+                    self._save_order_collection_customer_message(
+                        db,
+                        conversation_id=conversation.id,
+                        event=event,
+                        content=body,
                     )
                     self._send_order_collection_message(
                         db,
@@ -1471,13 +1581,12 @@ class WhatsAppGatewayService:
                         conversation=conversation,
                         recipient=sender,
                         content=(
-                            "Certo. Antes de fechar, deseja acrescentar "
-                            "mais alguma coisa ou algum adicional ao pedido?"
+                            "Anotei 👍 Mais alguma coisa ou "
+                            "ja posso montar seu pedido?"
                         ),
-                        prompt_type="ORDER_COLLECTION_EXTRA_PROMPT",
+                        prompt_type="ORDER_COLLECTION_ITEM_ACK",
                     )
-
-                return
+                    return
 
         if (
             conversation.status == "OPEN"

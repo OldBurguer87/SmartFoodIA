@@ -68,8 +68,8 @@ function initials(name: string) {
 }
 
 function statusLabel(status: ConversationSummary["status"]) {
-  if (status === "WAITING_HUMAN") return "Aguardando";
-  if (status === "HUMAN") return "Em atendimento";
+  if (status === "WAITING_HUMAN") return "Ajuda solicitada";
+  if (status === "HUMAN") return "Atendimento humano";
   if (status === "CLOSED") return "Encerrada";
   return "Aberta";
 }
@@ -279,6 +279,8 @@ export function ConversationsConsole({
 
   const unreadSnapshot =
     useRef<Map<string, number>>(new Map());
+  const humanAttentionSnapshot =
+    useRef<Set<string>>(new Set());
   const listInitialized = useRef(false);
   const audioContext =
     useRef<AudioContext | null>(null);
@@ -315,6 +317,49 @@ export function ConversationsConsole({
     oscillator.stop(start + 0.25);
   }
 
+  function playHumanAttentionSound() {
+    const context = audioContext.current;
+
+    if (!context || context.state !== "running") return;
+
+    const start = context.currentTime;
+
+    [0, 0.28].forEach((offset) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(
+        980,
+        start + offset,
+      );
+
+      oscillator.frequency.exponentialRampToValueAtTime(
+        760,
+        start + offset + 0.18,
+      );
+
+      gain.gain.setValueAtTime(
+        0.0001,
+        start + offset,
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.2,
+        start + offset + 0.015,
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        start + offset + 0.2,
+      );
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+
+      oscillator.start(start + offset);
+      oscillator.stop(start + offset + 0.21);
+    });
+  }
+
   async function loadList(silent = false) {
     if (!storeId) return;
 
@@ -329,17 +374,39 @@ export function ConversationsConsole({
             (unreadSnapshot.current.get(item.id) ?? 0),
         );
 
+      const nextHumanAttention = new Set(
+        nextItems
+          .filter(
+            (item) =>
+              item.status === "WAITING_HUMAN",
+          )
+          .map((item) => item.id),
+      );
+
+      const hasNewHumanAttention =
+        listInitialized.current &&
+        Array.from(nextHumanAttention).some(
+          (id) =>
+            !humanAttentionSnapshot.current.has(id),
+        );
+
       unreadSnapshot.current = new Map(
         nextItems.map((item) => [
           item.id,
           item.unread_count ?? 0,
         ]),
       );
+
+      humanAttentionSnapshot.current =
+        nextHumanAttention;
+
       listInitialized.current = true;
 
       setItems(nextItems);
 
-      if (hasNewUnread) {
+      if (hasNewHumanAttention) {
+        playHumanAttentionSound();
+      } else if (hasNewUnread) {
         playNewMessageSound();
       }
 
@@ -1088,7 +1155,10 @@ export function ConversationsConsole({
         }
 
         if (filter === "HUMAN") {
-          return item.status === "HUMAN";
+          return (
+            item.status === "WAITING_HUMAN" ||
+            item.status === "HUMAN"
+          );
         }
 
         if (filter === "CLOSED") {
@@ -1096,11 +1166,7 @@ export function ConversationsConsole({
         }
 
         if (filter === "ACTIVE") {
-          return (
-            item.status === "OPEN" ||
-            item.status === "WAITING_HUMAN" ||
-            item.status === "HUMAN"
-          );
+          return item.status === "OPEN";
         }
 
         return true;
@@ -1254,32 +1320,26 @@ export function ConversationsConsole({
             }
             onClick={() => setFilter("ACTIVE")}
           >
-            Ativas
-            <strong>
-              {counts.open + counts.waiting + counts.human}
-            </strong>
+            Olívia
+            <strong>{counts.open}</strong>
           </button>
 
           <button
             type="button"
-            className={
-              filter === "WAITING" ? "active" : ""
-            }
-            onClick={() => setFilter("WAITING")}
-          >
-            Aguardando
-            <strong>{counts.waiting}</strong>
-          </button>
-
-          <button
-            type="button"
-            className={
-              filter === "HUMAN" ? "active" : ""
-            }
+            className={[
+              filter === "HUMAN" ? "active" : "",
+              counts.waiting > 0
+                ? "needsHumanAttention"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             onClick={() => setFilter("HUMAN")}
           >
-            Em atendimento
-            <strong>{counts.human}</strong>
+            Ajuda do atendente
+            <strong>
+              {counts.waiting + counts.human}
+            </strong>
           </button>
 
           <button
@@ -1540,16 +1600,64 @@ export function ConversationsConsole({
               </header>
 
               {orderOpen && selectedCustomer?.id && (
-                <div className="conversationOrderOverlay">
-                  <ConversationOrderPanel
-                    storeId={storeId}
-                    conversationId={selected.id}
-                    messages={selected.messages}
-                    assignedTo={operator.trim()}
-                    customerId={selectedCustomer.id}
-                    customerName={displayName(selected)}
-                    onClose={() => setOrderOpen(false)}
-                  />
+                <div className="conversationOrderOverlay conversationOrderSplit">
+                  <section className="conversationOrderHistory">
+                    <header>
+                      <div>
+                        <small>CONVERSA DO CLIENTE</small>
+                        <strong>
+                          {displayName(selected)}
+                        </strong>
+                      </div>
+
+                      <span>
+                        Consulte itens, endereço e dúvidas
+                        enquanto lança o pedido.
+                      </span>
+                    </header>
+
+                    <div className="conversationOrderHistoryTimeline">
+                      {selected.messages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`messageBubble ${message.sender_type.toLowerCase()}`}
+                        >
+                          <span>{author(message)}</span>
+
+                          <MessageContent
+                            conversationId={selected.id}
+                            message={message}
+                          />
+
+                          <time>
+                            {new Date(
+                              message.created_at,
+                            ).toLocaleString(
+                              "pt-BR",
+                              {
+                                day: "2-digit",
+                                month: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              },
+                            )}
+                          </time>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <div className="conversationOrderForm">
+                    <ConversationOrderPanel
+                      storeId={storeId}
+                      conversationId={selected.id}
+                      messages={selected.messages}
+                      assignedTo={operator.trim()}
+                      customerId={selectedCustomer.id}
+                      customerName={displayName(selected)}
+                      onClose={() => setOrderOpen(false)}
+                    />
+                  </div>
                 </div>
               )}
 

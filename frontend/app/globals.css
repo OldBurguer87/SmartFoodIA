@@ -3202,3 +3202,145 @@ h1 {
   font-weight: 900;
   line-height: 1;
 }
+
+
+/* =========================================================
+   Atendimento humano - alerta operacional
+   ========================================================= */
+
+@keyframes smartfoodiaHumanHelpPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(179, 50, 50, 0.18);
+  }
+
+  50% {
+    transform: scale(1.025);
+    box-shadow: 0 0 0 7px rgba(179, 50, 50, 0.08);
+  }
+}
+
+.consoleTabs button.needsHumanAttention {
+  border-color: #d86d62;
+  background: #fff0ee;
+  color: #8e2929;
+  animation: smartfoodiaHumanHelpPulse 1.15s ease-in-out infinite;
+}
+
+.consoleTabs button.needsHumanAttention strong {
+  background: #b33232;
+  color: white;
+}
+
+
+/* =========================================================
+   Lançamento de pedido + conversa lado a lado
+   ========================================================= */
+
+.conversationOrderOverlay.conversationOrderSplit {
+  position: fixed;
+  inset: 22px;
+  z-index: 1000;
+  display: grid;
+  grid-template-columns:
+    minmax(340px, 0.8fr)
+    minmax(520px, 1.2fr);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: white;
+  box-shadow:
+    0 24px 80px rgba(20, 28, 22, 0.28);
+}
+
+.conversationOrderHistory {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: #f5f6f3;
+}
+
+.conversationOrderHistory > header {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  background: white;
+}
+
+.conversationOrderHistory > header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.conversationOrderHistory > header small {
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.conversationOrderHistory > header strong {
+  font-size: 18px;
+}
+
+.conversationOrderHistory > header > span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.conversationOrderHistoryTimeline {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 18px;
+}
+
+.conversationOrderForm {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: white;
+}
+
+.conversationOrderForm .conversationOrderPanel {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+@media (max-width: 980px) {
+  .conversationOrderOverlay.conversationOrderSplit {
+    inset: 8px;
+    grid-template-columns: 1fr;
+    grid-template-rows:
+      minmax(220px, 38vh)
+      minmax(0, 1fr);
+    border-radius: 14px;
+  }
+
+  .conversationOrderHistory {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .conversationOrderHistoryTimeline {
+    padding: 12px;
+  }
+}

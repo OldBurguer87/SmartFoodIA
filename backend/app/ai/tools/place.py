@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from decimal import Decimal
 from typing import Any
+
+from sqlalchemy import select
 
 from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
 from app.ai.usage import extract_openai_usage
 from app.core.config import settings
 from app.models.catalog import Store
+from app.models.commercial import StoreDeliveryPlace
 from app.models.conversation import AIEvent
 
 
@@ -42,6 +47,45 @@ class LookupDeliveryPlaceTool:
         self.context = context
 
     @staticmethod
+    def _normalize(value: str) -> str:
+        text = unicodedata.normalize("NFKD", str(value or ""))
+        text = "".join(
+            char for char in text
+            if not unicodedata.combining(char)
+        )
+        text = re.sub(r"[^a-z0-9]+", " ", text.casefold())
+        return re.sub(r"\\s+", " ", text).strip()
+
+    def _lookup_local(self, name: str) -> StoreDeliveryPlace | None:
+        wanted = self._normalize(name)
+
+        places = list(
+            self.context.db.scalars(
+                select(StoreDeliveryPlace).where(
+                    StoreDeliveryPlace.store_id == self.context.store_id,
+                    StoreDeliveryPlace.active.is_(True),
+                )
+            )
+        )
+
+        for place in places:
+            candidates = {
+                self._normalize(place.name),
+                self._normalize(place.normalized_name),
+            }
+
+            candidates.update(
+                self._normalize(alias)
+                for alias in (place.aliases or [])
+                if alias
+            )
+
+            if wanted in candidates:
+                return place
+
+        return None
+
+    @staticmethod
     def _add_web_search_cost(usage: dict[str, Any] | None) -> dict[str, Any] | None:
         if usage is None:
             return None
@@ -64,6 +108,48 @@ class LookupDeliveryPlaceTool:
         store = self.context.db.get(Store, self.context.store_id)
         if store is None:
             return ToolResult(ok=False, error="Loja não encontrada.")
+
+        local_place = self._lookup_local(name)
+
+        if local_place is not None:
+            is_hotel = local_place.place_type.upper() in {
+                "HOTEL",
+                "POUSADA",
+            }
+
+            return ToolResult(
+                ok=True,
+                data={
+                    "found": True,
+                    "confidence": "HIGH",
+                    "source": "LOCAL",
+                    "trusted_saved_place": True,
+                    "place_id": str(local_place.id),
+                    "place_name": name,
+                    "canonical_name": local_place.name,
+                    "place_type": local_place.place_type,
+                    "street": local_place.street,
+                    "number": local_place.number,
+                    "neighborhood": local_place.neighborhood,
+                    "city": local_place.city,
+                    "state": local_place.state,
+                    "postal_code": local_place.postal_code,
+                    "reference_suggestion": (
+                        local_place.reference
+                        or local_place.name
+                    ),
+                    "confirmation_required": False,
+                    "room_required": is_hotel,
+                    "next_step": (
+                        "O endereço é um hotel/pousada já aprovado. "
+                        "Não pergunte rua, número ou bairro novamente. "
+                        "Pergunte somente o número do quarto/apartamento."
+                        if is_hotel
+                        else
+                        "Use o endereço salvo sem pesquisar na internet."
+                    ),
+                },
+            )
 
         try:
             from openai import OpenAI

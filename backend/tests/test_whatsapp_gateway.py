@@ -1786,7 +1786,7 @@ def _order_collection_payload(message_id, body):
     return payload
 
 
-def test_order_collection_zero_gpt_until_extra_answer():
+def test_order_collection_zero_gpt_until_customer_ready_to_mount():
     db, store, _ = setup_db()
     orchestrator = FakeOrchestrator()
     client = FakeClient()
@@ -1796,7 +1796,7 @@ def test_order_collection_zero_gpt_until_extra_answer():
         client_factory=lambda: client,
     )
 
-    # Inicia coleta: zero GPT.
+    # Primeira mensagem inicia a coleta sem GPT.
     result = service.process_payload(
         db,
         _order_collection_payload(
@@ -1804,10 +1804,11 @@ def test_order_collection_zero_gpt_until_extra_answer():
             "quero 2 x salada",
         ),
     )
+
     assert result.failed == 0
     assert orchestrator.calls == []
 
-    # Segundo item: continua zero GPT.
+    # Outro item continua sem GPT.
     result = service.process_payload(
         db,
         _order_collection_payload(
@@ -1815,17 +1816,7 @@ def test_order_collection_zero_gpt_until_extra_answer():
             "e uma batata",
         ),
     )
-    assert result.failed == 0
-    assert orchestrator.calls == []
 
-    # Cliente encerra: pergunta de adicional, ainda zero GPT.
-    result = service.process_payload(
-        db,
-        _order_collection_payload(
-            "wamid.collect-3",
-            "só isso",
-        ),
-    )
     assert result.failed == 0
     assert orchestrator.calls == []
 
@@ -1834,6 +1825,41 @@ def test_order_collection_zero_gpt_until_extra_answer():
             Conversation.store_id == store.id,
         )
     )
+
+    # O cliente não fica mais em silêncio.
+    acknowledgements = list(
+        db.scalars(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "OUTBOUND",
+                Message.sender_type == "OLIVIA",
+            )
+            .order_by(Message.created_at)
+        )
+    )
+
+    assert any(
+        "mais alguma coisa" in message.content.lower()
+        and "montar seu pedido" in message.content.lower()
+        for message in acknowledgements
+    )
+
+    # Ao dizer que terminou, libera exatamente UMA chamada da Olivia.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-3",
+            "só isso",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+
+    assert orchestrator.calls[0]["customer_message"] == "só isso"
+    assert orchestrator.calls[0]["extra_instructions"] is None
+    assert orchestrator.calls[0]["excluded_tools"] is None
 
     state = db.scalar(
         select(AIEvent)
@@ -1845,22 +1871,8 @@ def test_order_collection_zero_gpt_until_extra_answer():
         .limit(1)
     )
 
-    assert state.payload_json["state"] == "AWAITING_EXTRA"
-
-    # Resposta sobre adicional libera UMA chamada da Olivia.
-    result = service.process_payload(
-        db,
-        _order_collection_payload(
-            "wamid.collect-4",
-            "não, pode fechar",
-        ),
-    )
-    assert result.failed == 0
-    assert len(orchestrator.calls) == 1
-
-    # Na chamada final, a Olivia volta com capacidade total.
-    assert orchestrator.calls[0]["extra_instructions"] is None
-    assert orchestrator.calls[0]["excluded_tools"] is None
+    assert state.payload_json["state"] == "NORMAL"
+    assert state.payload_json["reason"] == "customer_ready_to_mount"
 
     messages = list(
         db.scalars(
@@ -1878,7 +1890,6 @@ def test_order_collection_zero_gpt_until_extra_answer():
     assert "quero 2 x salada" in contents
     assert "e uma batata" in contents
     assert "só isso" in contents
-    assert "não, pode fechar" in contents
 
     db.close()
 
@@ -1984,7 +1995,7 @@ def test_order_collection_question_uses_olivia_once_and_keeps_collecting():
     db.close()
 
 
-def test_order_collection_human_request_while_awaiting_extra_uses_zero_gpt():
+def test_order_collection_human_request_during_collection_uses_zero_gpt():
     db, store, _ = setup_db()
     orchestrator = FakeOrchestrator()
     client = FakeClient()
@@ -1994,31 +2005,21 @@ def test_order_collection_human_request_while_awaiting_extra_uses_zero_gpt():
         client_factory=lambda: client,
     )
 
-    # Inicia pedido sem GPT.
     service.process_payload(
         db,
         _order_collection_payload(
-            "wamid.collect-human-extra-1",
+            "wamid.collect-human-1",
             "quero 2 x salada",
-        ),
-    )
-
-    # Encerra coleta e recebe pergunta deterministica de adicional.
-    service.process_payload(
-        db,
-        _order_collection_payload(
-            "wamid.collect-human-extra-2",
-            "só isso",
         ),
     )
 
     assert orchestrator.calls == []
 
-    # Em vez de responder sobre adicional, pede uma pessoa.
+    # Pedido de atendente durante COLLECTING_ORDER continua sem GPT.
     result = service.process_payload(
         db,
         _order_collection_payload(
-            "wamid.collect-human-extra-3",
+            "wamid.collect-human-2",
             "quero falar com atendente",
         ),
     )
@@ -2041,7 +2042,7 @@ def test_order_collection_human_request_while_awaiting_extra_uses_zero_gpt():
     )
 
     assert ticket is not None
-    assert "antes da confirmacao do pedido" in ticket.reason.lower()
+    assert "coleta do pedido" in ticket.reason.lower()
 
     state = db.scalar(
         select(AIEvent)
@@ -2054,6 +2055,7 @@ def test_order_collection_human_request_while_awaiting_extra_uses_zero_gpt():
     )
 
     assert state.payload_json["state"] == "NORMAL"
+    assert state.payload_json["reason"] == "human_request"
 
     db.close()
 
@@ -2363,3 +2365,212 @@ def test_order_collection_payment_finish_triggers():
     assert not service._is_order_collection_finish_trigger(
         "Tem desconto no pix?"
     )
+
+
+def test_release_to_olivia_resolves_active_human_tickets():
+    from app.services.conversation import ConversationService
+
+    db, store, _ = setup_db()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597000000000",
+        status="HUMAN",
+    )
+    db.add(conversation)
+    db.flush()
+
+    ticket_open = HumanTicket(
+        store_id=store.id,
+        conversation_id=conversation.id,
+        category="OTHER",
+        priority="URGENT",
+        status="OPEN",
+        reason="Teste ticket aberto",
+        customer_message="Preciso de ajuda",
+    )
+
+    ticket_progress = HumanTicket(
+        store_id=store.id,
+        conversation_id=conversation.id,
+        category="OTHER",
+        priority="URGENT",
+        status="IN_PROGRESS",
+        reason="Teste ticket em atendimento",
+        customer_message="Continuo precisando de ajuda",
+    )
+
+    db.add_all([ticket_open, ticket_progress])
+    db.commit()
+
+    ConversationService().release_to_olivia(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente Teste",
+    )
+
+    db.refresh(conversation)
+    db.refresh(ticket_open)
+    db.refresh(ticket_progress)
+
+    assert conversation.status == "OPEN"
+
+    for ticket in (ticket_open, ticket_progress):
+        assert ticket.status == "RESOLVED"
+        assert ticket.assigned_to == "Atendente Teste"
+        assert "olívia" in ticket.resolution.lower()
+
+    event = db.scalar(
+        select(AIEvent).where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "HUMAN_RELEASE",
+        )
+    )
+
+    assert event is not None
+
+    db.close()
+
+
+def test_order_collection_prep_time_uses_store_rule_zero_gpt():
+    from app.models.commercial import StoreCommercialRules
+
+    db, store, _ = setup_db()
+
+    rules = db.scalar(
+        select(StoreCommercialRules).where(
+            StoreCommercialRules.store_id == store.id,
+        )
+    )
+
+    if rules is None:
+        rules = StoreCommercialRules(
+            store_id=store.id,
+        )
+        db.add(rules)
+
+    rules.average_prep_minutes = 20
+    db.commit()
+
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    # As frases operacionais de tempo devem ser reconhecidas
+    # sem transformar perguntas de produto em tempo de preparo.
+    for phrase in (
+        "vai demorar?",
+        "quanto tempo demora?",
+        "qual o tempo?",
+        "quanto tempo para ficar pronto?",
+        "demora muito?",
+    ):
+        assert (
+            service._is_order_collection_wait_time_question(
+                phrase
+            )
+            is True
+        )
+
+    assert (
+        service._is_order_collection_wait_time_question(
+            "tem coca 1 litro?"
+        )
+        is False
+    )
+
+    # Inicia a coleta: zero GPT.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-prep-time-1",
+            "quero 2 x salada",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    # Pergunta sobre demora: continua zero GPT.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-prep-time-2",
+            "vai demorar?",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    messages = list(
+        db.scalars(
+            select(Message)
+            .where(
+                Message.conversation_id
+                == conversation.id,
+                Message.direction == "OUTBOUND",
+            )
+            .order_by(Message.created_at)
+        )
+    )
+
+    assert messages
+
+    prep_reply = messages[-1]
+
+    assert "20 minutos" in prep_reply.content
+    assert (
+        prep_reply.metadata_json["type"]
+        == "ORDER_COLLECTION_PREP_TIME"
+    )
+    assert (
+        prep_reply.metadata_json["deterministic"]
+        is True
+    )
+    assert (
+        prep_reply.metadata_json["openai_used"]
+        is False
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type
+            == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert (
+        state.payload_json["state"]
+        == "COLLECTING_ORDER"
+    )
+
+    # Depois da pergunta, continua coletando item
+    # deterministicamente.
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.collect-prep-time-3",
+            "e uma batata",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    db.close()

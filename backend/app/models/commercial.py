@@ -2,7 +2,7 @@ from datetime import time
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, Time, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, JSON, Numeric, String, Text, Time, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -100,3 +100,90 @@ class StoreDeliveryZone(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     delivery_allowed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+
+class StoreDeliveryPlace(
+    UUIDPrimaryKeyMixin,
+    TimestampMixin,
+    Base,
+):
+    __tablename__ = "store_delivery_places"
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id",
+            "normalized_name",
+            name="uq_store_delivery_place_normalized_name",
+        ),
+    )
+
+    store_id: Mapped[UUID] = mapped_column(
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    place_type: Mapped[str] = mapped_column(
+        String(30),
+        default="OTHER",
+        nullable=False,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+
+    normalized_name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+
+    aliases: Mapped[list[str]] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+    )
+
+    street: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+
+    number: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+    )
+
+    neighborhood: Mapped[str] = mapped_column(
+        String(140),
+        nullable=False,
+    )
+
+    city: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+    )
+
+    state: Mapped[str] = mapped_column(
+        String(2),
+        nullable=False,
+    )
+
+    postal_code: Mapped[str | None] = mapped_column(
+        String(20),
+    )
+
+    reference: Mapped[str | None] = mapped_column(
+        String(240),
+    )
+
+    source_url: Mapped[str | None] = mapped_column(
+        String(500),
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )

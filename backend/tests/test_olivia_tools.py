@@ -893,3 +893,110 @@ def test_repeated_missing_order_status_escalates_to_human(monkeypatch):
 
     assert len(tickets) == 1
     assert len(notifications) == 1
+
+
+def test_lookup_delivery_place_uses_local_hotel_without_web() -> None:
+    from app.models.commercial import StoreDeliveryPlace
+
+    db, store, registry = setup_registry()
+
+    db.add(
+        StoreDeliveryPlace(
+            store_id=store.id,
+            place_type="HOTEL",
+            name="Hotel São Francisco",
+            normalized_name="hotel sao francisco",
+            aliases=[
+                "São Francisco",
+                "Sao Francisco",
+                "Hotel Sao Francisco",
+            ],
+            street="Rua 15 de Novembro",
+            number="239",
+            neighborhood="Centro",
+            city="Coari",
+            state="AM",
+            postal_code=None,
+            reference="Hotel São Francisco",
+            source_url="https://exemplo.local/fonte",
+            active=True,
+        )
+    )
+    db.commit()
+
+    result = registry.execute(
+        "lookup_delivery_place",
+        {"place_name": "São Francisco"},
+    )
+
+    assert result.ok is True
+    assert result.data["found"] is True
+    assert result.data["source"] == "LOCAL"
+    assert result.data["trusted_saved_place"] is True
+    assert result.data["canonical_name"] == "Hotel São Francisco"
+    assert result.data["street"] == "Rua 15 de Novembro"
+    assert result.data["number"] == "239"
+    assert result.data["neighborhood"] == "Centro"
+    assert result.data["confirmation_required"] is False
+    assert result.data["room_required"] is True
+    assert "quarto" in result.data["next_step"].lower()
+
+    db.close()
+
+
+def test_registry_exposes_lookup_delivery_place() -> None:
+    _, _, registry = setup_registry()
+
+    names = {
+        item["function"]["name"]
+        for item in registry.openai_definitions()
+    }
+
+    assert "lookup_delivery_place" in names
+
+
+def test_coari_delivery_place_seed_and_aliases() -> None:
+    from app.scripts.seed_coari_delivery_places import (
+        COARI_DELIVERY_PLACES,
+        seed_store_places,
+    )
+
+    db, store, registry = setup_registry()
+
+    created, updated = seed_store_places(db, store)
+
+    assert created == len(COARI_DELIVERY_PLACES)
+    assert updated == 0
+
+    cases = {
+        "MF5": "Hotel MF5 Center",
+        "Urucu Plaza": "Uruçu Plaza Hotel",
+        "Santorini": "Santorini Hotel",
+        "Regional 2": "Hotel Regional II",
+        "Solamigo": "Sol Amigo Pousada",
+        "Sao Francisco": "Hotel São Francisco",
+    }
+
+    for query, expected in cases.items():
+        result = registry.execute(
+            "lookup_delivery_place",
+            {"place_name": query},
+        )
+
+        assert result.ok is True
+        assert result.data["source"] == "LOCAL"
+        assert result.data["canonical_name"] == expected
+        assert result.data["room_required"] is True
+        assert result.data["confirmation_required"] is False
+
+    created_again, updated_again = seed_store_places(
+        db,
+        store,
+    )
+
+    assert created_again == 0
+    assert updated_again == len(
+        COARI_DELIVERY_PLACES
+    )
+
+    db.close()

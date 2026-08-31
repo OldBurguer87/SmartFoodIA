@@ -223,6 +223,19 @@ class ConversationService:
             .values(current_conversation_id=None)
         )
 
+        db.execute(
+            update(HumanTicket)
+            .where(
+                HumanTicket.conversation_id == conversation.id,
+                HumanTicket.status.in_(["OPEN", "IN_PROGRESS"]),
+            )
+            .values(
+                status="RESOLVED",
+                assigned_to=assigned_to,
+                resolution="Atendimento devolvido para a Olívia.",
+            )
+        )
+
         db.add(
             AIEvent(
                 store_id=conversation.store_id,
