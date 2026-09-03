@@ -177,6 +177,88 @@ class CommercialStatusService:
             "schedule_configured": True,
         }
 
+    def current_shift_window(
+        self,
+        db: Session,
+        store_id: UUID,
+        *,
+        now: datetime | None = None,
+    ) -> dict:
+        store = db.get(Store, store_id)
+        if store is None:
+            raise LookupError("Loja não encontrada.")
+
+        local_tz = ZoneInfo(store.timezone)
+
+        if now is None:
+            local_now = datetime.now(local_tz)
+        elif now.tzinfo is None:
+            local_now = now.replace(tzinfo=local_tz)
+        else:
+            local_now = now.astimezone(local_tz)
+
+        today, active_day, opened_at = (
+            self._current_schedule_window(
+                db,
+                store,
+                local_now,
+            )
+        )
+
+        if active_day is not None and opened_at is not None:
+            close_date = opened_at.date()
+
+            if (
+                active_day.open_time is not None
+                and active_day.close_time is not None
+                and active_day.open_time > active_day.close_time
+            ):
+                close_date += timedelta(days=1)
+
+            closes_at = datetime.combine(
+                close_date,
+                active_day.close_time,
+                tzinfo=local_tz,
+            )
+
+            return {
+                "active": True,
+                "reliable": True,
+                "started_at": opened_at,
+                "ends_at": closes_at,
+                "local_time": local_now,
+            }
+
+        if today is not None and today.closed:
+            return {
+                "active": False,
+                "reliable": True,
+                "started_at": None,
+                "ends_at": None,
+                "local_time": local_now,
+            }
+
+        if (
+            today is None
+            or today.open_time is None
+            or today.close_time is None
+        ):
+            return {
+                "active": False,
+                "reliable": False,
+                "started_at": None,
+                "ends_at": None,
+                "local_time": local_now,
+            }
+
+        return {
+            "active": False,
+            "reliable": True,
+            "started_at": None,
+            "ends_at": None,
+            "local_time": local_now,
+        }
+
     def current_status(
         self,
         db: Session,

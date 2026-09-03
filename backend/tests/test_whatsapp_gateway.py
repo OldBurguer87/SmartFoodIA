@@ -2574,3 +2574,122 @@ def test_order_collection_prep_time_uses_store_rule_zero_gpt():
     assert orchestrator.calls == []
 
     db.close()
+
+
+def test_closed_store_contact_is_zero_gpt():
+    db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    service.commercial_status.current_shift_window = (
+        lambda db, store_id: {
+            "active": False,
+            "reliable": True,
+            "started_at": None,
+            "ends_at": None,
+            "local_time": datetime(
+                2026,
+                9,
+                3,
+                2,
+                0,
+                tzinfo=timezone(timedelta(hours=-4)),
+            ),
+        }
+    )
+
+    result = service.process_payload(
+        db,
+        inbound_payload("wamid.closed-1"),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    messages = list(
+        db.scalars(select(Message).order_by(Message.created_at))
+    )
+
+    assert len(messages) == 2
+    assert messages[0].sender_type == "CUSTOMER"
+    assert messages[1].sender_type == "OLIVIA"
+
+    assert (
+        messages[1].metadata_json["openai_used"]
+        is False
+    )
+    assert (
+        messages[1].metadata_json["type"]
+        == "STORE_CLOSED_AUTO_REPLY"
+    )
+
+
+def test_closed_store_repeated_message_does_not_spam_or_use_gpt():
+    db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    service.commercial_status.current_shift_window = (
+        lambda db, store_id: {
+            "active": False,
+            "reliable": True,
+            "started_at": None,
+            "ends_at": None,
+            "local_time": datetime(
+                2026,
+                9,
+                3,
+                2,
+                0,
+                tzinfo=timezone(timedelta(hours=-4)),
+            ),
+        }
+    )
+
+    first = service.process_payload(
+        db,
+        inbound_payload("wamid.closed-repeat-1"),
+    )
+    second = service.process_payload(
+        db,
+        inbound_payload("wamid.closed-repeat-2"),
+    )
+
+    assert first.failed == 0
+    assert second.failed == 0
+    assert orchestrator.calls == []
+
+    messages = list(db.scalars(select(Message)))
+
+    inbound = [
+        item
+        for item in messages
+        if item.direction == "INBOUND"
+    ]
+    automatic = [
+        item
+        for item in messages
+        if (
+            item.metadata_json or {}
+        ).get("type") == "STORE_CLOSED_AUTO_REPLY"
+    ]
+
+    assert len(inbound) == 2
+    assert len(automatic) == 1
+
+    outbounds = list(
+        db.scalars(select(OutboundChannelMessage))
+    )
+    assert len(outbounds) == 1
+
+    db.close()

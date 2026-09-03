@@ -42,12 +42,20 @@ from app.services.conversation_media import (
     ConversationMediaStorage,
     ConversationMediaStorageError,
 )
+from app.services.olivia_release_resume import (
+    OliviaReleaseResumeService,
+)
+from app.services.commercial_status import (
+    CommercialStatusService,
+)
 
 router = APIRouter(prefix="/api/v1/operations", tags=["operations"])
 conversations = ConversationService()
 conversation_repository = ConversationRepository()
 channel_repository = ChannelRepository()
 customer_service = CustomerService()
+olivia_release_resume = OliviaReleaseResumeService()
+commercial_status_service = CommercialStatusService()
 
 
 def require_conversation_access(
@@ -204,15 +212,58 @@ def list_conversations(
     _access: StoreAccess = Depends(require_store_access),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    return [
-        conversation_to_dict(item)
-        for item in conversation_repository.list_for_store(
-            db,
-            store_id=store_id,
-            status=status,
-            limit=limit,
-        )
-    ]
+    items = conversation_repository.list_for_store(
+        db,
+        store_id=store_id,
+        status=status,
+        limit=limit,
+    )
+
+    shift = commercial_status_service.current_shift_window(
+        db,
+        store_id,
+    )
+
+    result = []
+
+    for item in items:
+        body = conversation_to_dict(item)
+
+        if item.status != "OPEN":
+            body["current_shift"] = False
+
+        elif not shift["reliable"]:
+            # Horário ausente/incompleto:
+            # preserva comportamento antigo.
+            body["current_shift"] = True
+
+        elif not shift["active"]:
+            # Fora do expediente não existe turno ativo.
+            body["current_shift"] = False
+
+        else:
+            last_activity = item.last_message_at
+
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(
+                    tzinfo=timezone.utc,
+                )
+            else:
+                last_activity = last_activity.astimezone(
+                    timezone.utc,
+                )
+
+            shift_start = shift[
+                "started_at"
+            ].astimezone(timezone.utc)
+
+            body["current_shift"] = (
+                last_activity >= shift_start
+            )
+
+        result.append(body)
+
+    return result
 
 
 
@@ -867,6 +918,13 @@ def release_to_olivia(
             conversation_id=conversation_id,
             assigned_to=payload.assigned_to,
         )
+
+        olivia_release_resume.resume_if_needed(
+            db,
+            conversation=conversation,
+        )
+
+        db.refresh(conversation)
     except ConversationNotFoundError as error:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.") from error
     except ConversationStateError as error:

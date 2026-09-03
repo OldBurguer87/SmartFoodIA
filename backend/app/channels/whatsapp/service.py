@@ -30,6 +30,7 @@ from app.schemas.conversation import (
 )
 from app.services.conversation import ConversationService
 from app.services.conversation_media import ConversationMediaStorage
+from app.services.commercial_status import CommercialStatusService
 from app.services.human_relay import HumanRelayService
 from app.services.operation_mode import is_store_human_only
 from app.services.pix_receipt import PixReceiptService
@@ -105,6 +106,7 @@ class WhatsAppGatewayService:
         self.process_inline = process_inline
         self.human_relay = HumanRelayService()
         self.pix_receipts = PixReceiptService()
+        self.commercial_status = CommercialStatusService()
         self.conversation_media = (
             conversation_media_storage
             or ConversationMediaStorage()
@@ -220,6 +222,108 @@ class WhatsAppGatewayService:
             recipient=recipient,
             content=content,
         )
+
+    def _handle_closed_store_contact(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        conversation: Any,
+        event: ChannelEvent,
+        recipient: str,
+        content: str,
+    ) -> bool:
+        shift = self.commercial_status.current_shift_window(
+            db,
+            account.store_id,
+        )
+
+        if not shift["reliable"] or shift["active"]:
+            return False
+
+        self.conversations.add_message(
+            db,
+            conversation_id=conversation.id,
+            payload=MessageCreate(
+                direction="INBOUND",
+                sender_type="CUSTOMER",
+                content=content,
+                external_message_id=event.external_event_id,
+                metadata_json={
+                    "type": "STORE_CLOSED_CONTACT",
+                    "deterministic": True,
+                    "openai_used": False,
+                },
+            ),
+        )
+
+        local_date = shift["local_time"].date().isoformat()
+
+        previous = db.scalar(
+            select(AIEvent)
+            .where(
+                AIEvent.conversation_id == conversation.id,
+                AIEvent.event_type == "STORE_CLOSED_AUTO_REPLY",
+            )
+            .order_by(AIEvent.created_at.desc())
+            .limit(1)
+        )
+
+        if (
+            previous is not None
+            and str(
+                (previous.payload_json or {}).get("local_date")
+                or ""
+            )
+            == local_date
+        ):
+            return True
+
+        reply = (
+            "Olá! No momento estamos fora do nosso horário "
+            "de funcionamento. Quando estivermos abertos "
+            "novamente, mande uma nova mensagem por aqui e "
+            "continuamos seu atendimento. 😊"
+        )
+
+        self.conversations.add_message(
+            db,
+            conversation_id=conversation.id,
+            payload=MessageCreate(
+                direction="OUTBOUND",
+                sender_type="OLIVIA",
+                content=reply,
+                metadata_json={
+                    "type": "STORE_CLOSED_AUTO_REPLY",
+                    "deterministic": True,
+                    "openai_used": False,
+                },
+            ),
+        )
+
+        self.repository.create_outbound(
+            db,
+            account=account,
+            conversation_id=conversation.id,
+            recipient=recipient,
+            content=reply,
+        )
+
+        self.conversations.record_event(
+            db,
+            store_id=account.store_id,
+            payload=AIEventCreate(
+                conversation_id=conversation.id,
+                event_type="STORE_CLOSED_AUTO_REPLY",
+                success=True,
+                payload_json={
+                    "local_date": local_date,
+                    "openai_used": False,
+                },
+            ),
+        )
+
+        return True
 
     def _save_order_collection_customer_message(
         self,
@@ -1430,6 +1534,21 @@ class WhatsAppGatewayService:
                 )
 
             return
+
+        # CLOSED_STORE_ZERO_GPT
+        if (
+            conversation.status == "OPEN"
+            and self._handle_closed_store_contact(
+                db,
+                account=account,
+                conversation=conversation,
+                event=event,
+                recipient=sender,
+                content=body,
+            )
+        ):
+            return
+
         olivia_extra_instructions = None
         olivia_excluded_tools = None
 

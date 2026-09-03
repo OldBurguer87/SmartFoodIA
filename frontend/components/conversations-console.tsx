@@ -1112,7 +1112,9 @@ export function ConversationsConsole({
 
   const counts = useMemo(() => {
     const open = items.filter(
-      (item) => item.status === "OPEN",
+      (item) =>
+        item.status === "OPEN" &&
+        (item.current_shift ?? true),
     ).length;
 
     const waiting = items.filter(
@@ -1166,7 +1168,10 @@ export function ConversationsConsole({
         }
 
         if (filter === "ACTIVE") {
-          return item.status === "OPEN";
+          return (
+            item.status === "OPEN" &&
+            (item.current_shift ?? true)
+          );
         }
 
         return true;

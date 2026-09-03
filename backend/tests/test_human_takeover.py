@@ -1201,3 +1201,276 @@ def test_resolve_active_order_reports_olivia_waiting():
     assert "permanecer\u00e1 em espera" in outbound.content
     assert "#000991" in outbound.content
     assert "continuar\u00e3o autom\u00e1ticas" in outbound.content
+
+
+def test_release_resume_processes_pending_customer_message():
+    from app.schemas.conversation import MessageCreate
+    from app.services.olivia_release_resume import (
+        OliviaReleaseResumeService,
+    )
+
+    db, _, _, conversation = setup_context()
+    service = ConversationService()
+
+    service.take_over(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente",
+    )
+
+    service.add_message(
+        db,
+        conversation_id=conversation.id,
+        payload=MessageCreate(
+            direction="INBOUND",
+            sender_type="CUSTOMER",
+            content="Quero um x salada gourmet",
+        ),
+    )
+
+    class ResumeOrchestrator:
+        def __init__(self):
+            self.calls = []
+
+        def reply(self, db, **kwargs):
+            self.calls.append(kwargs)
+
+            ConversationService().add_message(
+                db,
+                conversation_id=kwargs[
+                    "conversation_id"
+                ],
+                payload=MessageCreate(
+                    direction="OUTBOUND",
+                    sender_type="OLIVIA",
+                    content=(
+                        "Claro! Vamos continuar "
+                        "seu pedido."
+                    ),
+                ),
+            )
+
+            return "Claro! Vamos continuar seu pedido."
+
+    orchestrator = ResumeOrchestrator()
+
+    released = service.release_to_olivia(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente",
+    )
+
+    resumed = OliviaReleaseResumeService(
+        orchestrator_factory=lambda: orchestrator,
+    ).resume_if_needed(
+        db,
+        conversation=released,
+    )
+
+    db.refresh(conversation)
+
+    assert resumed is True
+    assert conversation.status == "OPEN"
+    assert len(orchestrator.calls) == 1
+    assert (
+        orchestrator.calls[0][
+            "record_customer_message"
+        ]
+        is False
+    )
+
+    event = db.scalar(
+        select(AIEvent).where(
+            AIEvent.conversation_id
+            == conversation.id,
+            AIEvent.event_type
+            == "HUMAN_RELEASE_RESUMED",
+        )
+    )
+
+    assert event is not None
+
+
+def test_release_resume_does_not_call_openai_if_human_replied():
+    from app.schemas.conversation import MessageCreate
+    from app.services.olivia_release_resume import (
+        OliviaReleaseResumeService,
+    )
+
+    db, _, _, conversation = setup_context()
+    service = ConversationService()
+
+    service.take_over(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente",
+    )
+
+    service.add_message(
+        db,
+        conversation_id=conversation.id,
+        payload=MessageCreate(
+            direction="INBOUND",
+            sender_type="CUSTOMER",
+            content="Preciso de ajuda",
+        ),
+    )
+
+    service.add_message(
+        db,
+        conversation_id=conversation.id,
+        payload=MessageCreate(
+            direction="OUTBOUND",
+            sender_type="HUMAN",
+            content="Já resolvi para você.",
+        ),
+    )
+
+    released = service.release_to_olivia(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente",
+    )
+
+    resumed = OliviaReleaseResumeService(
+        orchestrator_factory=lambda: (
+            FailingOrchestrator()
+        ),
+    ).resume_if_needed(
+        db,
+        conversation=released,
+    )
+
+    db.refresh(conversation)
+
+    assert resumed is False
+    assert conversation.status == "OPEN"
+
+
+def test_release_resume_recovers_message_sent_while_waiting_human():
+    from app.schemas.conversation import MessageCreate
+    from app.services.olivia_release_resume import (
+        OliviaReleaseResumeService,
+    )
+
+    db, _, _, conversation = setup_context()
+    service = ConversationService()
+
+    # Falha/encaminhamento para humano.
+    service.wait_for_human(
+        db,
+        conversation_id=conversation.id,
+        reason="OpenAI indisponível",
+    )
+
+    # Cliente escreve enquanto ainda aguarda alguém assumir.
+    service.add_message(
+        db,
+        conversation_id=conversation.id,
+        payload=MessageCreate(
+            direction="INBOUND",
+            sender_type="CUSTOMER",
+            content="Quero fazer um novo pedido",
+        ),
+    )
+
+    # Atendente assume, mas não responde.
+    service.take_over(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente",
+    )
+
+    class ResumeOrchestrator:
+        def __init__(self):
+            self.calls = []
+
+        def reply(self, db, **kwargs):
+            self.calls.append(kwargs)
+
+            ConversationService().add_message(
+                db,
+                conversation_id=kwargs[
+                    "conversation_id"
+                ],
+                payload=MessageCreate(
+                    direction="OUTBOUND",
+                    sender_type="OLIVIA",
+                    content="Vamos continuar seu pedido.",
+                ),
+            )
+
+            return "Vamos continuar seu pedido."
+
+    orchestrator = ResumeOrchestrator()
+
+    released = service.release_to_olivia(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente",
+    )
+
+    resumed = OliviaReleaseResumeService(
+        orchestrator_factory=lambda: orchestrator,
+    ).resume_if_needed(
+        db,
+        conversation=released,
+    )
+
+    db.refresh(conversation)
+
+    assert resumed is True
+    assert conversation.status == "OPEN"
+    assert len(orchestrator.calls) == 1
+    assert (
+        orchestrator.calls[0]["record_customer_message"]
+        is False
+    )
+
+
+def test_release_resume_does_not_revive_old_pre_takeover_message():
+    from app.schemas.conversation import MessageCreate
+    from app.services.olivia_release_resume import (
+        OliviaReleaseResumeService,
+    )
+
+    db, _, _, conversation = setup_context()
+    service = ConversationService()
+
+    # Mensagem antiga, antes do ciclo humano começar.
+    service.add_message(
+        db,
+        conversation_id=conversation.id,
+        payload=MessageCreate(
+            direction="INBOUND",
+            sender_type="CUSTOMER",
+            content="Mensagem antiga sem resposta",
+        ),
+    )
+
+    # Tomada manual/proativa posterior.
+    service.take_over(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente",
+    )
+
+    released = service.release_to_olivia(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente",
+    )
+
+    resumed = OliviaReleaseResumeService(
+        orchestrator_factory=lambda: (
+            FailingOrchestrator()
+        ),
+    ).resume_if_needed(
+        db,
+        conversation=released,
+    )
+
+    db.refresh(conversation)
+
+    assert resumed is False
+    assert conversation.status == "OPEN"

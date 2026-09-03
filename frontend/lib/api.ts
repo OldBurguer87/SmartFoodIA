@@ -275,6 +275,7 @@ export type ConversationSummary = {
   status: "OPEN" | "WAITING_HUMAN" | "HUMAN" | "CLOSED";
   unread_count: number;
   last_message_at: string;
+  current_shift?: boolean;
   last_message: { sender_type: string; content: string; created_at: string } | null;
 };
 
