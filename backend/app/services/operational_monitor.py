@@ -19,6 +19,12 @@ logger = logging.getLogger("smartfoodia.operational-monitor")
 
 class OperationalMonitorService:
     WINDOW_MINUTES = 15
+
+    # Falhas de política/janela de conversa não representam
+    # indisponibilidade da infraestrutura WhatsApp/Meta.
+    NON_OUTAGE_WHATSAPP_ERROR_CODES = {
+        "131047",  # Re-engagement: fora da janela de 24h
+    }
     CONSUMER_WARNING_SECONDS = 120
     CONSUMER_CRITICAL_SECONDS = 300
     STORE_OPEN_GRACE_SECONDS = 900
@@ -106,7 +112,7 @@ class OperationalMonitorService:
             )
         ).all())
         delivery_failed = any(
-            isinstance(payload, dict) and payload.get("status") == "failed"
+            self._is_relevant_whatsapp_delivery_failure(payload)
             for payload in status_payloads
         )
 
@@ -205,6 +211,45 @@ class OperationalMonitorService:
                 if queue_problem_count else None
             ),
         }
+
+    def _is_relevant_whatsapp_delivery_failure(
+        self,
+        payload: object,
+    ) -> bool:
+        if not isinstance(payload, dict):
+            return False
+
+        if payload.get("status") != "failed":
+            return False
+
+        errors = payload.get("errors")
+
+        if isinstance(errors, list) and errors:
+            first_error = errors[0]
+
+            if isinstance(first_error, dict):
+                error_code = str(
+                    first_error.get("code") or ""
+                )
+
+                if (
+                    error_code
+                    in self.NON_OUTAGE_WHATSAPP_ERROR_CODES
+                ):
+                    return False
+
+        error = payload.get("error")
+
+        if isinstance(error, dict):
+            error_code = str(error.get("code") or "")
+
+            if (
+                error_code
+                in self.NON_OUTAGE_WHATSAPP_ERROR_CODES
+            ):
+                return False
+
+        return True
 
     def _ticket_reason(self, code: str) -> str:
         return f"{self.PREFIX} {code}"

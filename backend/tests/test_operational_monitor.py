@@ -136,3 +136,47 @@ def test_operational_monitor_detects_ai_provider_failure_event():
 
     assert checks["OPENAI"] is not None
     assert "credit_balance_exhausted" in checks["OPENAI"]
+
+
+def test_whatsapp_131047_does_not_mark_meta_as_down():
+    monitor = OperationalMonitorService()
+
+    payload = {
+        "status": "failed",
+        "errors": [
+            {
+                "code": 131047,
+                "title": "Re-engagement message",
+            }
+        ],
+    }
+
+    assert (
+        monitor._is_relevant_whatsapp_delivery_failure(
+            payload
+        )
+        is False
+    )
+
+
+def test_whatsapp_131042_still_marks_meta_attention():
+    monitor = OperationalMonitorService()
+
+    payload = {
+        "status": "failed",
+        "errors": [
+            {
+                "code": 131042,
+                "title": (
+                    "Business eligibility payment issue"
+                ),
+            }
+        ],
+    }
+
+    assert (
+        monitor._is_relevant_whatsapp_delivery_failure(
+            payload
+        )
+        is True
+    )
