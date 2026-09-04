@@ -2693,3 +2693,183 @@ def test_closed_store_repeated_message_does_not_spam_or_use_gpt():
     assert len(outbounds) == 1
 
     db.close()
+
+
+def test_previous_shift_active_order_does_not_block_olivia():
+    db, store, _ = setup_db()
+
+    sender = "5597999999999"
+
+    customer = Customer(
+        store_id=store.id,
+        name="Cliente Turno Anterior",
+        phone=sender,
+        active=True,
+    )
+    db.add(customer)
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+    shift_start = now - timedelta(hours=2)
+
+    order = Order(
+        store_id=store.id,
+        customer_id=customer.id,
+        cart_id=uuid4(),
+        display_id="000991",
+        status="DISPATCHED",
+        service_mode="DELIVERY",
+        payment_method="PIX",
+        payment_type="PREPAID",
+        subtotal=Decimal("20.00"),
+        delivery_fee=Decimal("3.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("23.00"),
+        customer_name=customer.name,
+        customer_phone=sender,
+    )
+
+    # Simula um pedido antigo, de turno anterior.
+    order.created_at = shift_start - timedelta(days=1)
+
+    db.add(order)
+    db.commit()
+
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    service.commercial_status.current_shift_window = (
+        lambda db, store_id: {
+            "active": True,
+            "reliable": True,
+            "started_at": shift_start,
+            "ends_at": now + timedelta(hours=4),
+            "local_time": now,
+        }
+    )
+
+    payload = inbound_payload(
+        message_id="wamid.previous-shift-order"
+    )
+    message = payload["entry"][0]["changes"][0][
+        "value"
+    ]["messages"][0]
+    message["text"]["body"] = "Olá"
+
+    result = service.process_payload(db, payload)
+
+    assert result.processed == 1
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+            Conversation.customer_id == customer.id,
+        )
+    )
+
+    assert conversation is not None
+    assert conversation.status == "OPEN"
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id
+                == conversation.id
+            )
+        )
+    )
+
+    assert tickets == []
+
+    db.close()
+
+
+def test_current_shift_active_order_still_blocks_olivia():
+    db, store, _ = setup_db()
+
+    sender = "5597999999999"
+
+    customer = Customer(
+        store_id=store.id,
+        name="Cliente Turno Atual",
+        phone=sender,
+        active=True,
+    )
+    db.add(customer)
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+    shift_start = now - timedelta(hours=2)
+
+    order = Order(
+        store_id=store.id,
+        customer_id=customer.id,
+        cart_id=uuid4(),
+        display_id="000992",
+        status="DISPATCHED",
+        service_mode="DELIVERY",
+        payment_method="PIX",
+        payment_type="PREPAID",
+        subtotal=Decimal("20.00"),
+        delivery_fee=Decimal("3.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("23.00"),
+        customer_name=customer.name,
+        customer_phone=sender,
+    )
+
+    order.created_at = shift_start + timedelta(minutes=30)
+
+    db.add(order)
+    db.commit()
+
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    service.commercial_status.current_shift_window = (
+        lambda db, store_id: {
+            "active": True,
+            "reliable": True,
+            "started_at": shift_start,
+            "ends_at": now + timedelta(hours=4),
+            "local_time": now,
+        }
+    )
+
+    payload = inbound_payload(
+        message_id="wamid.current-shift-order"
+    )
+    message = payload["entry"][0]["changes"][0][
+        "value"
+    ]["messages"][0]
+    message["text"]["body"] = "Olá"
+
+    result = service.process_payload(db, payload)
+
+    assert result.processed == 1
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+            Conversation.customer_id == customer.id,
+        )
+    )
+
+    assert conversation is not None
+    assert conversation.status == "WAITING_HUMAN"
+
+    db.close()

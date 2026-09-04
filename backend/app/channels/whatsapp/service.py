@@ -223,6 +223,49 @@ class WhatsAppGatewayService:
             content=content,
         )
 
+    def _active_order_blocks_olivia(
+        self,
+        db: Session,
+        *,
+        store_id,
+        order,
+    ) -> bool:
+        shift = self.commercial_status.current_shift_window(
+            db,
+            store_id,
+        )
+
+        # Sem horário confiável ou fora de um turno ativo,
+        # preserva a proteção anterior.
+        if (
+            not shift.get("reliable")
+            or not shift.get("active")
+            or shift.get("started_at") is None
+        ):
+            return True
+
+        reference_at = (
+            order.scheduled_for
+            or order.created_at
+        )
+
+        if reference_at.tzinfo is None:
+            reference_at = reference_at.replace(
+                tzinfo=timezone.utc,
+            )
+
+        shift_start = shift["started_at"]
+
+        if shift_start.tzinfo is None:
+            shift_start = shift_start.replace(
+                tzinfo=timezone.utc,
+            )
+
+        return (
+            reference_at.astimezone(timezone.utc)
+            >= shift_start.astimezone(timezone.utc)
+        )
+
     def _handle_closed_store_contact(
         self,
         db: Session,
@@ -1492,6 +1535,11 @@ class WhatsAppGatewayService:
 
             if (
                 active_order is not None
+                and self._active_order_blocks_olivia(
+                    db,
+                    store_id=account.store_id,
+                    order=active_order,
+                )
                 and not collection_in_progress
                 and not self._is_explicit_new_order_request(body)
             ):
