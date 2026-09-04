@@ -509,12 +509,28 @@ class WhatsAppGatewayService:
         text = self._normalize_order_collection_text(value)
         compact = re.sub(r"\s+", " ", text).strip(" .,!?:;")
 
+        # Frases negativas devem vencer os gatilhos positivos.
+        # Ex.: "nao pode montar ainda" nao significa fim do pedido.
+        negative_finish = (
+            "ainda nao",
+            "nao pode",
+            "nao monta",
+            "nao terminei",
+            "nao finalizei",
+            "nao acabou",
+        )
+
+        if any(term in compact for term in negative_finish):
+            return False
+
         # Gatilhos curtos precisam ser exatos para evitar falsos positivos
         # como "e sobre a entrega".
         exact = {
             "so isso",
             "e so isso",
             "e so",
+            "nada mais",
+            "ja pode",
             "pode fechar",
             "pode finalizar",
             "finaliza",

@@ -2873,3 +2873,33 @@ def test_current_shift_active_order_still_blocks_olivia():
     assert conversation.status == "WAITING_HUMAN"
 
     db.close()
+
+
+def test_order_collection_natural_finish_and_negative_triggers():
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: FakeOrchestrator(),
+        client_factory=lambda: FakeClient(),
+    )
+
+    finish_messages = (
+        "Já pode",
+        "Nada mais",
+        "Já pode montar",
+        "Pode montar",
+        "Só isso",
+        "É só isso",
+    )
+
+    for message in finish_messages:
+        assert service._is_order_collection_finish_trigger(message), message
+
+    continue_messages = (
+        "Ainda não",
+        "Não pode montar ainda",
+        "Não pode montar",
+        "Não terminei",
+        "Não finalizei",
+    )
+
+    for message in continue_messages:
+        assert not service._is_order_collection_finish_trigger(message), message
