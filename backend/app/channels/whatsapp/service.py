@@ -124,6 +124,147 @@ class WhatsAppGatewayService:
             if not unicodedata.combining(character)
         ).strip()
 
+    @classmethod
+    def _menu_request_kind(cls, value: str) -> str | None:
+        text = cls._normalize_order_collection_text(value)
+        compact = re.sub(r"\s+", " ", text).strip(" .,!?:;")
+
+        if not compact:
+            return None
+
+        # Pedido explícito de PDF continua com a Olivia,
+        # pois ela precisa executar send_menu_pdf.
+        if "pdf" in compact:
+            return None
+
+        online_patterns = (
+            r"\bcardapio online\b",
+            r"\bmenu online\b",
+            r"\bpedido online\b",
+            r"\blink (?:do|de) (?:cardapio|menu)\b",
+            r"\bsite (?:do|de) (?:cardapio|menu)\b",
+            r"\b(?:cardapio|menu) (?:do )?site\b",
+        )
+
+        if any(
+            re.search(pattern, compact)
+            for pattern in online_patterns
+        ):
+            return "ONLINE"
+
+        generic_requests = {
+            "cardapio",
+            "o cardapio",
+            "menu",
+            "o menu",
+            "manda o cardapio",
+            "manda cardapio",
+            "me manda o cardapio",
+            "mande o cardapio",
+            "quero o cardapio",
+            "quero ver o cardapio",
+            "quero ver cardapio",
+            "ver o cardapio",
+            "ver cardapio",
+            "mostra o cardapio",
+            "me mostra o cardapio",
+            "pode mandar o cardapio",
+            "pode me mandar o cardapio",
+            "tem cardapio",
+            "tem um cardapio",
+            "posso ver o cardapio",
+            "gostaria de ver o cardapio",
+        }
+
+        if compact in generic_requests:
+            return "MENU"
+
+        return None
+
+    @staticmethod
+    def _store_online_order_url(
+        db: Session,
+        *,
+        store_id: Any,
+    ) -> str | None:
+        value = db.scalar(
+            select(StoreCommercialRules.online_order_url).where(
+                StoreCommercialRules.store_id == store_id,
+            )
+        )
+
+        normalized = str(value or "").strip()
+        return normalized or None
+
+    def _handle_deterministic_menu_request(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        conversation: Any,
+        event: ChannelEvent,
+        recipient: str,
+        content: str,
+    ) -> bool:
+        request_kind = self._menu_request_kind(content)
+
+        if request_kind is None:
+            return False
+
+        online_url = self._store_online_order_url(
+            db,
+            store_id=account.store_id,
+        )
+
+        self._save_order_collection_customer_message(
+            db,
+            conversation_id=conversation.id,
+            event=event,
+            content=content,
+        )
+
+        if request_kind == "ONLINE":
+            if online_url:
+                reply = (
+                    "Claro 😊 Aqui está o cardápio online oficial:\n"
+                    f"{online_url}"
+                )
+                prompt_type = "MENU_ONLINE_LINK"
+            else:
+                reply = (
+                    "No momento não há cardápio online configurado "
+                    "para esta loja. Você prefere receber o cardápio "
+                    "em PDF ou ver as opções detalhadas por aqui comigo?"
+                )
+                prompt_type = "MENU_ONLINE_UNAVAILABLE"
+
+        elif online_url:
+            reply = (
+                "Claro 😊 Você prefere abrir o cardápio online, "
+                "receber o cardápio em PDF ou ver as opções "
+                "detalhadas por aqui comigo?\n"
+                f"{online_url}"
+            )
+            prompt_type = "MENU_OPTIONS_WITH_ONLINE"
+
+        else:
+            reply = (
+                "Claro 😊 Você prefere receber o cardápio em PDF "
+                "ou ver as opções detalhadas por aqui comigo?"
+            )
+            prompt_type = "MENU_OPTIONS"
+
+        self._send_order_collection_message(
+            db,
+            account=account,
+            conversation=conversation,
+            recipient=recipient,
+            content=reply,
+            prompt_type=prompt_type,
+        )
+
+        return True
+
     def _order_collection_state(
         self,
         db: Session,
@@ -1624,6 +1765,25 @@ class WhatsAppGatewayService:
             db,
             conversation_id=conversation.id,
         )
+
+        # MENU_OPTIONS_ZERO_GPT
+        # A disponibilidade do cardapio online e decidida pela
+        # configuracao objetiva da loja, nunca pelo modelo.
+        # Atua somente em NORMAL para preservar a rotina existente
+        # durante COLLECTING_ORDER.
+        if (
+            conversation.status == "OPEN"
+            and collection_state == "NORMAL"
+            and self._handle_deterministic_menu_request(
+                db,
+                account=account,
+                conversation=conversation,
+                event=event,
+                recipient=sender,
+                content=body,
+            )
+        ):
+            return
 
         if (
             conversation.status == "OPEN"

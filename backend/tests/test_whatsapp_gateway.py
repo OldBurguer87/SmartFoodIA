@@ -15,6 +15,7 @@ from app.database.base import Base
 from app.models.catalog import Company, Store
 from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage
 from app.models.conversation import AIEvent, Conversation, Message, HumanTicket
+from app.models.commercial import StoreCommercialRules
 from app.models.customer import Customer
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
@@ -2903,3 +2904,185 @@ def test_order_collection_natural_finish_and_negative_triggers():
 
     for message in continue_messages:
         assert not service._is_order_collection_finish_trigger(message), message
+
+
+
+# MENU OPTIONS ZERO GPT
+
+def _last_olivia_outbound(db: Session):
+    return db.scalar(
+        select(Message)
+        .where(
+            Message.direction == "OUTBOUND",
+            Message.sender_type == "OLIVIA",
+        )
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+
+
+def test_menu_options_without_online_url_are_deterministic():
+    db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.menu-no-url",
+            "manda o cardápio",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    reply = _last_olivia_outbound(db)
+
+    assert reply is not None
+    assert "PDF" in reply.content
+    assert "por aqui comigo" in reply.content
+    assert "online" not in reply.content.lower()
+    assert reply.metadata_json["deterministic"] is True
+    assert reply.metadata_json["openai_used"] is False
+
+    db.close()
+
+
+def test_menu_options_with_online_url_are_deterministic():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    online_url = "https://menu.exemplo.com/loja"
+
+    db.add(
+        StoreCommercialRules(
+            store_id=store.id,
+            online_order_url=online_url,
+        )
+    )
+    db.commit()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.menu-with-url",
+            "manda o cardápio",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    reply = _last_olivia_outbound(db)
+
+    assert "cardápio online" in reply.content.lower()
+    assert "PDF" in reply.content
+    assert online_url in reply.content
+    assert reply.metadata_json["openai_used"] is False
+
+    db.close()
+
+
+def test_explicit_online_menu_without_url_never_invents_link():
+    db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.menu-online-no-url",
+            "manda o link do cardápio",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    reply = _last_olivia_outbound(db)
+
+    assert "não há cardápio online configurado" in reply.content.lower()
+    assert "PDF" in reply.content
+    assert "http://" not in reply.content
+    assert "https://" not in reply.content
+
+    db.close()
+
+
+def test_explicit_online_menu_uses_exact_configured_url():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    online_url = "https://menu.exemplo.com/oficial"
+
+    db.add(
+        StoreCommercialRules(
+            store_id=store.id,
+            online_order_url=online_url,
+        )
+    )
+    db.commit()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.menu-online-url",
+            "cardápio online",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    reply = _last_olivia_outbound(db)
+
+    assert online_url in reply.content
+    assert reply.content.count(online_url) == 1
+
+    db.close()
+
+
+def test_explicit_pdf_menu_still_reaches_olivia():
+    db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.menu-pdf",
+            "manda o cardápio em PDF",
+        ),
+    )
+
+    assert result.failed == 0
+    assert len(orchestrator.calls) == 1
+    assert (
+        orchestrator.calls[0]["customer_message"]
+        == "manda o cardápio em PDF"
+    )
+
+    db.close()
