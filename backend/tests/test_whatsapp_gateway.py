@@ -7,6 +7,7 @@ import hashlib
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.ai.olivia_prompt import OLIVIA_INSTRUCTIONS
 from app.ai.providers.openai_provider import OpenAIProviderRequestError
 from app.channels.whatsapp.client import DownloadedMedia
 from app.channels.whatsapp.security import hash_verify_token, verify_meta_signature
@@ -1851,14 +1852,14 @@ def test_order_collection_zero_gpt_until_customer_ready_to_mount():
         db,
         _order_collection_payload(
             "wamid.collect-3",
-            "só isso",
+            "Somente isso",
         ),
     )
 
     assert result.failed == 0
     assert len(orchestrator.calls) == 1
 
-    assert orchestrator.calls[0]["customer_message"] == "só isso"
+    assert orchestrator.calls[0]["customer_message"] == "Somente isso"
     assert orchestrator.calls[0]["extra_instructions"] is None
     assert orchestrator.calls[0]["excluded_tools"] is None
 
@@ -1890,7 +1891,7 @@ def test_order_collection_zero_gpt_until_customer_ready_to_mount():
 
     assert "quero 2 x salada" in contents
     assert "e uma batata" in contents
-    assert "só isso" in contents
+    assert "Somente isso" in contents
 
     db.close()
 
@@ -2888,6 +2889,7 @@ def test_order_collection_natural_finish_and_negative_triggers():
         "Já pode montar",
         "Pode montar",
         "Só isso",
+        "Somente isso",
         "É só isso",
     )
 
@@ -3084,5 +3086,174 @@ def test_explicit_pdf_menu_still_reaches_olivia():
         orchestrator.calls[0]["customer_message"]
         == "manda o cardápio em PDF"
     )
+
+    db.close()
+
+
+
+def test_upsell_prompt_avoids_automatic_browse_catalog():
+    assert (
+        "Não use browse_catalog apenas para preparar uma oferta "
+        "de complemento ou upsell."
+        in OLIVIA_INSTRUCTIONS
+    )
+    assert (
+        "cadastro ou alteração de endereço"
+        in OLIVIA_INSTRUCTIONS
+    )
+    assert (
+        "Se o cliente pedir opções, nomes, categorias ou preços "
+        "de forma ampla"
+        in OLIVIA_INSTRUCTIONS
+    )
+
+
+def test_post_checkout_courtesy_classifier_is_strict():
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: FakeOrchestrator(),
+        client_factory=lambda: FakeClient(),
+    )
+
+    courtesy_messages = (
+        "Ok",
+        "OK!",
+        "Certo",
+        "Tá bom",
+        "Obrigado",
+        "Obrigada",
+        "Obrigadaa",
+        "Obg",
+        "Ok obg",
+        "Valeu",
+        "👍",
+        "🙏",
+    )
+
+    for message in courtesy_messages:
+        assert service._is_post_checkout_courtesy(message), message
+
+    human_messages = (
+        "ok mas veio errado",
+        "obrigado quero cancelar",
+        "tá bom, quanto demora?",
+        "beleza cadê meu pedido",
+        "ok troca o endereço",
+        "valeu mas não chegou",
+        "meu pedido",
+        "quanto tempo para entrega?",
+        "quero falar com atendente",
+        "olá",
+    )
+
+    for message in human_messages:
+        assert not service._is_post_checkout_courtesy(message), message
+
+
+def test_active_order_post_checkout_courtesy_does_not_route_to_human():
+    db, store, _ = setup_db()
+
+    sender = "5597999999999"
+
+    customer = Customer(
+        store_id=store.id,
+        name="Cliente Cortesia Pós Checkout",
+        phone=sender,
+        active=True,
+    )
+    db.add(customer)
+    db.flush()
+
+    order = Order(
+        store_id=store.id,
+        customer_id=customer.id,
+        cart_id=uuid4(),
+        display_id="000993",
+        status="READY_FOR_INTEGRATION",
+        service_mode="DELIVERY",
+        payment_method="PIX",
+        payment_type="PREPAID",
+        subtotal=Decimal("30.00"),
+        delivery_fee=Decimal("3.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("33.00"),
+        customer_name=customer.name,
+        customer_phone=sender,
+    )
+
+    db.add(order)
+    db.commit()
+
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    payload = inbound_payload(
+        message_id="wamid.post-checkout-courtesy-1"
+    )
+
+    message = payload["entry"][0]["changes"][0][
+        "value"
+    ]["messages"][0]
+
+    message["text"]["body"] = "Ok obg"
+
+    result = service.process_payload(db, payload)
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+            Conversation.customer_id == customer.id,
+        )
+    )
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id,
+            )
+        )
+    )
+
+    inbound = db.scalar(
+        select(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.direction == "INBOUND",
+            Message.sender_type == "CUSTOMER",
+        )
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+
+    assert result.processed == 1
+    assert result.failed == 0
+
+    assert orchestrator.calls == []
+
+    assert conversation.status == "OPEN"
+    assert tickets == []
+
+    assert inbound is not None
+    assert inbound.content == "Ok obg"
+    assert inbound.metadata_json["type"] == "POST_CHECKOUT_COURTESY"
+    assert inbound.metadata_json["deterministic"] is True
+    assert inbound.metadata_json["openai_used"] is False
+
+    # A cortesia não gera resposta automática.
+    olivia_outbounds = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "OUTBOUND",
+                Message.sender_type == "OLIVIA",
+            )
+        )
+    )
+
+    assert olivia_outbounds == []
 
     db.close()

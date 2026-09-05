@@ -364,6 +364,57 @@ class WhatsAppGatewayService:
             content=content,
         )
 
+    @classmethod
+    def _is_post_checkout_courtesy(
+        cls,
+        value: str,
+    ) -> bool:
+        """
+        Cortesias/encerramentos simples enviados depois do checkout.
+
+        A comparação é propositalmente estrita: a mensagem inteira
+        normalizada precisa corresponder a uma frase aprovada.
+        Assim, frases como "ok mas veio errado" continuam indo
+        obrigatoriamente para atendimento humano.
+        """
+        text = cls._normalize_order_collection_text(value)
+        compact = re.sub(r"\s+", " ", text).strip(" .,!?:;")
+
+        exact = {
+            "ok",
+            "okay",
+            "blz",
+            "beleza",
+            "certo",
+            "ta bom",
+            "tudo bem",
+            "show",
+            "perfeito",
+            "entendi",
+            "obrigado",
+            "obrigada",
+            "obrigadaa",
+            "muito obrigado",
+            "muito obrigada",
+            "obg",
+            "valeu",
+            "ok obrigado",
+            "ok obrigada",
+            "ok obg",
+            "ta bom obrigado",
+            "ta bom obrigada",
+            "beleza obrigado",
+            "beleza obrigada",
+            "valeu obrigado",
+            "valeu obrigada",
+            "👍",
+            "🙏",
+            "👍🏻",
+            "🙏🏻",
+        }
+
+        return compact in exact
+
     def _active_order_blocks_olivia(
         self,
         db: Session,
@@ -668,6 +719,7 @@ class WhatsAppGatewayService:
         # como "e sobre a entrega".
         exact = {
             "so isso",
+            "somente isso",
             "e so isso",
             "e so",
             "nada mais",
@@ -1700,6 +1752,27 @@ class WhatsAppGatewayService:
                 and not collection_in_progress
                 and not self._is_explicit_new_order_request(body)
             ):
+                # Cortesia simples após o checkout não precisa abrir
+                # atendimento humano. A mensagem é registrada normalmente,
+                # sem OpenAI e sem resposta automática.
+                if self._is_post_checkout_courtesy(body):
+                    self.conversations.add_message(
+                        db,
+                        conversation_id=conversation.id,
+                        payload=MessageCreate(
+                            direction="INBOUND",
+                            sender_type="CUSTOMER",
+                            content=body,
+                            external_message_id=event.external_event_id,
+                            metadata_json={
+                                "type": "POST_CHECKOUT_COURTESY",
+                                "deterministic": True,
+                                "openai_used": False,
+                            },
+                        ),
+                    )
+                    return
+
                 self._route_human_only(
                     db,
                     account=account,
