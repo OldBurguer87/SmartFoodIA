@@ -629,6 +629,31 @@ export function CommercialRulesPanel({
         </table>
       </div>
 
+      <h3 style={{ marginTop: 28 }}>Cardápio online</h3>
+
+      <p className="muted" style={{ marginBottom: 14 }}>
+        Informe somente o link oficial desta loja. Se ficar vazio, a Olívia
+        oferecerá o cardápio em PDF ou detalhado por ela no WhatsApp.
+      </p>
+
+      <div style={{ marginBottom: 20 }}>
+        <label>
+          Link oficial do cardápio/pedido online
+          <input
+            type="url"
+            style={{ width: "100%", marginTop: 6, padding: 10 }}
+            value={rules.online_order_url ?? ""}
+            onChange={(event) =>
+              setRules({
+                ...rules,
+                online_order_url: event.target.value || null,
+              })
+            }
+            placeholder="https://..."
+          />
+        </label>
+      </div>
+
       <h3 style={{ marginTop: 28 }}>Observações para a Olívia</h3>
 
       <textarea

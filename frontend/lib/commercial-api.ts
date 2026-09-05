@@ -28,6 +28,7 @@ export type CommercialRules = {
   allow_scheduled_when_closed: boolean;
   scheduled_min_notice_minutes: number | null;
   scheduled_max_days_ahead: number | null;
+  online_order_url: string | null;
 
   general_notes: string | null;
 };

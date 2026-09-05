@@ -1,9 +1,10 @@
 from datetime import time
 from decimal import Decimal
 from uuid import UUID
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -59,7 +60,31 @@ class RulesUpdate(BaseModel):
         le=365,
     )
 
+    online_order_url: str | None = Field(
+        default=None,
+        max_length=500,
+    )
     general_notes: str | None = None
+
+    @field_validator("online_order_url", mode="before")
+    @classmethod
+    def normalize_online_order_url(cls, value):
+        if value is None:
+            return None
+
+        normalized = str(value).strip()
+
+        if not normalized:
+            return None
+
+        parsed = urlparse(normalized)
+
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(
+                "Informe uma URL válida iniciando com http:// ou https://."
+            )
+
+        return normalized
 
 
 class HoursUpdate(BaseModel):
@@ -110,6 +135,7 @@ def rules_dict(db: Session, store_id: UUID) -> dict:
             "allow_scheduled_when_closed": rules.allow_scheduled_when_closed,
             "scheduled_min_notice_minutes": rules.scheduled_min_notice_minutes,
             "scheduled_max_days_ahead": rules.scheduled_max_days_ahead,
+            "online_order_url": rules.online_order_url,
             "general_notes": rules.general_notes,
         },
         "hours": [

@@ -65,10 +65,12 @@ class CommercialContextService:
         if rules.online_order_url:
             online_order_context = (
                 f" CARDÁPIO/PEDIDO ONLINE OFICIAL: {rules.online_order_url}. "
-                "Este é um canal oficial alternativo para o cliente montar "
-                "o pedido. Quando apropriado, ofereça ao cliente a escolha "
-                "entre continuar o pedido pelo WhatsApp ou usar esse "
-                "cardápio online. Não invente, altere ou substitua esta URL."
+                "Esta URL foi configurada como canal oficial desta loja. "
+                "NUNCA ofereça ou mencione este link espontaneamente na "
+                "saudação ou apenas por iniciar uma conversa. Use a URL "
+                "somente nas regras específicas de cardápio ou quando o "
+                "cliente pedir explicitamente link, site, cardápio online "
+                "ou pedido online. Não invente, altere ou substitua esta URL."
             )
 
         hours_text = "não cadastrado"
