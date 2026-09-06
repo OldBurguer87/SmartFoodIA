@@ -187,11 +187,18 @@ def test_duplicate_webhook_does_not_reply_twice():
     assert len(list(db.scalars(select(ChannelEvent)))) == 1
 
 
-def test_image_without_recent_pix_order_is_processed():
+def test_image_without_recent_pix_order_is_processed(tmp_path):
+    from app.services.conversation_media import ConversationMediaStorage
+
     db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
     service = WhatsAppGatewayService(
-        orchestrator_factory=lambda: FakeOrchestrator(),
+        orchestrator_factory=lambda: orchestrator,
         client_factory=lambda: FakeClient(),
+        conversation_media_storage=ConversationMediaStorage(
+            root_path=tmp_path,
+        ),
     )
 
     result = service.process_payload(
@@ -216,6 +223,22 @@ def test_image_without_recent_pix_order_is_processed():
         "[Imagem/arquivo recebido]"
     )
 
+    metadata = messages[0].metadata_json or {}
+
+    assert metadata["stored_media"] is True
+    assert metadata["mime_type"] == "image/png"
+
+    stored_path = (
+        tmp_path
+        / metadata["stored_media_path"]
+    )
+
+    assert stored_path.is_file()
+    assert stored_path.read_bytes() == b"imagem-teste-whatsapp"
+
+    # Armazenar/visualizar imagem comum não chama a Olívia.
+    assert orchestrator.calls == []
+
     outbound = db.scalar(
         select(OutboundChannelMessage)
     )
@@ -224,6 +247,72 @@ def test_image_without_recent_pix_order_is_processed():
     assert "comprovante de PIX" not in outbound.content
     assert "atendimento humano" in outbound.content
     assert outbound.status == "SENT_TO_META"
+
+
+def test_non_pdf_document_is_stored_for_central_without_gpt(tmp_path):
+    from app.services.conversation_media import ConversationMediaStorage
+
+    db, _, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    class DocumentClient(FakeClient):
+        def download_media(self, **kwargs):
+            content = b"documento-teste-central"
+            return DownloadedMedia(
+                content=content,
+                mime_type=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "wordprocessingml.document"
+                ),
+                meta_sha256=None,
+                file_size=len(content),
+            )
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: DocumentClient(),
+        conversation_media_storage=ConversationMediaStorage(
+            root_path=tmp_path,
+        ),
+    )
+
+    payload = inbound_payload(
+        message_id="wamid.document-central-1",
+        message_type="document",
+    )
+
+    document = (
+        payload["entry"][0]["changes"][0]["value"]
+        ["messages"][0]["document"]
+    )
+    document["filename"] = "arquivo.docx"
+    document["mime_type"] = (
+        "application/vnd.openxmlformats-officedocument."
+        "wordprocessingml.document"
+    )
+
+    result = service.process_payload(db, payload)
+
+    assert result.processed == 1
+    assert result.failed == 0
+
+    messages = list(db.scalars(select(Message)))
+    assert len(messages) == 1
+
+    message = messages[0]
+    metadata = message.metadata_json or {}
+
+    assert message.content_type == "DOCUMENT"
+    assert metadata["stored_media"] is True
+    assert metadata["filename"] == "arquivo.docx"
+
+    stored_path = tmp_path / metadata["stored_media_path"]
+
+    assert stored_path.is_file()
+    assert stored_path.read_bytes() == b"documento-teste-central"
+
+    assert list(db.scalars(select(PaymentReceipt))) == []
+    assert orchestrator.calls == []
 
 
 def test_signature_validation_uses_meta_hmac_format():

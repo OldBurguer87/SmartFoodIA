@@ -105,12 +105,14 @@ class WhatsAppGatewayService:
         self.client_factory = client_factory
         self.process_inline = process_inline
         self.human_relay = HumanRelayService()
-        self.pix_receipts = PixReceiptService()
-        self.commercial_status = CommercialStatusService()
         self.conversation_media = (
             conversation_media_storage
             or ConversationMediaStorage()
         )
+        self.pix_receipts = PixReceiptService(
+            conversation_media_storage=self.conversation_media,
+        )
+        self.commercial_status = CommercialStatusService()
 
     @staticmethod
     def _normalize_order_collection_text(value: str) -> str:

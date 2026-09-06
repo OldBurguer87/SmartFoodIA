@@ -298,41 +298,15 @@ class PixReceiptService:
 
         mime_type_from_message = media_payload.get("mime_type")
 
-        if (
-            message_type == "document"
-            and mime_type_from_message
-            and str(mime_type_from_message).lower()
-            != "application/pdf"
-        ):
-            self._save_customer_message(
-                db,
-                conversation=conversation,
-                event=event,
-                receipt=None,
-                message_type=message_type,
-                media_id=media_id,
-            )
-
-            if allow_customer_reply:
-                self.channels.create_outbound(
-                    db,
-                    account=account,
-                    conversation_id=conversation.id,
-                    recipient=sender,
-                    content=(
-                        "Recebi o arquivo. Para comprovante de PIX, "
-                        "envie uma imagem ou um PDF, por favor."
-                    ),
-                )
-
-            return None
-
         downloaded = client.download_media(
             phone_number_id=account.external_account_id,
             media_id=media_id,
         )
 
-        if downloaded.file_size > settings.payment_receipt_max_bytes:
+        if (
+            candidates
+            and downloaded.file_size > settings.payment_receipt_max_bytes
+        ):
             raise PixReceiptError(
                 "Comprovante excede o tamanho máximo permitido."
             )
@@ -348,6 +322,51 @@ class PixReceiptService:
             .strip()
             .lower()
         )
+
+        # Toda imagem/documento baixado recebe uma cópia independente
+        # para visualização na Central Web. Isto não usa OpenAI.
+        media_metadata = self._store_conversation_media_copy(
+            store_id=account.store_id,
+            conversation_id=conversation.id,
+            media_id=media_id,
+            message_type=message_type,
+            content=downloaded.content,
+            mime_type=normalized_mime,
+            filename=media_payload.get("filename"),
+        )
+
+        # Formatos que a Central sabe armazenar podem continuar
+        # visíveis mesmo quando não são aceitos como comprovante PIX.
+        pix_supported_mime = normalized_mime in {
+            "image/jpeg",
+            "image/png",
+            "application/pdf",
+        }
+
+        if not pix_supported_mime:
+            self._save_customer_message(
+                db,
+                conversation=conversation,
+                event=event,
+                receipt=None,
+                message_type=message_type,
+                media_id=media_id,
+                media_metadata=media_metadata,
+            )
+
+            if allow_customer_reply:
+                self.channels.create_outbound(
+                    db,
+                    account=account,
+                    conversation_id=conversation.id,
+                    recipient=sender,
+                    content=(
+                        "Recebi o arquivo. Para comprovante de PIX, "
+                        "envie uma imagem JPG/PNG ou um PDF, por favor."
+                    ),
+                )
+
+            return None
 
         if normalized_mime not in {
             "image/jpeg",
@@ -393,6 +412,7 @@ class PixReceiptService:
                 receipt=duplicate,
                 message_type=message_type,
                 media_id=media_id,
+                media_metadata=media_metadata,
             )
 
             if allow_customer_reply:
@@ -449,6 +469,7 @@ class PixReceiptService:
                 receipt=None,
                 message_type=message_type,
                 media_id=media_id,
+                media_metadata=media_metadata,
             )
 
             if allow_customer_reply:
@@ -559,19 +580,6 @@ class PixReceiptService:
 
                 db.commit()
                 db.refresh(receipt)
-
-        media_metadata = None
-
-        if receipt.status == "NEEDS_REVIEW":
-            media_metadata = self._store_conversation_media_copy(
-                store_id=account.store_id,
-                conversation_id=conversation.id,
-                media_id=media_id,
-                message_type=message_type,
-                content=downloaded.content,
-                mime_type=normalized_mime,
-                filename=media_payload.get("filename"),
-            )
 
         self._save_customer_message(
             db,

@@ -9,6 +9,9 @@ from app.channels.whatsapp.queue import WhatsAppQueueProcessor
 from app.core.config import settings
 from app.database.session import SessionLocal
 from app.services.handoff_monitor import HumanHandoffMonitor
+from app.services.conversation_media_retention import (
+    ConversationMediaRetentionService,
+)
 from app.services.pix_review_monitor import PixReviewMonitor
 from app.services.pix_receipt_retention import (
     PixReceiptRetentionService,
@@ -51,6 +54,7 @@ def main() -> None:
     handoff_monitor = HumanHandoffMonitor()
     pix_review_monitor = PixReviewMonitor()
     pix_retention = PixReceiptRetentionService()
+    conversation_media_retention = ConversationMediaRetentionService()
     pix_shift_closing = PixShiftClosingService()
 
     retention_interval = max(
@@ -60,6 +64,12 @@ def main() -> None:
     next_retention_run = (
         time.monotonic() + retention_interval
     )
+
+    conversation_media_retention_interval = max(
+        60,
+        settings.conversation_media_retention_interval_seconds,
+    )
+    next_conversation_media_retention_run = time.monotonic()
 
     logger.info("Worker de canais iniciado.")
 
@@ -85,6 +95,23 @@ def main() -> None:
                     retention = pix_retention.run_once(
                         db,
                         limit=settings.channel_worker_batch_size,
+                    )
+
+                conversation_media_retention_result = None
+
+                if (
+                    now_monotonic
+                    >= next_conversation_media_retention_run
+                ):
+                    next_conversation_media_retention_run = (
+                        now_monotonic
+                        + conversation_media_retention_interval
+                    )
+                    conversation_media_retention_result = (
+                        conversation_media_retention.run_once(
+                            db,
+                            limit=settings.channel_worker_batch_size,
+                        )
                     )
 
                 closing = None
@@ -124,6 +151,22 @@ def main() -> None:
                 logger.info(
                     "Retenção de comprovantes PIX: %s",
                     retention,
+                )
+
+            if (
+                conversation_media_retention_result is not None
+                and (
+                    conversation_media_retention_result.purged
+                    or conversation_media_retention_result.files_missing
+                    or conversation_media_retention_result.skipped_invalid_path
+                    or conversation_media_retention_result.file_delete_errors
+                    or conversation_media_retention_result.file_restore_errors
+                    or conversation_media_retention_result.db_errors
+                )
+            ):
+                logger.info(
+                    "Retenção de mídias da conversa: %s",
+                    conversation_media_retention_result,
                 )
 
             if (

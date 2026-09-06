@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     payment_receipt_storage_path: str = "/data/receipts"
     conversation_media_storage_path: str = "/data/conversation-media"
     conversation_media_max_bytes: int = 10_485_760
+    conversation_media_retention_hours: int = 48
+    conversation_media_retention_interval_seconds: int = 300
     payment_receipt_max_bytes: int = 10_485_760
     payment_receipt_retention_days: int = 15
     payment_receipt_retention_interval_seconds: int = 3600
