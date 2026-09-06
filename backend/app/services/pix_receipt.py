@@ -16,8 +16,9 @@ from app.models.conversation import AIEvent, Conversation
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
 from app.repositories.channel import ChannelRepository
-from app.schemas.conversation import MessageCreate
+from app.schemas.conversation import HumanTicketCreate, MessageCreate
 from app.services.conversation import ConversationService
+from app.services.conversation_media import ConversationMediaStorage
 from app.services.pix_receipt_validation import PixReceiptValidationService
 from app.services.pix_receipt_review import PixReceiptReviewService
 
@@ -27,11 +28,19 @@ class PixReceiptError(RuntimeError):
 
 
 class PixReceiptService:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        conversation_media_storage: ConversationMediaStorage | None = None,
+    ) -> None:
         self.channels = ChannelRepository()
         self.conversations = ConversationService()
         self.validator = PixReceiptValidationService()
         self.review = PixReceiptReviewService()
+        self.conversation_media = (
+            conversation_media_storage
+            or ConversationMediaStorage()
+        )
 
     @staticmethod
     def _digits(value: str | None) -> str:
@@ -52,6 +61,55 @@ class PixReceiptService:
         }
 
         return mapping.get(normalized, ".bin")
+
+    def _store_conversation_media_copy(
+        self,
+        *,
+        store_id,
+        conversation_id,
+        media_id: str,
+        message_type: str,
+        content: bytes,
+        mime_type: str,
+        filename: str | None,
+    ) -> dict:
+        """
+        Persiste uma cópia do comprovante no armazenamento usado pela
+        Central Web. Falha nesta cópia não deve invalidar o PaymentReceipt.
+        """
+        base = {
+            "media_id": media_id,
+            "media_type": message_type,
+            "filename": filename,
+        }
+
+        try:
+            stored = self.conversation_media.store(
+                store_id=store_id,
+                conversation_id=conversation_id,
+                content=content,
+                mime_type=mime_type,
+                original_filename=filename,
+            )
+
+            return {
+                **base,
+                "stored_media": True,
+                "stored_media_path": stored.relative_path,
+                "mime_type": stored.mime_type,
+                "file_size": stored.file_size,
+                "sha256": stored.sha256,
+                "filename": (
+                    stored.original_filename
+                    or filename
+                ),
+            }
+        except Exception as error:
+            return {
+                **base,
+                "stored_media": False,
+                "storage_error": type(error).__name__,
+            }
 
     def _recent_pix_orders(
         self,
@@ -164,8 +222,10 @@ class PixReceiptService:
         receipt: PaymentReceipt | None,
         message_type: str,
         media_id: str,
+        media_metadata: dict | None = None,
     ) -> None:
         metadata = {
+            **(media_metadata or {}),
             "whatsapp_media_id": media_id,
             "message_type": message_type,
         }
@@ -500,6 +560,19 @@ class PixReceiptService:
                 db.commit()
                 db.refresh(receipt)
 
+        media_metadata = None
+
+        if receipt.status == "NEEDS_REVIEW":
+            media_metadata = self._store_conversation_media_copy(
+                store_id=account.store_id,
+                conversation_id=conversation.id,
+                media_id=media_id,
+                message_type=message_type,
+                content=downloaded.content,
+                mime_type=normalized_mime,
+                filename=media_payload.get("filename"),
+            )
+
         self._save_customer_message(
             db,
             conversation=conversation,
@@ -507,7 +580,38 @@ class PixReceiptService:
             receipt=receipt,
             message_type=message_type,
             media_id=media_id,
+            media_metadata=media_metadata,
         )
+
+        if (
+            receipt.status == "NEEDS_REVIEW"
+            and order is not None
+            and conversation.status == "OPEN"
+        ):
+            reason = (
+                f"PIX do pedido #{order.display_id} "
+                "precisa de conferência humana"
+            )
+
+            ticket = self.conversations.create_ticket(
+                db,
+                store_id=account.store_id,
+                payload=HumanTicketCreate(
+                    conversation_id=conversation.id,
+                    customer_id=conversation.customer_id,
+                    category="OTHER",
+                    priority="URGENT",
+                    reason=reason,
+                    customer_message="[Comprovante PIX recebido]",
+                ),
+            )
+
+            self.conversations.wait_for_human(
+                db,
+                conversation_id=conversation.id,
+                reason=reason,
+                ticket_id=ticket.id,
+            )
 
         if allow_customer_reply:
             if receipt.status == "AUTO_CONFIRMED":

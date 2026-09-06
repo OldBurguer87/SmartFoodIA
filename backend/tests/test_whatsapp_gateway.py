@@ -3257,3 +3257,234 @@ def test_active_order_post_checkout_courtesy_does_not_route_to_human():
     assert olivia_outbounds == []
 
     db.close()
+
+
+
+def test_pix_needs_review_is_visible_in_central_and_opens_human_ticket(
+    tmp_path,
+):
+    from app.services.conversation_media import ConversationMediaStorage
+
+    db, store, account = setup_db()
+
+    sender = "5597999999999"
+
+    customer = Customer(
+        store_id=store.id,
+        name="Cliente PIX Revisao",
+        phone=sender,
+        active=True,
+    )
+    db.add(customer)
+    db.flush()
+
+    conversation = Conversation(
+        store_id=store.id,
+        customer_id=customer.id,
+        channel="WHATSAPP",
+        external_conversation_id=sender,
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.flush()
+
+    order = Order(
+        store_id=store.id,
+        customer_id=customer.id,
+        cart_id=uuid4(),
+        display_id="000991",
+        status="READY_FOR_INTEGRATION",
+        service_mode="DELIVERY",
+        payment_method="PIX",
+        payment_type="PREPAID",
+        subtotal=Decimal("24.00"),
+        delivery_fee=Decimal("3.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("27.00"),
+        customer_name=customer.name,
+        customer_phone=sender,
+    )
+    db.add(order)
+    db.flush()
+
+    event = ChannelEvent(
+        channel_account_id=account.id,
+        provider="WHATSAPP_CLOUD",
+        external_event_id="wamid.pix-needs-review-central",
+        event_type="INBOUND_MESSAGE",
+        payload_json={},
+    )
+    db.add(event)
+    db.commit()
+
+    service = PixReceiptService(
+        conversation_media_storage=ConversationMediaStorage(
+            root_path=tmp_path,
+        ),
+    )
+
+    service._recent_pix_orders = (
+        lambda *args, **kwargs: [order]
+    )
+
+    notify_calls = []
+
+    def fake_notify_review(
+        db_session,
+        *,
+        account,
+        receipt,
+    ):
+        notify_calls.append(receipt.id)
+        return 1
+
+    service.review.notify_review = fake_notify_review
+
+    def fake_validate(
+        db_session,
+        *,
+        receipt,
+    ):
+        receipt.status = "NEEDS_REVIEW"
+        receipt.validation_json = {
+            **(receipt.validation_json or {}),
+            "decision": "NEEDS_REVIEW",
+            "reasons": [
+                "RECEIVER_NOT_CONFIRMED",
+            ],
+        }
+        db_session.commit()
+        db_session.refresh(receipt)
+        return receipt
+
+    service.validator.process = fake_validate
+
+    result = service.receive_whatsapp_media(
+        db,
+        account=account,
+        event=event,
+        conversation=conversation,
+        sender=sender,
+        message={
+            "type": "image",
+            "image": {
+                "id": "media-pix-needs-review",
+                "mime_type": "image/png",
+            },
+        },
+        client=FakeClient(),
+        allow_customer_reply=True,
+    )
+
+    assert result is not None
+    assert result.status == "NEEDS_REVIEW"
+
+    receipts = list(
+        db.scalars(
+            select(PaymentReceipt).where(
+                PaymentReceipt.order_id == order.id
+            )
+        )
+    )
+
+    assert len(receipts) == 1
+    assert receipts[0].status == "NEEDS_REVIEW"
+
+    messages = list(
+        db.scalars(
+            select(Message)
+            .where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "INBOUND",
+                Message.sender_type == "CUSTOMER",
+            )
+        )
+    )
+
+    assert len(messages) == 1
+
+    message = messages[0]
+
+    assert message.content == "[Comprovante PIX recebido]"
+    assert message.content_type == "IMAGE"
+
+    metadata = message.metadata_json
+
+    assert metadata["payment_receipt_id"] == str(
+        receipts[0].id
+    )
+    assert (
+        metadata["payment_receipt_status"]
+        == "NEEDS_REVIEW"
+    )
+    assert metadata["stored_media"] is True
+    assert metadata["mime_type"] == "image/png"
+
+    stored_path = (
+        tmp_path
+        / metadata["stored_media_path"]
+    )
+
+    assert stored_path.is_file()
+    assert (
+        stored_path.read_bytes()
+        == b"imagem-teste-whatsapp"
+    )
+
+    tickets = list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id
+                == conversation.id
+            )
+        )
+    )
+
+    assert len(tickets) == 1
+    assert tickets[0].status == "OPEN"
+    assert tickets[0].priority == "URGENT"
+    assert "PIX do pedido #000991" in tickets[0].reason
+
+    db.refresh(conversation)
+
+    assert conversation.status == "WAITING_HUMAN"
+
+    assert notify_calls == [receipts[0].id]
+
+    validation = receipts[0].validation_json or {}
+
+    assert validation["staff_review_notified"] is True
+    assert validation["staff_review_notified_count"] == 1
+
+    customer_outbounds = list(
+        db.scalars(
+            select(OutboundChannelMessage).where(
+                OutboundChannelMessage.recipient == sender
+            )
+        )
+    )
+
+    # Continua existindo apenas a resposta PIX original.
+    # O handoff não envia uma segunda resposta automática.
+    assert len(customer_outbounds) == 1
+    assert "conferência" in customer_outbounds[0].content
+
+    ai_events = list(
+        db.scalars(
+            select(AIEvent).where(
+                AIEvent.conversation_id == conversation.id
+            )
+        )
+    )
+
+    assert any(
+        event.event_type == "HUMAN_WAITING"
+        for event in ai_events
+    )
+
+    assert not any(
+        event.event_type == "AI_RESPONSE"
+        for event in ai_events
+    )
+
+    db.close()
