@@ -106,18 +106,24 @@ def test_olivia_never_offers_online_menu_spontaneously() -> None:
     )
 
 
-def test_olivia_menu_without_url_has_two_options() -> None:
-    assert "ofereça somente duas opções" in OLIVIA_INSTRUCTIONS
-    assert "cardápio em PDF" in OLIVIA_INSTRUCTIONS
-    assert "cardápio detalhado pela própria Olívia" in OLIVIA_INSTRUCTIONS
-
-
-def test_olivia_menu_with_url_has_three_options() -> None:
-    assert "ofereça três opções" in OLIVIA_INSTRUCTIONS
-    assert "Somente nesse caso inclua a URL oficial cadastrada" in (
+def test_olivia_uses_pdf_first_for_broad_menu_requests() -> None:
+    assert "PDF PRIMEIRO" in OLIVIA_INSTRUCTIONS
+    assert "quais hambúrgueres vocês têm?" in OLIVIA_INSTRUCTIONS
+    assert "NÃO use browse_catalog, search_catalog ou search_knowledge" in (
         OLIVIA_INSTRUCTIONS
     )
+    assert "Não pergunte ao cliente se prefere PDF" in OLIVIA_INSTRUCTIONS
 
+
+def test_olivia_only_sends_online_link_when_explicitly_requested() -> None:
+    assert (
+        'Se o cliente pedir explicitamente "link", "site", "cardápio online"'
+        in OLIVIA_INSTRUCTIONS
+    )
+    assert (
+        "O PDF é o caminho preferencial para apresentação ampla"
+        in OLIVIA_INSTRUCTIONS
+    )
 
 def test_olivia_does_not_invent_url_when_none_is_configured() -> None:
     assert "não há link online configurado" in OLIVIA_INSTRUCTIONS

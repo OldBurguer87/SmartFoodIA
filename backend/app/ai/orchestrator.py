@@ -17,10 +17,12 @@ from app.ai.tools.registry import OliviaToolRegistry
 from app.core.config import settings
 from app.models.catalog import Store
 from app.models.commercial import StoreCommercialRules
+from app.models.catalog_version import CatalogVersion
 from app.models.menu import StoreMenuDocument
 from app.models.order import Order
 from app.models.conversation import AIEvent
 from app.repositories.catalog import ProductRepository
+from app.services.catalog.search import normalize_text
 from app.repositories.cart import CartRepository
 from app.repositories.conversation import ConversationRepository
 from app.repositories.customer import CustomerRepository
@@ -138,18 +140,40 @@ def _menu_pdf_context(db: Session, *, store_id: UUID) -> str:
     if document is None:
         return (
             "CONTEXTO DO CARDÁPIO PDF: não existe PDF cadastrado neste momento. "
-            "Se o cliente pedir PDF, use send_menu_pdf mesmo assim para confirmar "
-            "a indisponibilidade pela ferramenta oficial."
+            "Se houver uma solicitação ampla de cardápio, send_menu_pdf pode ser "
+            "tentada como ferramenta oficial; se retornar indisponibilidade, "
+            "use o catálogo como fallback."
+        )
+
+    active_catalog = db.scalar(
+        select(CatalogVersion)
+        .where(
+            CatalogVersion.store_id == store_id,
+            CatalogVersion.active.is_(True),
+        )
+        .order_by(CatalogVersion.created_at.desc())
+        .limit(1)
+    )
+
+    synchronized = bool(
+        active_catalog is not None
+        and document.catalog_version_id == active_catalog.id
+    )
+
+    if not synchronized:
+        return (
+            "CONTEXTO DO CARDÁPIO PDF: existe PDF cadastrado, mas ele NÃO está "
+            "sincronizado com a versão ativa do catálogo. Não apresente esse "
+            "PDF como cardápio atual. Use o catálogo como fallback até o PDF "
+            "ser atualizado."
         )
 
     return (
-        "CONTEXTO DO CARDÁPIO PDF: existe PDF oficial cadastrado e disponível "
-        f"para envio pelo WhatsApp. Arquivo: {document.original_name}. "
-        "Quando o cliente pedir explicitamente o cardápio em PDF, use "
-        "send_menu_pdf imediatamente. Não use search_knowledge nem "
-        "request_human_help antes dessa ferramenta."
+        "CONTEXTO DO CARDÁPIO PDF: existe PDF oficial, atualizado e sincronizado "
+        f"com a versão ativa do catálogo. Arquivo: {document.original_name}. "
+        "Para solicitações amplas de cardápio, menu, categorias ou opções, "
+        "priorize send_menu_pdf em vez de listar o catálogo pelo WhatsApp."
     )
-
 
 def _local_greeting() -> str:
     now = datetime.now(ZoneInfo("America/Manaus"))
@@ -669,13 +693,39 @@ def _recent_validated_products_context(
             else 0.0
         )
 
-        if first_score < 0.90:
+        first_code = first.get("external_code")
+        first_product = (
+            repository.get_by_external_code(
+                db,
+                store_id=store_id,
+                external_code=first_code,
+            )
+            if first_code
+            else None
+        )
+
+        if first_product is None or not first_product.active:
             continue
 
-        if first_score - second_score < 0.20:
-            continue
+        exact_name_match = (
+            normalize_text(query)
+            == normalize_text(first_product.name)
+        )
 
-        codes = [first.get("external_code")]
+        # Uma correspondência exata com o nome atual do produto no banco
+        # é inequívoca mesmo quando existem variações muito parecidas,
+        # como "X SALADA" e "X SALADA BACON".
+        #
+        # Para buscas não exatas, preservamos a proteção conservadora
+        # existente de score mínimo + margem para o segundo resultado.
+        if not exact_name_match:
+            if first_score < 0.90:
+                continue
+
+            if first_score - second_score < 0.20:
+                continue
+
+        codes = [first_code]
 
         for code in codes:
             if not code or code in seen_codes:

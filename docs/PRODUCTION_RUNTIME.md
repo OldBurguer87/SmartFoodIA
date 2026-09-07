@@ -1,6 +1,76 @@
 # Estado real de produção
 
-Última auditoria operacional: **2026-08-19**.
+<!-- SMARTFOODIA-RUNTIME-2026-09-07:START -->
+## Snapshot validado — 2026-09-07
+
+Este é o estado mais recente confirmado da produção. Seções anteriores deste
+documento permanecem como histórico dos respectivos marcos.
+
+### Infraestrutura
+
+- VPS: `masterdaweb`;
+- branch: `feature/plataforma-multiempresa`;
+- base observada antes do commit de consolidação: `510d6c9`;
+- PostgreSQL 17;
+- Alembic: **`0023 (head)`**;
+- `smartfoodia-api`: ativo e `healthy`;
+- `smartfoodia-worker`: ativo;
+- `smartfoodia-web`: ativo;
+- `smartfoodia-db`: ativo e `healthy`;
+- `smartfoodia-caddy`: ativo;
+- `/ready` público: OK, aplicação pronta e banco disponível.
+
+O container adicional `smartfoodia-db-rehearsal` também estava ativo durante
+a verificação, mas não faz parte do conjunto principal de serviços da produção.
+
+### Validação
+
+Antes da consolidação das alterações:
+
+- `git diff --cached --check`: OK;
+- `py_compile` dos módulos Python alterados: OK;
+- testes direcionados: **96 passed**;
+- suíte completa do backend: **375 passed**.
+
+### Cardápio
+
+Solicitações amplas para conhecer, visualizar ou comparar o cardápio priorizam
+o PDF oficial.
+
+O gateway pode tratar deterministicamente solicitações amplas e enviar o PDF
+sem encaminhar primeiro a mensagem ao modelo de IA quando existir documento
+válido.
+
+Pedido explícito por link/site/cardápio online continua tendo precedência
+quando houver URL oficial configurada.
+
+Pedidos específicos de produto não recebem PDF automaticamente.
+
+O PDF somente é considerado utilizável quando estiver sincronizado com a
+versão ativa do catálogo. Em caso de ausência, indisponibilidade ou
+dessincronização, o fluxo retorna à Olívia para consulta ao catálogo.
+
+### PIX após checkout
+
+Após `checkout_cart` bem-sucedido com método PIX, o gateway pode localizar o
+checkout realizado no mesmo ciclo, obter o total confirmado pelo Core e gerar
+o PIX Copia e Cola por código determinístico.
+
+O payload utiliza:
+
+- chave PIX configurada nas regras comerciais;
+- recebedor configurado ou nome da loja;
+- cidade da loja;
+- valor exato retornado pelo checkout;
+- TXID associado ao `display_id` do pedido.
+
+A IA não monta o BR Code e não calcula o valor a ser codificado.
+
+O código é persistido como mensagem `PIX_COPY_PASTE` com indicação de geração
+determinística e `openai_used = false`.
+<!-- SMARTFOODIA-RUNTIME-2026-09-07:END -->
+
+Auditoria operacional histórica desta seção: **2026-08-19**.
 
 Este documento registra o que está efetivamente executando na VPS e separa três conceitos:
 
@@ -340,7 +410,7 @@ Prioridades:
 - Fluxo real validado: WhatsApp → Olívia → carrinho → checkout → Consumer → retorno de status → cliente.
 - Takeover humano está ativo e operacional.
 - PIX no Consumer foi corrigido para ONLINE/prepaid e validado em pedido real sem o alerta anterior.
-- A produção está na migration Alembic 0022.
+- Na atualização operacional de 2026-08-29, a produção estava na migration Alembic 0022.
 - Combos usam product_combo_components e order_item_combo_components, separando composição técnica do preço comercial.
 - Seis TRIOs estão configurados com 18 componentes técnicos.
 - O checkout valida a soma da composição e grava snapshot dos componentes no pedido.

@@ -17,6 +17,8 @@ from app.models.catalog import Company, Store
 from app.models.channel import ChannelAccount, ChannelEvent, OutboundChannelMessage
 from app.models.conversation import AIEvent, Conversation, Message, HumanTicket
 from app.models.commercial import StoreCommercialRules
+from app.models.catalog_version import CatalogVersion
+from app.models.menu import StoreMenuDocument
 from app.models.customer import Customer
 from app.models.order import Order
 from app.models.payment import PaymentReceipt
@@ -3000,6 +3002,30 @@ def test_order_collection_natural_finish_and_negative_triggers():
 
 # MENU OPTIONS ZERO GPT
 
+def _add_synchronized_menu_pdf(db: Session, store: Store) -> None:
+    version = CatalogVersion(
+        store_id=store.id,
+        version_code=f"TEST-{uuid4()}",
+        provider="GENERIC",
+        status="ACTIVE",
+        active=True,
+    )
+    db.add(version)
+    db.flush()
+
+    db.add(
+        StoreMenuDocument(
+            store_id=store.id,
+            catalog_version_id=version.id,
+            original_name="cardapio-teste.pdf",
+            content_type="application/pdf",
+            public_token=uuid4().hex,
+            content=b"%PDF-1.4\n% teste",
+        )
+    )
+    db.commit()
+
+
 def _last_olivia_outbound(db: Session):
     return db.scalar(
         select(Message)
@@ -3012,7 +3038,7 @@ def _last_olivia_outbound(db: Session):
     )
 
 
-def test_menu_options_without_online_url_are_deterministic():
+def test_menu_without_pdf_falls_back_to_olivia():
     db, _, _ = setup_db()
     orchestrator = FakeOrchestrator()
 
@@ -3024,28 +3050,28 @@ def test_menu_options_without_online_url_are_deterministic():
     result = service.process_payload(
         db,
         _order_collection_payload(
-            "wamid.menu-no-url",
+            "wamid.menu-no-pdf",
             "manda o cardápio",
         ),
     )
 
     assert result.failed == 0
-    assert orchestrator.calls == []
-
-    reply = _last_olivia_outbound(db)
-
-    assert reply is not None
-    assert "PDF" in reply.content
-    assert "por aqui comigo" in reply.content
-    assert "online" not in reply.content.lower()
-    assert reply.metadata_json["deterministic"] is True
-    assert reply.metadata_json["openai_used"] is False
+    assert len(orchestrator.calls) == 1
+    assert orchestrator.calls[0]["customer_message"] == "manda o cardápio"
 
     db.close()
 
 
-def test_menu_options_with_online_url_are_deterministic():
+def test_generic_menu_with_online_url_still_uses_pdf_first(monkeypatch):
+    from app.core.config import settings
+
     db, store, _ = setup_db()
+
+    monkeypatch.setattr(
+        settings,
+        "public_base_url",
+        "https://smartfoodia.test",
+    )
     orchestrator = FakeOrchestrator()
 
     online_url = "https://menu.exemplo.com/loja"
@@ -3057,6 +3083,8 @@ def test_menu_options_with_online_url_are_deterministic():
         )
     )
     db.commit()
+
+    _add_synchronized_menu_pdf(db, store)
 
     service = WhatsAppGatewayService(
         orchestrator_factory=lambda: orchestrator,
@@ -3076,10 +3104,13 @@ def test_menu_options_with_online_url_are_deterministic():
 
     reply = _last_olivia_outbound(db)
 
-    assert "cardápio online" in reply.content.lower()
+    assert reply is not None
     assert "PDF" in reply.content
-    assert online_url in reply.content
+    assert online_url not in reply.content
+    assert "cardápio online" not in reply.content.lower()
+    assert reply.metadata_json["deterministic"] is True
     assert reply.metadata_json["openai_used"] is False
+    assert reply.metadata_json["type"] == "MENU_PDF_SENT"
 
     db.close()
 
@@ -3152,8 +3183,19 @@ def test_explicit_online_menu_uses_exact_configured_url():
     db.close()
 
 
-def test_explicit_pdf_menu_still_reaches_olivia():
-    db, _, _ = setup_db()
+def test_explicit_pdf_menu_is_deterministic_without_gpt(monkeypatch):
+    from app.core.config import settings
+
+    db, store, _ = setup_db()
+
+    monkeypatch.setattr(
+        settings,
+        "public_base_url",
+        "https://smartfoodia.test",
+    )
+
+    _add_synchronized_menu_pdf(db, store)
+
     orchestrator = FakeOrchestrator()
 
     service = WhatsAppGatewayService(
@@ -3170,13 +3212,28 @@ def test_explicit_pdf_menu_still_reaches_olivia():
     )
 
     assert result.failed == 0
-    assert len(orchestrator.calls) == 1
-    assert (
-        orchestrator.calls[0]["customer_message"]
-        == "manda o cardápio em PDF"
-    )
+    assert orchestrator.calls == []
 
     db.close()
+
+
+def test_menu_request_classifier_prefers_pdf_for_broad_discovery():
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: FakeOrchestrator(),
+        client_factory=lambda: FakeClient(),
+    )
+
+    assert service._menu_request_kind(
+        "quais hambúrgueres vocês têm?"
+    ) == "MENU"
+
+    assert service._menu_request_kind(
+        "manda o cardápio em PDF"
+    ) == "PDF"
+
+    assert service._menu_request_kind(
+        "quero 2 x salada"
+    ) is None
 
 
 

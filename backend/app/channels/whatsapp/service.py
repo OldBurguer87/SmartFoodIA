@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.orchestrator import OliviaOrchestrator
+from app.ai.tools.context import ToolContext
+from app.ai.tools.menu_document import SendMenuPdfTool
 from app.ai.providers.openai_provider import (
     OpenAIProviderRequestError,
     OpenAIResponsesProvider,
@@ -17,6 +19,7 @@ from app.ai.providers.openai_provider import (
 from app.channels.whatsapp.client import WhatsAppCloudClient
 from app.core.config import settings
 from app.models.channel import ChannelAccount, ChannelEvent
+from app.models.catalog import Store
 from app.models.customer import Customer
 from app.models.conversation import AIEvent
 from app.models.commercial import StoreCommercialRules
@@ -34,6 +37,7 @@ from app.services.commercial_status import CommercialStatusService
 from app.services.human_relay import HumanRelayService
 from app.services.operation_mode import is_store_human_only
 from app.services.pix_receipt import PixReceiptService
+from app.services.pix_brcode import build_pix_copy_paste
 
 
 class WhatsAppWebhookError(ValueError):
@@ -134,10 +138,15 @@ class WhatsAppGatewayService:
         if not compact:
             return None
 
-        # Pedido explícito de PDF continua com a Olivia,
-        # pois ela precisa executar send_menu_pdf.
-        if "pdf" in compact:
-            return None
+        # PDF explícito pode ser atendido de forma determinística,
+        # reutilizando a mesma ferramenta oficial e sem chamada ao GPT.
+        if "pdf" in compact and (
+            "cardapio" in compact
+            or "menu" in compact
+            or compact == "pdf"
+            or "manda" in compact
+        ):
+            return "PDF"
 
         online_patterns = (
             r"\bcardapio online\b",
@@ -153,6 +162,23 @@ class WhatsAppGatewayService:
             for pattern in online_patterns
         ):
             return "ONLINE"
+
+        broad_menu_patterns = (
+            r"\bo que (?:voces|vcs) (?:tem|vendem)\b",
+            r"\bo que tem (?:no|de) cardapio\b",
+            r"\bquais (?:os |as )?(?:hamburgueres|hamburguer|lanches|"
+            r"bebidas|pratos|refeicoes|sucos|sobremesas|acompanhamentos)\b",
+            r"\btem quais (?:hamburgueres|lanches|bebidas|pratos|"
+            r"refeicoes|sucos)\b",
+            r"\bme mostra (?:os |as )?(?:hamburgueres|lanches|bebidas|"
+            r"pratos|refeicoes|sucos)\b",
+        )
+
+        if any(
+            re.search(pattern, compact)
+            for pattern in broad_menu_patterns
+        ):
+            return "MENU"
 
         generic_requests = {
             "cardapio",
@@ -218,14 +244,30 @@ class WhatsAppGatewayService:
             store_id=account.store_id,
         )
 
-        self._save_order_collection_customer_message(
-            db,
-            conversation_id=conversation.id,
-            event=event,
-            content=content,
-        )
+        if request_kind in {"MENU", "PDF"}:
+            pdf_result = SendMenuPdfTool(
+                ToolContext(
+                    db=db,
+                    store_id=account.store_id,
+                    conversation_id=conversation.id,
+                    customer_phone=recipient,
+                )
+            ).execute()
 
-        if request_kind == "ONLINE":
+            if pdf_result.ok:
+                reply = (
+                    "Claro 😊 Enviei nosso cardápio em PDF. "
+                    "Dá uma olhada e, se quiser saber algo sobre algum item, "
+                    "é só me falar."
+                )
+                prompt_type = "MENU_PDF_SENT"
+            else:
+                # PDF inexistente, desatualizado ou indisponível:
+                # libera a mesma mensagem para a Olívia usar o catálogo
+                # como fallback, sem duplicar o INBOUND.
+                return False
+
+        elif request_kind == "ONLINE":
             if online_url:
                 reply = (
                     "Claro 😊 Aqui está o cardápio online oficial:\n"
@@ -234,27 +276,20 @@ class WhatsAppGatewayService:
                 prompt_type = "MENU_ONLINE_LINK"
             else:
                 reply = (
-                    "No momento não há cardápio online configurado "
-                    "para esta loja. Você prefere receber o cardápio "
-                    "em PDF ou ver as opções detalhadas por aqui comigo?"
+                    "No momento não há cardápio online configurado. "
+                    "Posso te enviar nosso cardápio em PDF."
                 )
                 prompt_type = "MENU_ONLINE_UNAVAILABLE"
 
-        elif online_url:
-            reply = (
-                "Claro 😊 Você prefere abrir o cardápio online, "
-                "receber o cardápio em PDF ou ver as opções "
-                "detalhadas por aqui comigo?\n"
-                f"{online_url}"
-            )
-            prompt_type = "MENU_OPTIONS_WITH_ONLINE"
-
         else:
-            reply = (
-                "Claro 😊 Você prefere receber o cardápio em PDF "
-                "ou ver as opções detalhadas por aqui comigo?"
-            )
-            prompt_type = "MENU_OPTIONS"
+            return False
+
+        self._save_order_collection_customer_message(
+            db,
+            conversation_id=conversation.id,
+            event=event,
+            content=content,
+        )
 
         self._send_order_collection_message(
             db,
@@ -1258,6 +1293,86 @@ class WhatsAppGatewayService:
             failed=failed,
         )
 
+    def _pix_after_recent_checkout(
+        self,
+        db: Session,
+        *,
+        store_id: Any,
+        conversation_id: Any,
+        since: datetime,
+    ) -> dict[str, str] | None:
+        event = db.scalar(
+            select(AIEvent)
+            .where(
+                AIEvent.store_id == store_id,
+                AIEvent.conversation_id == conversation_id,
+                AIEvent.event_type == "TOOL_EXECUTION",
+                AIEvent.tool_name == "checkout_cart",
+                AIEvent.success.is_(True),
+                AIEvent.created_at >= since,
+            )
+            .order_by(AIEvent.created_at.desc())
+            .limit(1)
+        )
+
+        if event is None:
+            return None
+
+        payload = event.payload_json or {}
+        result = payload.get("result") or {}
+
+        if not result.get("ok", False):
+            return None
+
+        data = result.get("data") or {}
+
+        if str(data.get("payment_method") or "").upper() != "PIX":
+            return None
+
+        total = data.get("total")
+        display_id = str(data.get("display_id") or "").strip()
+
+        if total is None or not display_id:
+            return None
+
+        rules = db.scalar(
+            select(StoreCommercialRules).where(
+                StoreCommercialRules.store_id == store_id,
+            )
+        )
+
+        if (
+            rules is None
+            or not rules.accepts_pix
+            or not str(rules.pix_key or "").strip()
+        ):
+            return None
+
+        store = db.get(Store, store_id)
+
+        if store is None:
+            return None
+
+        try:
+            code = build_pix_copy_paste(
+                pix_key=str(rules.pix_key).strip(),
+                merchant_name=(
+                    str(rules.pix_receiver_name or "").strip()
+                    or store.name
+                ),
+                merchant_city=store.city,
+                amount=total,
+                txid=f"PED{display_id}",
+            )
+        except (TypeError, ValueError):
+            return None
+
+        return {
+            "code": code,
+            "display_id": display_id,
+            "total": f"{float(total):.2f}".replace(".", ","),
+        }
+
     def process_event(
         self,
         db: Session,
@@ -2123,6 +2238,8 @@ class WhatsAppGatewayService:
 
             return
 
+        olivia_started_at = datetime.now(timezone.utc)
+
         try:
             reply = self.orchestrator_factory().reply(
                 db,
@@ -2202,6 +2319,13 @@ class WhatsAppGatewayService:
             )
             return
 
+        pix_payment = self._pix_after_recent_checkout(
+            db,
+            store_id=account.store_id,
+            conversation_id=conversation.id,
+            since=olivia_started_at,
+        )
+
         self.repository.create_outbound(
             db,
             account=account,
@@ -2209,3 +2333,31 @@ class WhatsAppGatewayService:
             recipient=sender,
             content=sanitize_whatsapp_text(reply),
         )
+
+        if pix_payment is not None:
+            pix_code = pix_payment["code"]
+
+            self.conversations.add_message(
+                db,
+                conversation_id=conversation.id,
+                payload=MessageCreate(
+                    direction="OUTBOUND",
+                    sender_type="OLIVIA",
+                    content=pix_code,
+                    metadata_json={
+                        "type": "PIX_COPY_PASTE",
+                        "deterministic": True,
+                        "openai_used": False,
+                        "order_display_id": pix_payment["display_id"],
+                        "amount": pix_payment["total"],
+                    },
+                ),
+            )
+
+            self.repository.create_outbound(
+                db,
+                account=account,
+                conversation_id=conversation.id,
+                recipient=sender,
+                content=pix_code,
+            )

@@ -49,3 +49,13 @@ Uma decisão nova que altere arquitetura, escopo V1, contrato de integração, i
 - **DEC-040 — Otimização de custo não pode reduzir a segurança do checkout:** aprovada.
 - **DEC-041 — Preferir regra determinística quando interpretação por IA não for necessária:** aprovada, desde que não degrade o atendimento.
 - **DEC-042 — Estabilidade e custo previsível precedem expansão comercial:** aprovada.
+
+<!-- SMARTFOODIA-DECISIONS-2026-09-07:START -->
+
+## Decisões adicionais — 2026-09-07
+
+- **DEC-043 — Apresentação ampla do cardápio prioriza o PDF oficial:** aprovada. Solicitações amplas para conhecer, ver ou comparar o cardápio devem priorizar o documento oficial quando ele estiver disponível e sincronizado. Intenção explícita por link/cardápio online e intenção específica de compra mantêm seus fluxos próprios.
+- **DEC-044 — PDF de cardápio deve acompanhar a versão ativa do catálogo:** aprovada. Documento ausente, indisponível ou associado a versão não ativa não deve ser apresentado como cardápio corrente; o catálogo estruturado permanece fallback.
+- **DEC-045 — PIX Copia e Cola pós-checkout é determinístico e externo à IA:** aprovada. O BR Code deve ser gerado pelo sistema a partir de dados confirmados pelo Core, incluindo valor do pedido e configuração PIX da loja. A Olívia não calcula nem monta o payload PIX.
+
+<!-- SMARTFOODIA-DECISIONS-2026-09-07:END -->

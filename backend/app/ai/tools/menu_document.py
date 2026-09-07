@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
 from app.core.config import settings
+from app.models.catalog_version import CatalogVersion
 from app.models.menu import StoreMenuDocument
 from app.repositories.channel import ChannelRepository
 
@@ -15,10 +16,12 @@ class SendMenuPdfTool:
     definition = ToolDefinition(
         name="send_menu_pdf",
         description=(
-            "Envia ao cliente, pelo WhatsApp, o PDF oficial do cardápio "
-            "cadastrado para o estabelecimento. Use quando o cliente pedir "
-            "explicitamente o cardápio em PDF ou escolher PDF após ser "
-            "perguntado se prefere PDF ou ver o cardápio no WhatsApp."
+            "Envia ao cliente, pelo WhatsApp, o PDF oficial e atualizado "
+            "do cardápio cadastrado para o estabelecimento. Esta é a forma "
+            "preferencial de apresentar o cardápio quando o cliente pedir "
+            "o cardápio, menu, opções, categorias ou quiser conhecer de "
+            "forma ampla os produtos disponíveis. Também use imediatamente "
+            "quando o cliente pedir explicitamente o PDF."
         ),
         input_schema={
             "type": "object",
@@ -47,6 +50,34 @@ class SendMenuPdfTool:
             return ToolResult(
                 ok=False,
                 error="Não existe cardápio PDF cadastrado para este estabelecimento.",
+            )
+
+        active_catalog = self.context.db.scalar(
+            select(CatalogVersion)
+            .where(
+                CatalogVersion.store_id == self.context.store_id,
+                CatalogVersion.active.is_(True),
+            )
+            .order_by(CatalogVersion.created_at.desc())
+            .limit(1)
+        )
+
+        if active_catalog is None:
+            return ToolResult(
+                ok=False,
+                error=(
+                    "Não existe uma versão ativa do catálogo para validar "
+                    "o cardápio PDF."
+                ),
+            )
+
+        if document.catalog_version_id != active_catalog.id:
+            return ToolResult(
+                ok=False,
+                error=(
+                    "O cardápio PDF cadastrado está desatualizado em relação "
+                    "à versão ativa do catálogo."
+                ),
             )
 
         account = ChannelRepository().get_account_by_store(

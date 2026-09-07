@@ -432,3 +432,291 @@ def test_recent_validated_family_keeps_options_without_auto_selecting():
     assert "P85" not in context
     assert "nunca escolha uma opção" in context
     assert "Nunca use family_external_code" in context
+
+
+def test_recent_validated_products_reuses_exact_name_even_with_close_variant():
+    from app.ai.orchestrator import _recent_validated_products_context
+
+    db, store, conversation = setup_context()
+
+    exact_product = Product(
+        store_id=store.id,
+        external_code="17",
+        name="X SALADA",
+        description="X Salada tradicional",
+        price=Decimal("10.00"),
+        active=True,
+        available_for_delivery=True,
+        available_for_takeout=True,
+    )
+    close_variant = Product(
+        store_id=store.id,
+        external_code="20",
+        name="X SALADA BACON",
+        description="X Salada com bacon",
+        price=Decimal("12.00"),
+        active=True,
+        available_for_delivery=True,
+        available_for_takeout=True,
+    )
+    db.add_all([exact_product, close_variant])
+    db.commit()
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="search_catalog",
+            success=True,
+            payload_json={
+                "arguments": {
+                    "query": "x salada",
+                    "service_mode": None,
+                    "limit": 10,
+                },
+                "result": {
+                    "ok": True,
+                    "data": {
+                        "query": "x salada",
+                        "families": [],
+                        "products": [
+                            {
+                                "external_code": "17",
+                                "name": "X SALADA",
+                                "relevance_score": 1.0,
+                            },
+                            {
+                                "external_code": "20",
+                                "name": "X SALADA BACON",
+                                "relevance_score": 0.95,
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+    )
+    db.commit()
+
+    context = _recent_validated_products_context(
+        db,
+        store_id=store.id,
+        conversation_id=conversation.id,
+    )
+
+    assert "PRODUTOS RECENTEMENTE VALIDADOS PELO SMARTFOODIA" in context
+    assert "codigo=17" in context
+    assert "nome=X SALADA" in context
+    assert "preco_atual=10.00" in context
+
+
+def test_recent_validated_products_reuses_old_jr_exact_name_with_trio_close():
+    from app.ai.orchestrator import _recent_validated_products_context
+
+    db, store, conversation = setup_context()
+
+    exact_product = Product(
+        store_id=store.id,
+        external_code="114",
+        name="Old Jr.",
+        description="Hambúrguer Old Jr",
+        price=Decimal("15.00"),
+        active=True,
+        available_for_delivery=True,
+        available_for_takeout=True,
+    )
+    close_variant = Product(
+        store_id=store.id,
+        external_code="135",
+        name="Trio Old Jr.",
+        description="Combo com Old Jr",
+        price=Decimal("25.00"),
+        active=True,
+        available_for_delivery=True,
+        available_for_takeout=True,
+    )
+    db.add_all([exact_product, close_variant])
+    db.commit()
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="search_catalog",
+            success=True,
+            payload_json={
+                "arguments": {
+                    "query": "Old Jr",
+                    "service_mode": None,
+                    "limit": 10,
+                },
+                "result": {
+                    "ok": True,
+                    "data": {
+                        "query": "Old Jr",
+                        "families": [],
+                        "products": [
+                            {
+                                "external_code": "114",
+                                "name": "Old Jr.",
+                                "relevance_score": 1.0,
+                            },
+                            {
+                                "external_code": "135",
+                                "name": "Trio Old Jr.",
+                                "relevance_score": 0.90,
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+    )
+    db.commit()
+
+    context = _recent_validated_products_context(
+        db,
+        store_id=store.id,
+        conversation_id=conversation.id,
+    )
+
+    assert "codigo=114" in context
+    assert "nome=Old Jr." in context
+    assert "preco_atual=15.00" in context
+
+
+def test_recent_validated_products_keeps_margin_rule_for_non_exact_query():
+    from app.ai.orchestrator import _recent_validated_products_context
+
+    db, store, conversation = setup_context()
+
+    first_product = Product(
+        store_id=store.id,
+        external_code="17",
+        name="X SALADA",
+        description="X Salada tradicional",
+        price=Decimal("10.00"),
+        active=True,
+        available_for_delivery=True,
+        available_for_takeout=True,
+    )
+    second_product = Product(
+        store_id=store.id,
+        external_code="20",
+        name="X SALADA BACON",
+        description="X Salada com bacon",
+        price=Decimal("12.00"),
+        active=True,
+        available_for_delivery=True,
+        available_for_takeout=True,
+    )
+    db.add_all([first_product, second_product])
+    db.commit()
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="search_catalog",
+            success=True,
+            payload_json={
+                "arguments": {
+                    "query": "salada",
+                    "service_mode": None,
+                    "limit": 10,
+                },
+                "result": {
+                    "ok": True,
+                    "data": {
+                        "query": "salada",
+                        "families": [],
+                        "products": [
+                            {
+                                "external_code": "17",
+                                "name": "X SALADA",
+                                "relevance_score": 0.90,
+                            },
+                            {
+                                "external_code": "20",
+                                "name": "X SALADA BACON",
+                                "relevance_score": 0.85,
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+    )
+    db.commit()
+
+    context = _recent_validated_products_context(
+        db,
+        store_id=store.id,
+        conversation_id=conversation.id,
+    )
+
+    assert "nenhum produto recente disponível para reutilização" in context
+    assert "codigo=17" not in context
+
+
+def test_recent_validated_exact_product_respects_takeout_availability():
+    from app.ai.orchestrator import _recent_validated_products_context
+
+    db, store, conversation = setup_context()
+
+    product = Product(
+        store_id=store.id,
+        external_code="17",
+        name="X SALADA",
+        description="X Salada tradicional",
+        price=Decimal("10.00"),
+        active=True,
+        available_for_delivery=True,
+        available_for_takeout=False,
+    )
+    db.add(product)
+    db.commit()
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="search_catalog",
+            success=True,
+            payload_json={
+                "arguments": {
+                    "query": "x salada",
+                    "service_mode": "TAKEOUT",
+                    "limit": 10,
+                },
+                "result": {
+                    "ok": True,
+                    "data": {
+                        "query": "x salada",
+                        "families": [],
+                        "products": [
+                            {
+                                "external_code": "17",
+                                "name": "X SALADA",
+                                "relevance_score": 1.0,
+                            }
+                        ],
+                    },
+                },
+            },
+        )
+    )
+    db.commit()
+
+    context = _recent_validated_products_context(
+        db,
+        store_id=store.id,
+        conversation_id=conversation.id,
+    )
+
+    assert "nenhum produto recente disponível para reutilização" in context
+    assert "codigo=17" not in context

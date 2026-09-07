@@ -1,5 +1,27 @@
 # Changelog
 
+<!-- SMARTFOODIA-CHANGELOG-2026-09-07:START -->
+## Consolidação validada — 2026-09-07
+
+- Estado de produção novamente auditado na VPS `masterdaweb`.
+- Alembic confirmado em `0023 (head)`.
+- Endpoint público `/ready` validado com aplicação pronta e banco disponível.
+- API e PostgreSQL confirmados como `healthy`; worker, frontend e Caddy ativos.
+- `git diff --cached --check` concluído sem erros.
+- Sintaxe Python das alterações locais validada.
+- Bateria direcionada das áreas alteradas: **96 passed**.
+- Suíte completa do backend: **375 passed**.
+- Cardápio passou a seguir política **PDF primeiro** para solicitações amplas.
+- Gateway pode responder deterministicamente a solicitações amplas de cardápio enviando o PDF oficial sem consumir uma chamada GPT quando o documento estiver válido.
+- Documento de cardápio só é considerado atual quando estiver compatível com a versão ativa do catálogo.
+- Se o PDF estiver ausente, desatualizado ou indisponível, a Olívia usa o catálogo como fallback.
+- Solicitações explícitas por link/site/cardápio online continuam respeitando a URL oficial configurada.
+- Busca/reuso de produto ganhou tratamento seguro para correspondência exata, mantendo proteção conservadora para resultados ambíguos.
+- Adicionado serviço `backend/app/services/pix_brcode.py`.
+- Após checkout PIX bem-sucedido, o gateway pode gerar um PIX Copia e Cola EMV/BR Code deterministicamente, com valor exato do pedido e TXID derivado do identificador do pedido.
+- Geração do código PIX permanece fora da IA.
+<!-- SMARTFOODIA-CHANGELOG-2026-09-07:END -->
+
 ## Pós-0.3.4 — Homologação operacional de 2026-08-11/12
 
 - DNS e HTTPS confirmados em produção para `smartfoodia.com.br`.

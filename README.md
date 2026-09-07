@@ -1,8 +1,42 @@
 # SmartFoodIA
 
+<!-- SMARTFOODIA-STATE-2026-09-07:START -->
+## Estado validado — 2026-09-07
+
+O SmartFoodIA permanece em **produção assistida** na Old Burguer 87.
+
+Estado verificado diretamente na VPS `masterdaweb` em 07/09/2026:
+
+- branch operacional: `feature/plataforma-multiempresa`;
+- base antes do commit desta consolidação: `510d6c9`;
+- a branch local estava 9 commits à frente de `origin/feature/plataforma-multiempresa`;
+- PostgreSQL 17 ativo e saudável;
+- `smartfoodia-api` ativo e saudável;
+- `smartfoodia-worker` ativo;
+- `smartfoodia-web` ativo;
+- `smartfoodia-caddy` ativo;
+- Alembic confirmado em **`0023 (head)`**;
+- `https://smartfoodia.com.br/ready` respondeu com aplicação pronta e banco disponível;
+- `git diff --cached --check` sem erros;
+- sintaxe Python das alterações validada com `py_compile`;
+- bateria direcionada: **96 testes aprovados**;
+- suíte completa do backend: **375 testes aprovados**.
+
+Alterações funcionais validadas nesta consolidação:
+
+- apresentação ampla do cardápio passa a priorizar o **PDF oficial**;
+- solicitações amplas reconhecidas pelo gateway podem receber o PDF sem chamada desnecessária ao modelo de IA;
+- pedido explícito por link/site/cardápio online continua priorizando a URL oficial configurada;
+- intenção clara de compra de produto específico não dispara PDF automaticamente;
+- PDF inexistente, indisponível ou não sincronizado com a versão ativa do catálogo libera fallback para o catálogo;
+- correspondência exata de produto previamente validado pode ser reutilizada com segurança, preservando as proteções de ambiguidade;
+- após checkout PIX bem-sucedido, o SmartFoodIA pode gerar e enviar **PIX Copia e Cola deterministicamente**, com valor exato do pedido e TXID associado ao pedido;
+- a Olívia não gera nem calcula o BR Code PIX: essa responsabilidade permanece fora da IA.
+<!-- SMARTFOODIA-STATE-2026-09-07:END -->
+
 ## Estado atual do projeto
 
-Snapshot operacional atualizado em **2026-08-19**.
+Snapshot operacional consolidado até **2026-09-07**.
 
 A Old Burguer 87 iniciou a operação produtiva assistida do SmartFoodIA em `https://smartfoodia.com.br` usando o commit de aplicação **`832f93e`** da branch `feature/plataforma-multiempresa`.
 
@@ -20,7 +54,7 @@ Antes da virada foram executados **231 testes de backend**, smoke tests das imag
 - API saudável;
 - worker ativo;
 - frontend ativo;
-- Alembic em `0017 (head)`.
+- Alembic em `0023 (head)`.
 
 ### WhatsApp Cloud / Olívia
 
@@ -122,7 +156,7 @@ WhatsApp → Olívia → catálogo/carrinho → confirmação → checkout → C
 
 PIX foi homologado no Consumer com o contrato ONLINE/prepaid.
 
-A migration Alembic atual é 0022, incluindo composição técnica e snapshot de combos/TRIOs.
+Na consolidação operacional de 2026-08-29, a migration Alembic era 0022, incluindo composição técnica e snapshot de combos/TRIOs.
 
 O pedido real #000038 validou o Trio Old Jr. no Consumer pelo valor correto de R$ 25,00, eliminando o comportamento anterior de R$ 0,01.
 

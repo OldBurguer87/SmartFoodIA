@@ -47,13 +47,17 @@ class CommercialContextService:
                 pix_context = (
                     " DADOS OFICIAIS PARA RECEBIMENTO PIX: "
                     + "; ".join(pix_parts)
-                    + ". Quando o cliente escolher PIX ou pedir a chave, "
-                    "informe estes dados diretamente. "
+                    + ". Quando o cliente pedir explicitamente apenas a chave PIX "
+                    "fora do fechamento de um pedido, informe a chave cadastrada. "
                     "Não solicite atendimento humano para fornecer a chave PIX. "
-                    "Não pergunte se o cliente quer a chave: quando o pagamento "
-                    "for PIX, envie-a diretamente. "
-                    "Após o pedido PIX ser confirmado, solicite que o cliente "
-                    "envie o comprovante pelo próprio WhatsApp."
+                    "Durante o fechamento de um pedido pago via PIX, depois que "
+                    "checkout_cart for executado com sucesso, NÃO escreva a chave PIX "
+                    "nem o código Copia e Cola na sua resposta final. "
+                    "A SmartFoodIA enviará deterministicamente o PIX Copia e Cola, "
+                    "com o valor exato do pedido, em uma mensagem separada logo depois. "
+                    "Na sua resposta, apenas informe que o código será enviado na "
+                    "próxima mensagem e solicite que o cliente envie o comprovante "
+                    "pelo próprio WhatsApp após pagar."
                 )
             else:
                 pix_context = (

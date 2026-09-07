@@ -1000,3 +1000,52 @@ def test_coari_delivery_place_seed_and_aliases() -> None:
     )
 
     db.close()
+
+
+def test_send_menu_pdf_blocks_outdated_catalog_version() -> None:
+    from app.models.catalog_version import CatalogVersion
+    from app.models.menu import StoreMenuDocument
+
+    db, store, registry = setup_registry()
+
+    old_version = CatalogVersion(
+        store_id=store.id,
+        version_code=f"OLD-{uuid4()}",
+        provider="TEST",
+        status="ARCHIVED",
+        active=False,
+    )
+
+    active_version = CatalogVersion(
+        store_id=store.id,
+        version_code=f"ACTIVE-{uuid4()}",
+        provider="TEST",
+        status="ACTIVE",
+        active=True,
+    )
+
+    db.add_all([old_version, active_version])
+    db.flush()
+
+    db.add(
+        StoreMenuDocument(
+            store_id=store.id,
+            catalog_version_id=old_version.id,
+            original_name="cardapio-antigo.pdf",
+            content_type="application/pdf",
+            public_token=f"menu-{uuid4().hex}",
+            content=b"%PDF-1.4 test",
+        )
+    )
+
+    db.commit()
+
+    result = registry.execute(
+        "send_menu_pdf",
+        {},
+    )
+
+    assert result.ok is False
+    assert "desatualizado" in result.error.lower()
+
+    db.close()

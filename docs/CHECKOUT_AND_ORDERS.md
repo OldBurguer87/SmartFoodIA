@@ -1,5 +1,30 @@
 # Checkout e pedidos persistentes
 
+<!-- SMARTFOODIA-CHECKOUT-2026-09-07:START -->
+## PIX Copia e Cola após checkout — 2026-09-07
+
+Para checkout com `payment_method = PIX`, o total continua sendo calculado e
+confirmado pelo Core.
+
+Após checkout bem-sucedido, o canal WhatsApp pode gerar deterministicamente
+um PIX Copia e Cola usando `backend/app/services/pix_brcode.py`.
+
+A geração usa o valor exato retornado pelo checkout e um TXID associado ao
+número visível do pedido.
+
+A geração do BR Code:
+
+- não é feita pela Olívia;
+- não depende de interpretação do modelo;
+- não altera o total do pedido;
+- não substitui as regras já existentes de validação do comprovante PIX;
+- não libera o pedido ao Consumer antes de `AUTO_CONFIRMED` ou
+  `HUMAN_CONFIRMED`.
+
+Portanto, gerar/enviar o código para pagamento e confirmar o pagamento
+continuam sendo etapas distintas.
+<!-- SMARTFOODIA-CHECKOUT-2026-09-07:END -->
+
 ## Finalizar carrinho
 
 ```text

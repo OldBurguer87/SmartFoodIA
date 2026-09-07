@@ -1,5 +1,50 @@
 # Ferramentas da Olívia
 
+<!-- SMARTFOODIA-OLIVIA-2026-09-07:START -->
+## Atualização funcional — 2026-09-07
+
+### Cardápio PDF primeiro
+
+Para intenção ampla de conhecer, visualizar ou comparar o cardápio, a Olívia
+prioriza `send_menu_pdf`.
+
+Exemplos incluem pedidos como:
+
+- cardápio/menu;
+- o que vocês têm;
+- quais hambúrgueres;
+- quais bebidas;
+- quais pratos/refeições;
+- solicitações equivalentes de apresentação ampla.
+
+Não é necessário oferecer previamente uma escolha entre PDF, link e listagem
+por WhatsApp.
+
+Depois do envio bem-sucedido do PDF, a resposta deve ser curta e a Olívia só
+consulta produtos específicos quando o cliente pedir detalhes ou começar a
+montar o pedido.
+
+Pedido explícito por link/site/cardápio online continua usando a URL oficial
+quando configurada.
+
+Intenção clara de compra de um produto específico não deve disparar PDF apenas
+por rotina.
+
+Se `send_menu_pdf` não puder enviar um PDF válido, o catálogo real permanece
+como fallback.
+
+### PIX
+
+Durante o fechamento de pedido PIX, a Olívia não gera nem reproduz o BR Code
+na própria resposta.
+
+Depois de `checkout_cart` bem-sucedido, o gateway é responsável por gerar e
+enviar separadamente o PIX Copia e Cola com o valor confirmado pelo Core.
+
+Pedido explícito apenas pela chave PIX, fora do fechamento do pedido, continua
+podendo receber a chave cadastrada nas regras comerciais.
+<!-- SMARTFOODIA-OLIVIA-2026-09-07:END -->
+
 ## Objetivo
 
 A Olívia não acessa o banco nem executa regras de negócio diretamente. Ela usa ferramentas autorizadas que chamam os Services do SmartFoodIA.
@@ -148,7 +193,7 @@ No teste homologado, a Olívia criou corretamente delivery com endereço, refer�
 
 ## Pendência principal
 
-A Olívia já está operacional no backend, mas o **canal WhatsApp real ainda não está configurado**.
+No snapshot de 2026-08-12, a Olívia já estava operacional no backend, mas o **canal WhatsApp real ainda não estava configurado**. Esse estado foi posteriormente superado; consulte o snapshot de 2026-09-07 e `docs/PRODUCTION_RUNTIME.md` para o estado vigente.
 
 O próximo teste deve validar o mesmo fluxo homologado sem comandos manuais:
 
