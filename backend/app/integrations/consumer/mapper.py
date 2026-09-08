@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import uuid5
 from app.models.integration import StoreIntegration
 from app.models.order import Order
+from app.services.order_payments import payment_parts_from_order
 
 class ConsumerContractError(ValueError): pass
 
@@ -189,21 +190,45 @@ def map_order(order: Order, integration: StoreIntegration) -> dict:
 
             consumer_index += 1
 
-    effective_payment_type = (
-        'PREPAID'
-        if str(order.payment_method or '').upper() == 'PIX'
-        else order.payment_type
-    )
-    prepaid=order.total if effective_payment_type=='PREPAID' else Decimal('0')
-    pending=Decimal('0') if effective_payment_type=='PREPAID' else order.total
+    payment_parts = payment_parts_from_order(order)
 
-    # O modelo interno usa PREPAID/PENDING, mas o contrato de
-    # consulta de detalhes do Consumer usa ONLINE/OFFLINE.
-    consumer_payment_type = (
-        'ONLINE'
-        if effective_payment_type == 'PREPAID'
-        else 'OFFLINE'
-    )
+    payment_methods = []
+    prepaid = Decimal("0.00")
+    pending = Decimal("0.00")
+
+    for payment in payment_parts:
+        is_prepaid = (
+            payment.method == "PIX"
+            or payment.payment_type == "PREPAID"
+        )
+
+        if is_prepaid:
+            prepaid += payment.amount
+        else:
+            pending += payment.amount
+
+        payment_methods.append(
+            {
+                "method": payment.method,
+                "type": "ONLINE" if is_prepaid else "OFFLINE",
+                "currency": "BRL",
+                "value": float(payment.amount),
+                "prepaid": is_prepaid,
+                "cash": (
+                    {
+                        "changeFor": float(payment.change_for)
+                    }
+                    if (
+                        payment.method == "CASH"
+                        and payment.change_for is not None
+                    )
+                    else None
+                ),
+                "card": None,
+                "wallet": None,
+            }
+        )
+
     delivery=None; takeout=None
     if order.service_mode=='DELIVERY':
         required={'state':order.address_state,'city':order.address_city,'street':order.address_street,'number':order.address_number,'neighborhood':order.address_neighborhood}
@@ -238,5 +263,4 @@ def map_order(order: Order, integration: StoreIntegration) -> dict:
         }
     else:
         takeout={'mode':'DEFAULT','takeoutDateTime':_iso(order.created_at+timedelta(minutes=30))}
-    method={'method':order.payment_method,'type':consumer_payment_type,'currency':'BRL','value':float(order.total),'prepaid':effective_payment_type=='PREPAID','cash':({'changeFor':float(order.change_for)} if order.payment_method=='CASH' and order.change_for is not None else None),'card':None,'wallet':None}
-    return {'item':{'id':str(order.id),'displayId':order.display_id,'orderType':order.service_mode,'salesChannel':'PARTNER','orderTiming':'IMMEDIATE','createdAt':_iso(order.created_at),'preparationStartDateTime':_iso(order.created_at),'merchant':{'id':integration.merchant_external_id,'name':integration.merchant_name},'items':items,'total':{'subTotal':float(order.subtotal),'deliveryFee':float(order.delivery_fee),'orderAmount':float(order.total),'benefits':float(order.discount),'additionalFees':0},'payments':{'methods':[method],'pending':float(pending),'prepaid':float(prepaid)},'customer':{'id':str(order.customer_id),'name':order.customer_name,'phone':{'number':order.customer_phone,'localizer':order.display_id,'localizerExpiration':_iso(order.created_at+timedelta(hours=1))},'documentNumber':None},'delivery':delivery,'takeout':takeout,'indoor':None,'schedule':None,'extraInfo':None},'statusCode':0,'reasonPhrase':None}
+    return {'item':{'id':str(order.id),'displayId':order.display_id,'orderType':order.service_mode,'salesChannel':'PARTNER','orderTiming':'IMMEDIATE','createdAt':_iso(order.created_at),'preparationStartDateTime':_iso(order.created_at),'merchant':{'id':integration.merchant_external_id,'name':integration.merchant_name},'items':items,'total':{'subTotal':float(order.subtotal),'deliveryFee':float(order.delivery_fee),'orderAmount':float(order.total),'benefits':float(order.discount),'additionalFees':0},'payments':{'methods':payment_methods,'pending':float(pending),'prepaid':float(prepaid)},'customer':{'id':str(order.customer_id),'name':order.customer_name,'phone':{'number':order.customer_phone,'localizer':order.display_id,'localizerExpiration':_iso(order.created_at+timedelta(hours=1))},'documentNumber':None},'delivery':delivery,'takeout':takeout,'indoor':None,'schedule':None,'extraInfo':None},'statusCode':0,'reasonPhrase':None}

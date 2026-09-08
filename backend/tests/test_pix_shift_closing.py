@@ -84,14 +84,44 @@ def test_summary_counts_confirmed_pending_and_fallback():
     order_manual = SimpleNamespace(
         id=uuid4(),
         total=Decimal("44.90"),
+        payment_method="PIX",
+        payment_type="PREPAID",
+        change_for=None,
     )
     order_auto = SimpleNamespace(
         id=uuid4(),
         total=Decimal("33.00"),
+        payment_method="PIX",
+        payment_type="PREPAID",
+        change_for=None,
     )
     order_pending = SimpleNamespace(
         id=uuid4(),
         total=Decimal("20.00"),
+        payment_method="PIX",
+        payment_type="PREPAID",
+        change_for=None,
+    )
+    order_mixed = SimpleNamespace(
+        id=uuid4(),
+        total=Decimal("65.00"),
+        payment_method="MIXED",
+        payments=[
+            SimpleNamespace(
+                method="PIX",
+                payment_type="PREPAID",
+                amount=Decimal("30.00"),
+                change_for=None,
+                position=1,
+            ),
+            SimpleNamespace(
+                method="CASH",
+                payment_type="PENDING",
+                amount=Decimal("35.00"),
+                change_for=None,
+                position=2,
+            ),
+        ],
     )
 
     rows = [
@@ -125,6 +155,13 @@ def test_summary_counts_confirmed_pending_and_fallback():
             ),
             order_pending,
         ),
+        (
+            SimpleNamespace(
+                status="HUMAN_CONFIRMED",
+                extracted_amount=None,
+            ),
+            order_mixed,
+        ),
     ]
 
     db = SummaryDB(rows)
@@ -146,12 +183,12 @@ def test_summary_counts_confirmed_pending_and_fallback():
         end_local=end,
     )
 
-    assert summary.confirmed_orders == 2
+    assert summary.confirmed_orders == 3
     assert summary.auto_confirmed == 1
-    assert summary.human_confirmed == 1
+    assert summary.human_confirmed == 2
     assert summary.pending_review == 1
-    assert summary.fallback_values == 1
-    assert summary.total == Decimal("77.90")
+    assert summary.fallback_values == 2
+    assert summary.total == Decimal("107.90")
 
     sql = str(db.statement)
 

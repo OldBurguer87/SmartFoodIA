@@ -347,3 +347,122 @@ def test_confirmed_pix_is_sent_to_consumer_as_prepaid():
     assert method["prepaid"] is True
     assert payments["pending"] == 0.0
     assert payments["prepaid"] == float(order.total)
+
+
+def test_mixed_pix_without_confirmation_is_hidden_from_consumer():
+    from decimal import Decimal
+    from app.models.order import OrderPayment
+
+    db, store, integration, order = setup(
+        payment_method="CASH",
+        receipt_status=None,
+    )
+
+    persisted = ConsumerPartnerAdapter().orders.get(
+        db,
+        order.id,
+    )
+
+    persisted.payment_method = "MIXED"
+    persisted.payment_type = "PENDING"
+
+    persisted.payments[0].amount = Decimal("35.00")
+
+    db.add(
+        OrderPayment(
+            order_id=persisted.id,
+            method="PIX",
+            payment_type="PREPAID",
+            amount=Decimal("30.00"),
+            position=2,
+        )
+    )
+    db.commit()
+
+    adapter = ConsumerPartnerAdapter()
+
+    assert adapter.poll(
+        db,
+        store_id=store.id,
+    ) == []
+
+    with pytest.raises(
+        IntegrationOrderNotFound,
+        match="PIX ainda não confirmado",
+    ):
+        adapter.serialize_order(
+            db,
+            store_id=store.id,
+            order_id=order.id,
+            integration=integration,
+        )
+
+
+def test_mixed_pix_cash_maps_two_consumer_payments():
+    from decimal import Decimal
+    from app.models.order import OrderPayment
+
+    db, store, integration, order = setup(
+        payment_method="CASH",
+        receipt_status=None,
+    )
+
+    persisted = ConsumerPartnerAdapter().orders.get(
+        db,
+        order.id,
+    )
+
+    persisted.payment_method = "MIXED"
+    persisted.payment_type = "PENDING"
+
+    # Parcela CASH que o checkout simples já criou.
+    persisted.payments[0].amount = Decimal("35.00")
+
+    db.add(
+        OrderPayment(
+            order_id=persisted.id,
+            method="PIX",
+            payment_type="PREPAID",
+            amount=Decimal("30.00"),
+            position=2,
+        )
+    )
+
+    db.add(
+        PaymentReceipt(
+            store_id=store.id,
+            order_id=order.id,
+            external_media_id=f"mixed-confirmed-{uuid4()}",
+            media_type="IMAGE",
+            file_sha256=uuid4().hex * 2,
+            status="AUTO_CONFIRMED",
+        )
+    )
+
+    db.commit()
+
+    payload = ConsumerPartnerAdapter().serialize_order(
+        db,
+        store_id=store.id,
+        order_id=order.id,
+        integration=integration,
+    )
+
+    payments = payload["item"]["payments"]
+
+    assert payments["prepaid"] == 30.0
+    assert payments["pending"] == 35.0
+    assert len(payments["methods"]) == 2
+
+    methods = {
+        item["method"]: item
+        for item in payments["methods"]
+    }
+
+    assert methods["PIX"]["value"] == 30.0
+    assert methods["PIX"]["type"] == "ONLINE"
+    assert methods["PIX"]["prepaid"] is True
+
+    assert methods["CASH"]["value"] == 35.0
+    assert methods["CASH"]["type"] == "OFFLINE"
+    assert methods["CASH"]["prepaid"] is False

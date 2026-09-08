@@ -287,3 +287,63 @@ def test_order_repository_prefers_new_active_order_over_old_terminal_order():
     assert found is not None
     assert found.id == second_order.id
     assert found.id != first_order.id
+
+
+def test_checkout_persists_mixed_payment_parts():
+    db, cart, _ = setup_order_context(service_mode="TAKEOUT")
+
+    CheckoutService().checkout(
+        db,
+        cart_id=cart.id,
+        payload=CheckoutRequest(
+            payment_method="MIXED",
+            payments=[
+                {
+                    "method": "PIX",
+                    "amount": Decimal("50.00"),
+                },
+                {
+                    "method": "CASH",
+                    "amount": Decimal("70.00"),
+                    "change_for": Decimal("100.00"),
+                },
+            ],
+        ),
+    )
+
+    order = OrderRepository().get_by_cart(db, cart.id)
+
+    assert order.payment_method == "MIXED"
+    assert order.payment_type == "PENDING"
+    assert len(order.payments) == 2
+
+    assert order.payments[0].method == "PIX"
+    assert order.payments[0].amount == Decimal("50.00")
+    assert order.payments[0].payment_type == "PREPAID"
+
+    assert order.payments[1].method == "CASH"
+    assert order.payments[1].amount == Decimal("70.00")
+    assert order.payments[1].change_for == Decimal("100.00")
+
+
+def test_checkout_returns_mixed_payment_parts_in_dto():
+    db, cart, _ = setup_order_context(service_mode="TAKEOUT")
+
+    order = CheckoutService().checkout(
+        db,
+        cart_id=cart.id,
+        payload=CheckoutRequest(
+            payment_method="MIXED",
+            payments=[
+                {"method": "PIX", "amount": Decimal("50.00")},
+                {"method": "CASH", "amount": Decimal("70.00")},
+            ],
+        ),
+    )
+
+    assert order.payment_method == "MIXED"
+    assert len(order.payments) == 2
+    assert order.payments[0].method == "PIX"
+    assert order.payments[0].amount == Decimal("50.00")
+    assert order.payments[1].method == "CASH"
+    assert order.payments[1].amount == Decimal("70.00")

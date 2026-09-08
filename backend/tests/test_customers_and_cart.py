@@ -344,14 +344,47 @@ def test_customer_detail_marks_confirmed_pix(
     pending_pix = make_order("000952", "PIX")
     credit_order = make_order("000953", "CREDIT")
 
-    db.add(
-        PaymentReceipt(
-            store_id=store.id,
-            order_id=confirmed_pix.id,
-            media_type="DOCUMENT",
-            file_sha256="b" * 64,
-            status=receipt_status,
-        )
+    from app.models.order import OrderPayment
+
+    mixed_pix = make_order("000954", "MIXED")
+    mixed_pix.payment_type = "PENDING"
+
+    db.add_all(
+        [
+            OrderPayment(
+                order_id=mixed_pix.id,
+                method="PIX",
+                payment_type="PREPAID",
+                amount=Decimal("20.00"),
+                position=1,
+            ),
+            OrderPayment(
+                order_id=mixed_pix.id,
+                method="CASH",
+                payment_type="PENDING",
+                amount=Decimal("15.00"),
+                position=2,
+            ),
+        ]
+    )
+
+    db.add_all(
+        [
+            PaymentReceipt(
+                store_id=store.id,
+                order_id=confirmed_pix.id,
+                media_type="DOCUMENT",
+                file_sha256="b" * 64,
+                status=receipt_status,
+            ),
+            PaymentReceipt(
+                store_id=store.id,
+                order_id=mixed_pix.id,
+                media_type="DOCUMENT",
+                file_sha256="c" * 64,
+                status=receipt_status,
+            ),
+        ]
     )
     db.commit()
 

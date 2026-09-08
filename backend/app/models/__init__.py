@@ -18,6 +18,7 @@ from app.models.order import (
     OrderItem,
     OrderItemComboComponent,
     OrderItemModifier,
+    OrderPayment,
 )
 from app.models.integration import StoreIntegration
 from app.models.conversation import (
@@ -76,6 +77,7 @@ __all__ = [
     "OrderItem",
     "OrderItemComboComponent",
     "OrderItemModifier",
+    "OrderPayment",
     "OutboundChannelMessage",
     "PaymentReceipt",
     "Product",

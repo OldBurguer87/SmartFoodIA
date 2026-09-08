@@ -14,7 +14,7 @@ from app.api.deps import require_store_access, require_store_write_access
 from app.core.config import settings
 from app.models.catalog import Store
 from app.models.customer import CustomerAddress
-from app.models.order import Order
+from app.models.order import Order, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.database.session import get_db
 from app.models.conversation import HumanTicket, Message
@@ -642,7 +642,20 @@ def confirm_human_pix(
             status_code=404,
             detail="Pedido não encontrado nesta loja.",
         )
-    if str(order.payment_method).upper() != "PIX":
+    order_has_pix = (
+        str(order.payment_method or "").upper() == "PIX"
+        or db.scalar(
+            select(OrderPayment.id)
+            .where(
+                OrderPayment.order_id == order.id,
+                OrderPayment.method == "PIX",
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+    if not order_has_pix:
         raise HTTPException(
             status_code=422,
             detail="O pedido informado não utiliza PIX.",

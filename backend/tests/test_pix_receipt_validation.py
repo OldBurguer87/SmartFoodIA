@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.database.base import Base
 from app.models.catalog import Company, Store
 from app.models.commercial import StoreCommercialRules
-from app.models.order import Order
+from app.models.order import Order, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.services.pix_receipt_validation import (
     PixReceiptAnalyzer,
@@ -23,8 +23,9 @@ from app.services.pix_receipt_validation import (
 
 
 class FakeAnalyzer:
-    def __init__(self, transaction_id: str):
+    def __init__(self, transaction_id: str, amount=7.00):
         self.transaction_id = transaction_id
+        self.amount = amount
 
     def analyze(self, *, receipt):
         now_local = datetime.now(
@@ -36,7 +37,7 @@ class FakeAnalyzer:
             "receiver_name": "Old Burguer 87",
             "receiver_document": "12345678901",
             "pix_key": "pix@oldburguer.test",
-            "amount": 7.00,
+            "amount": self.amount,
             "paid_date": now_local.strftime("%Y-%m-%d"),
             "paid_time": now_local.strftime("%H:%M:%S"),
             "transaction_id": self.transaction_id,
@@ -346,16 +347,36 @@ def test_pix_validation_persists_usage_and_ai_event():
         display_id="009999",
         status="PLACED",
         service_mode="TAKEOUT",
-        payment_method="PIX",
-        payment_type="ONLINE",
-        subtotal=Decimal("7.00"),
+        payment_method="MIXED",
+        payment_type="PENDING",
+        subtotal=Decimal("65.00"),
         delivery_fee=Decimal("0.00"),
         discount=Decimal("0.00"),
-        total=Decimal("7.00"),
+        total=Decimal("65.00"),
         customer_name="Cliente Telemetria",
         customer_phone="5597999999999",
     )
     db.add(order)
+    db.flush()
+
+    db.add_all(
+        [
+            OrderPayment(
+                order_id=order.id,
+                method="PIX",
+                payment_type="PREPAID",
+                amount=Decimal("30.00"),
+                position=1,
+            ),
+            OrderPayment(
+                order_id=order.id,
+                method="CASH",
+                payment_type="PENDING",
+                amount=Decimal("35.00"),
+                position=2,
+            ),
+        ]
+    )
     db.flush()
 
     receipt = PaymentReceipt(
@@ -391,7 +412,8 @@ def test_pix_validation_persists_usage_and_ai_event():
 
     result = PixReceiptValidationService(
         analyzer=FakeAnalyzerWithUsage(
-            "E2E-TELEMETRIA-UNICO-123"
+            "E2E-TELEMETRIA-UNICO-123",
+            amount=30.00,
         )
     ).process(
         db,
@@ -399,6 +421,8 @@ def test_pix_validation_persists_usage_and_ai_event():
     )
 
     assert result.status == "AUTO_CONFIRMED"
+    assert result.validation_json["checks"]["amount_match"] is True
+    assert result.validation_json["checks"]["amount_expected"] == "30.00"
 
     saved_usage = result.validation_json["usage"]
     assert saved_usage["input_tokens"] == 100

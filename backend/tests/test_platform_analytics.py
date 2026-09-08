@@ -20,6 +20,7 @@ from app.models.order import (
     Order,
     OrderItem,
     OrderItemModifier,
+    OrderPayment,
 )
 from app.services.platform_analytics import (
     PlatformAnalyticsService,
@@ -546,3 +547,109 @@ def test_platform_analytics_aggregates_without_tenant_identity():
     assert "Loja B" not in serialized
     assert "Empresa Analytics A" not in serialized
     assert "Empresa Analytics B" not in serialized
+
+
+def test_platform_analytics_splits_mixed_payment_revenue():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+    )
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+
+    company = Company(
+        name="Empresa Mixed",
+        active=True,
+    )
+    db.add(company)
+    db.flush()
+
+    store = Store(
+        company_id=company.id,
+        name="Loja Mixed",
+        slug=f"mixed-{uuid4()}",
+        city="Coari",
+        state="AM",
+        timezone="America/Manaus",
+        active=True,
+    )
+    db.add(store)
+    db.flush()
+
+    customer = Customer(
+        store_id=store.id,
+        name="Cliente Mixed",
+        phone="5597999887766",
+    )
+    db.add(customer)
+    db.flush()
+
+    cart = Cart(
+        store_id=store.id,
+        customer_id=customer.id,
+        status="CHECKED_OUT",
+        service_mode="DELIVERY",
+    )
+    db.add(cart)
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+
+    order = Order(
+        store_id=store.id,
+        customer_id=customer.id,
+        cart_id=cart.id,
+        display_id="MIXED-001",
+        status="CONCLUDED",
+        service_mode="DELIVERY",
+        payment_method="MIXED",
+        payment_type="PENDING",
+        subtotal=Decimal("65.00"),
+        delivery_fee=Decimal("0.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("65.00"),
+        customer_name=customer.name,
+        customer_phone=customer.phone,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(order)
+    db.flush()
+
+    db.add_all(
+        [
+            OrderPayment(
+                order_id=order.id,
+                method="PIX",
+                payment_type="PREPAID",
+                amount=Decimal("30.00"),
+                position=1,
+            ),
+            OrderPayment(
+                order_id=order.id,
+                method="CASH",
+                payment_type="PENDING",
+                amount=Decimal("35.00"),
+                position=2,
+            ),
+        ]
+    )
+
+    db.commit()
+
+    result = PlatformAnalyticsService().overview(
+        db,
+        hours=24,
+    )
+
+    payments = {
+        item["payment_method"]: item
+        for item in result["payment_methods"]
+    }
+
+    assert "MIXED" not in payments
+
+    assert payments["PIX"]["orders"] == 1
+    assert payments["PIX"]["revenue"] == 30.0
+
+    assert payments["CASH"]["orders"] == 1
+    assert payments["CASH"]["revenue"] == 35.0

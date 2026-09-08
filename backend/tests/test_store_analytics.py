@@ -3,14 +3,14 @@ from decimal import Decimal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database.base import Base
 from app.models.cart import Cart
 from app.models.catalog import Company, Modifier, Product, Store
 from app.models.customer import Customer
-from app.models.order import Order, OrderItem, OrderItemModifier
+from app.models.order import Order, OrderItem, OrderItemModifier, OrderPayment
 from app.services.store_analytics import StoreAnalyticsService
 
 
@@ -610,3 +610,83 @@ def test_store_analytics_v2_segments_time_neighborhoods_and_modifiers():
         item["neighborhood"] != "Bairro Cancelado"
         for item in result["top_neighborhoods"]
     )
+
+
+def test_store_analytics_splits_mixed_payment_revenue():
+    db, store = setup_db()
+
+    customer = db.scalar(
+        select(Customer)
+        .where(Customer.store_id == store.id)
+        .limit(1)
+    )
+
+    cart = Cart(
+        store_id=store.id,
+        customer_id=customer.id,
+        status="CHECKED_OUT",
+        service_mode="DELIVERY",
+    )
+    db.add(cart)
+    db.flush()
+
+    order = Order(
+        store_id=store.id,
+        customer_id=customer.id,
+        cart_id=cart.id,
+        display_id="A-MIXED-001",
+        status="CONCLUDED",
+        service_mode="DELIVERY",
+        payment_method="MIXED",
+        payment_type="PENDING",
+        subtotal=Decimal("65.00"),
+        delivery_fee=Decimal("0.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("65.00"),
+        customer_name=customer.name,
+        customer_phone=customer.phone,
+    )
+    db.add(order)
+    db.flush()
+
+    db.add_all(
+        [
+            OrderPayment(
+                order_id=order.id,
+                method="PIX",
+                payment_type="PREPAID",
+                amount=Decimal("30.00"),
+                position=1,
+            ),
+            OrderPayment(
+                order_id=order.id,
+                method="CASH",
+                payment_type="PENDING",
+                amount=Decimal("35.00"),
+                position=2,
+            ),
+        ]
+    )
+    db.commit()
+
+    result = StoreAnalyticsService().overview(
+        db,
+        store_id=store.id,
+        hours=24,
+    )
+
+    payments = {
+        item["payment_method"]: item
+        for item in result["payment_methods"]
+    }
+
+    assert "MIXED" not in payments
+
+    assert payments["PIX"]["orders"] == 2
+    assert payments["PIX"]["revenue"] == 70.0
+
+    assert payments["CASH"]["orders"] == 1
+    assert payments["CASH"]["revenue"] == 35.0
+
+    assert payments["CARD"]["orders"] == 1
+    assert payments["CARD"]["revenue"] == 20.0

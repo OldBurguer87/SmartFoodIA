@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -334,8 +334,8 @@ def test_get_order_status_returns_schedule_fields() -> None:
         display_id="000123",
         status="READY_FOR_INTEGRATION",
         service_mode="TAKEOUT",
-        payment_method="PIX",
-        payment_type="ONLINE",
+        payment_method="MIXED",
+        payment_type="PENDING",
         subtotal=Decimal("30.00"),
         delivery_fee=Decimal("0.00"),
         discount=Decimal("0.00"),
@@ -347,6 +347,29 @@ def test_get_order_status_returns_schedule_fields() -> None:
     )
 
     db.add(order)
+    db.flush()
+
+    from app.models.order import OrderPayment
+
+    db.add_all(
+        [
+            OrderPayment(
+                order_id=order.id,
+                method="PIX",
+                payment_type="PREPAID",
+                amount=Decimal("20.00"),
+                position=1,
+            ),
+            OrderPayment(
+                order_id=order.id,
+                method="CASH",
+                payment_type="PENDING",
+                amount=Decimal("10.00"),
+                position=2,
+            ),
+        ]
+    )
+
     db.commit()
 
     result = registry.execute(
@@ -359,6 +382,8 @@ def test_get_order_status_returns_schedule_fields() -> None:
     assert result.ok is True
     assert result.data["display_id"] == "000123"
     assert result.data["is_scheduled"] is True
+    assert result.data["pix_receipt_status"] == "NOT_RECEIVED"
+    assert result.data["payment_confirmed"] is False
 
     assert (
         result.data["scheduled_for"]
@@ -1049,3 +1074,235 @@ def test_send_menu_pdf_blocks_outdated_catalog_version() -> None:
     assert "desatualizado" in result.error.lower()
 
     db.close()
+
+
+def test_checkout_tool_creates_mixed_pix_cash_payment() -> None:
+    from app.models.order import OrderPayment
+
+    db, store, registry = setup_registry()
+
+    product = db.scalar(
+        select(Product).where(
+            Product.store_id == store.id,
+            Product.external_code == "235",
+        )
+    )
+    product.price = Decimal("65.00")
+    db.commit()
+
+    customer = registry.execute(
+        "find_or_create_customer",
+        {
+            "name": "Cliente Pagamento Misto",
+            "phone": "5597999887766",
+        },
+    )
+
+    cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    added = registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+        },
+    )
+
+    assert added.ok is True
+    assert added.data["subtotal"] == 65.0
+
+    result = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": cart.data["id"],
+            "payment_method": "MIXED",
+            "payments": [
+                {
+                    "method": "PIX",
+                    "amount": 30.00,
+                },
+                {
+                    "method": "CASH",
+                    "amount": 35.00,
+                },
+            ],
+            "customer_confirmed": True,
+        },
+    )
+
+    assert result.ok is True
+    assert result.data["payment_method"] == "MIXED"
+    assert result.data["payment_type"] == "PENDING"
+    assert result.data["total"] == 65.0
+    assert len(result.data["payments"]) == 2
+
+    payments = {
+        payment["method"]: payment
+        for payment in result.data["payments"]
+    }
+
+    assert payments["PIX"]["amount"] == 30.0
+    assert payments["PIX"]["payment_type"] == "PREPAID"
+
+    assert payments["CASH"]["amount"] == 35.0
+    assert payments["CASH"]["payment_type"] == "PENDING"
+
+    persisted = list(
+        db.scalars(
+            select(OrderPayment)
+            .where(
+                OrderPayment.order_id == UUID(str(result.data["id"]))
+            )
+            .order_by(OrderPayment.position)
+        )
+    )
+
+    assert len(persisted) == 2
+    assert persisted[0].method == "PIX"
+    assert persisted[0].amount == Decimal("30.00")
+    assert persisted[1].method == "CASH"
+    assert persisted[1].amount == Decimal("35.00")
+
+
+def test_checkout_mixed_changed_split_is_not_duplicate() -> None:
+    db, store, _ = setup_registry()
+
+    product = db.scalar(
+        select(Product).where(
+            Product.store_id == store.id,
+            Product.external_code == "235",
+        )
+    )
+    product.price = Decimal("65.00")
+    db.commit()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999776655",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.commit()
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999776655",
+        )
+    )
+
+    customer = registry.execute(
+        "find_or_create_customer",
+        {
+            "name": "Cliente Split Diferente",
+            "phone": "5597999776655",
+        },
+    )
+
+    first_cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": first_cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+        },
+    )
+
+    first = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": first_cart.data["id"],
+            "payment_method": "MIXED",
+            "payments": [
+                {"method": "PIX", "amount": 30.00},
+                {"method": "CASH", "amount": 35.00},
+            ],
+            "customer_confirmed": True,
+        },
+    )
+
+    assert first.ok is True
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="checkout_cart",
+            success=True,
+            payload_json={
+                "arguments": {
+                    "cart_id": first_cart.data["id"],
+                    "payment_method": "MIXED",
+                },
+                "result": {
+                    "ok": True,
+                    "data": first.data,
+                    "error": None,
+                    "requires_human": False,
+                },
+            },
+        )
+    )
+    db.commit()
+
+    second_cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": second_cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+        },
+    )
+
+    second = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": second_cart.data["id"],
+            "payment_method": "MIXED",
+            "payments": [
+                {"method": "PIX", "amount": 25.00},
+                {"method": "CASH", "amount": 40.00},
+            ],
+            "customer_confirmed": True,
+        },
+    )
+
+    assert second.ok is True
+    assert second.data["id"] != first.data["id"]
+
+    orders = list(
+        db.scalars(
+            select(Order).where(
+                Order.store_id == store.id
+            )
+        )
+    )
+
+    assert len(orders) == 2

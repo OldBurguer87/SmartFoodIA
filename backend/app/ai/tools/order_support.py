@@ -10,7 +10,7 @@ from app.ai.tools.context import ToolContext
 from app.ai.tools.contracts import ToolDefinition, ToolResult
 from app.models.commercial import StoreCommercialRules
 from app.models.conversation import AIEvent, Conversation, HumanTicket
-from app.models.order import Order, OrderItem
+from app.models.order import Order, OrderItem, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.schemas.conversation import HumanTicketCreate
 from app.services.conversation import ConversationService
@@ -154,7 +154,20 @@ def order_payload(context: ToolContext, order: Order) -> dict[str, Any]:
 
     latest_receipt = None
 
-    if order.payment_method == "PIX":
+    order_has_pix = (
+        str(order.payment_method or "").upper() == "PIX"
+        or context.db.scalar(
+            select(OrderPayment.id)
+            .where(
+                OrderPayment.order_id == order.id,
+                OrderPayment.method == "PIX",
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+    if order_has_pix:
         latest_receipt = context.db.scalar(
             select(PaymentReceipt)
             .where(
@@ -168,7 +181,7 @@ def order_payload(context: ToolContext, order: Order) -> dict[str, Any]:
     pix_receipt_status = None
     payment_confirmed = None
 
-    if order.payment_method == "PIX":
+    if order_has_pix:
         pix_receipt_status = (
             latest_receipt.status
             if latest_receipt is not None

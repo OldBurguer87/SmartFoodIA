@@ -29,6 +29,20 @@ def order_to_dict(order) -> dict[str, Any]:
         "payment_method": order.payment_method,
         "payment_type": order.payment_type,
         "change_for": float(order.change_for) if order.change_for is not None else None,
+        "payments": [
+            {
+                "method": payment.method,
+                "payment_type": payment.payment_type,
+                "amount": float(payment.amount),
+                "change_for": (
+                    float(payment.change_for)
+                    if payment.change_for is not None
+                    else None
+                ),
+                "position": payment.position,
+            }
+            for payment in order.payments
+        ],
         "subtotal": float(order.subtotal),
         "delivery_fee": float(order.delivery_fee),
         "discount": float(order.discount),
@@ -91,13 +105,51 @@ class CheckoutCartTool:
                 },
                 "payment_method": {
                     "type": "string",
-                    "enum": ["PIX", "CREDIT", "DEBIT", "CASH"],
+                    "enum": [
+                        "PIX",
+                        "CREDIT",
+                        "DEBIT",
+                        "CASH",
+                        "MIXED",
+                    ],
                 },
                 "payment_type": {
                     "type": "string",
                     "enum": ["PENDING", "PREPAID"],
                 },
                 "change_for": {"type": ["number", "null"], "minimum": 0},
+                "payments": {
+                    "type": ["array", "null"],
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "method": {
+                                "type": "string",
+                                "enum": [
+                                    "PIX",
+                                    "CREDIT",
+                                    "DEBIT",
+                                    "CASH",
+                                ],
+                            },
+                            "amount": {
+                                "type": "number",
+                                "exclusiveMinimum": 0,
+                            },
+                            "change_for": {
+                                "type": ["number", "null"],
+                                "minimum": 0,
+                            },
+                        },
+                        "required": [
+                            "method",
+                            "amount",
+                        ],
+                        "additionalProperties": False,
+                    },
+                },
                 "delivery_fee": {"type": "number", "minimum": 0},
                 "discount": {"type": "number", "minimum": 0},
                 "scheduled_for": {
@@ -169,6 +221,45 @@ class CheckoutCartTool:
                 for key, quantity in grouped.items()
             )
         )
+
+    @classmethod
+    def _payments_signature(cls, payments) -> tuple:
+        normalized = []
+
+        for payment in payments or []:
+            if isinstance(payment, dict):
+                method = str(
+                    payment.get("method") or ""
+                ).upper()
+                amount = payment.get("amount")
+                change_for = payment.get("change_for")
+                payment_type = (
+                    "PREPAID"
+                    if method == "PIX"
+                    else "PENDING"
+                )
+            else:
+                method = str(payment.method).upper()
+                amount = payment.amount
+                change_for = payment.change_for
+                payment_type = str(
+                    payment.payment_type
+                ).upper()
+
+            normalized.append(
+                (
+                    method,
+                    payment_type,
+                    cls._money(amount),
+                    (
+                        cls._money(change_for)
+                        if change_for is not None
+                        else None
+                    ),
+                )
+            )
+
+        return tuple(sorted(normalized))
 
     @staticmethod
     def _same_optional_money(previous, requested) -> bool:
@@ -285,6 +376,7 @@ class CheckoutCartTool:
         payment_type: str,
         change_for: float | None,
         discount: float,
+        payments: list[dict] | None = None,
         scheduled_for: str | None,
     ):
         conversation_id = self.context.conversation_id
@@ -366,6 +458,15 @@ class CheckoutCartTool:
         if order.payment_type != payment_type:
             return None
 
+        if payments is not None:
+            previous_payments = previous_data.get("payments") or []
+
+            if (
+                self._payments_signature(previous_payments)
+                != self._payments_signature(payments)
+            ):
+                return None
+
         if Decimal(str(order.discount)).quantize(
             Decimal("0.01")
         ) != Decimal(str(discount)).quantize(
@@ -432,6 +533,7 @@ class CheckoutCartTool:
         address_id: str | None = None,
         payment_type: str = "PENDING",
         change_for: float | None = None,
+        payments: list[dict] | None = None,
         delivery_fee: float = 0,
         discount: float = 0,
         scheduled_for: str | None = None,
@@ -459,6 +561,7 @@ class CheckoutCartTool:
             payment_type=payment_type,
             change_for=change_for,
             discount=discount,
+            payments=payments,
             scheduled_for=scheduled_for,
         )
 
@@ -487,6 +590,7 @@ class CheckoutCartTool:
                     payment_method=payment_method,
                     payment_type=payment_type,
                     change_for=change_for,
+                    payments=payments,
                     delivery_fee=delivery_fee,
                     discount=discount,
                     scheduled_for=scheduled_for,

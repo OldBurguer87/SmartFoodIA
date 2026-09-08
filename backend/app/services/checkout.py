@@ -15,11 +15,16 @@ from app.models.order import (
     OrderItem,
     OrderItemComboComponent,
     OrderItemModifier,
+    OrderPayment,
 )
 from app.repositories.cart import CartRepository
 from app.repositories.customer import CustomerRepository
 from app.repositories.order import OrderRepository
-from app.schemas.order import CheckoutRequest, OrderRead
+from app.schemas.order import (
+    CheckoutPaymentRequest,
+    CheckoutRequest,
+    OrderRead,
+)
 from app.services.commercial_status import CommercialStatusService
 
 
@@ -130,29 +135,59 @@ class CheckoutService:
             "CASH": rules.accepts_cash,
         }
 
-        if not payment_allowed.get(payload.payment_method, False):
-            raise CheckoutValidationError(
-                "Esta forma de pagamento não está habilitada para a loja."
-            )
-
-        if (
-            payload.payment_method == "CASH"
-            and payload.change_for is not None
-            and not rules.allow_change
-        ):
-            raise CheckoutValidationError(
-                "A loja não está aceitando solicitação de troco."
-            )
-
         total = subtotal + delivery_fee - payload.discount
         if total < 0:
-            raise CheckoutValidationError("O desconto não pode superar o total.")
+            raise CheckoutValidationError(
+                "O desconto não pode superar o total."
+            )
 
-        if payload.payment_method == "CASH" and payload.change_for is not None:
-            if payload.change_for < total:
-                raise CheckoutValidationError(
-                    "O valor informado para troco é menor que o total do pedido."
+        payment_parts = list(payload.payments or [])
+
+        if not payment_parts:
+            payment_parts = [
+                CheckoutPaymentRequest(
+                    method=payload.payment_method,
+                    amount=total,
+                    change_for=payload.change_for,
                 )
+            ]
+
+        for payment in payment_parts:
+            if not payment_allowed.get(payment.method, False):
+                raise CheckoutValidationError(
+                    f"A forma de pagamento {payment.method} "
+                    "não está habilitada para a loja."
+                )
+
+            if (
+                payment.method == "CASH"
+                and payment.change_for is not None
+                and not rules.allow_change
+            ):
+                raise CheckoutValidationError(
+                    "A loja não está aceitando solicitação de troco."
+                )
+
+            if (
+                payment.method == "CASH"
+                and payment.change_for is not None
+                and payment.change_for < payment.amount
+            ):
+                raise CheckoutValidationError(
+                    "O valor informado para troco é menor "
+                    "que a parcela em dinheiro."
+                )
+
+        payments_total = sum(
+            (payment.amount for payment in payment_parts),
+            Decimal("0.00"),
+        )
+
+        if payments_total != total:
+            raise CheckoutValidationError(
+                "A soma das formas de pagamento deve ser "
+                f"exatamente R$ {total:.2f}."
+            )
 
         # Carrega e valida previamente a composição técnica dos combos.
         # Nenhum pedido é persistido se a soma dos componentes divergir
@@ -221,6 +256,21 @@ class CheckoutService:
         )
         db.add(order)
         db.flush()
+
+        for position, payment in enumerate(
+            payment_parts,
+            start=1,
+        ):
+            db.add(
+                OrderPayment(
+                    order_id=order.id,
+                    method=payment.method,
+                    payment_type=payment.payment_type,
+                    amount=payment.amount,
+                    change_for=payment.change_for,
+                    position=position,
+                )
+            )
 
         for cart_item in cart.items:
             modifiers_total = sum(
@@ -359,6 +409,16 @@ class CheckoutService:
             payment_method=order.payment_method,
             payment_type=order.payment_type,
             change_for=order.change_for,
+            payments=[
+                {
+                    "method": payment.method,
+                    "payment_type": payment.payment_type,
+                    "amount": payment.amount,
+                    "change_for": payment.change_for,
+                    "position": payment.position,
+                }
+                for payment in order.payments
+            ],
             subtotal=order.subtotal,
             delivery_fee=order.delivery_fee,
             discount=order.discount,

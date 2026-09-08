@@ -9,15 +9,16 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.ai.usage import extract_openai_usage
 from app.core.config import settings
 from app.models.commercial import StoreCommercialRules
 from app.models.conversation import AIEvent
-from app.models.order import Order
+from app.models.order import Order, OrderPayment
 from app.models.payment import PaymentReceipt
+from app.services.order_payments import payment_amount
 from app.services.pix_receipt_fingerprint import (
     find_duplicate_transaction_receipt,
 )
@@ -650,21 +651,37 @@ class PixReceiptValidationService:
                         Order.display_id.in_(
                             candidate_display_ids
                         ),
-                        Order.payment_method == "PIX",
+                        or_(
+                            Order.payment_method == "PIX",
+                            select(OrderPayment.id)
+                            .where(
+                                OrderPayment.order_id == Order.id,
+                                OrderPayment.method == "PIX",
+                            )
+                            .exists(),
+                        ),
                     )
                     .order_by(Order.created_at.desc())
                 ).all()
             )
 
-            amount_matches = [
-                candidate
-                for candidate in candidate_orders
-                if abs(
-                    candidate.total
-                    - receipt.extracted_amount
+            amount_matches = []
+
+            for candidate in candidate_orders:
+                candidate_pix_amount = payment_amount(
+                    candidate,
+                    "PIX",
                 )
-                <= tolerance_for_match
-            ]
+
+                if (
+                    candidate_pix_amount is not None
+                    and abs(
+                        candidate_pix_amount
+                        - receipt.extracted_amount
+                    )
+                    <= tolerance_for_match
+                ):
+                    amount_matches.append(candidate)
 
             if len(amount_matches) == 1:
                 matched_order = amount_matches[0]
@@ -772,18 +789,30 @@ class PixReceiptValidationService:
             or Decimal("0.01")
         )
 
+        expected_pix_amount = payment_amount(
+            order,
+            "PIX",
+        )
+
         amount_match = False
 
-        if receipt.extracted_amount is not None:
+        if (
+            receipt.extracted_amount is not None
+            and expected_pix_amount is not None
+        ):
             amount_match = (
                 abs(
                     receipt.extracted_amount
-                    - order.total
+                    - expected_pix_amount
                 )
                 <= tolerance
             )
 
-        checks["amount_expected"] = str(order.total)
+        checks["amount_expected"] = (
+            str(expected_pix_amount)
+            if expected_pix_amount is not None
+            else None
+        )
         checks["amount_extracted"] = (
             str(receipt.extracted_amount)
             if receipt.extracted_amount is not None

@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.models.channel import ChannelAccount, ChannelEvent
 from app.models.commercial import StoreCommercialRules
 from app.models.conversation import AIEvent, Conversation
-from app.models.order import Order
+from app.models.order import Order, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.repositories.channel import ChannelRepository
 from app.schemas.conversation import HumanTicketCreate, MessageCreate
@@ -161,8 +161,16 @@ class PixReceiptService:
         order_data = result_payload.get("data") or {}
 
         # O checkout mais recente da conversa define o contexto atual.
-        # Se ele não for PIX, não reutilizamos um PIX mais antigo.
-        if order_data.get("payment_method") != "PIX":
+        # PIX pode ser o pagamento único ou uma parcela de um MIXED.
+        event_has_pix = (
+            str(order_data.get("payment_method") or "").upper() == "PIX"
+            or any(
+                str(payment.get("method") or "").upper() == "PIX"
+                for payment in order_data.get("payments") or []
+            )
+        )
+
+        if not event_has_pix:
             return []
 
         raw_order_id = order_data.get("id")
@@ -186,8 +194,21 @@ class PixReceiptService:
         if order is None:
             return []
 
+        persisted_has_pix = (
+            str(order.payment_method or "").upper() == "PIX"
+            or db.scalar(
+                select(OrderPayment.id)
+                .where(
+                    OrderPayment.order_id == order.id,
+                    OrderPayment.method == "PIX",
+                )
+                .limit(1)
+            )
+            is not None
+        )
+
         if (
-            order.payment_method != "PIX"
+            not persisted_has_pix
             or order.status == "CANCELLED"
             or self._digits(order.customer_phone)
             != self._digits(customer_phone)

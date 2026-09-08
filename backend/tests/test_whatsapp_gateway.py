@@ -20,7 +20,7 @@ from app.models.commercial import StoreCommercialRules
 from app.models.catalog_version import CatalogVersion
 from app.models.menu import StoreMenuDocument
 from app.models.customer import Customer
-from app.models.order import Order
+from app.models.order import Order, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.models.staff import StoreStaffMember
 from app.services.pix_receipt import PixReceiptService
@@ -3634,3 +3634,167 @@ def test_pix_needs_review_is_visible_in_central_and_opens_human_ticket(
     )
 
     db.close()
+
+
+def test_mixed_checkout_generates_pix_code_only_for_pix_part():
+    db, store, _ = setup_db()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999999999",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.flush()
+
+    db.add(
+        StoreCommercialRules(
+            store_id=store.id,
+            accepts_pix=True,
+            pix_key="pix@oldburguer87.com",
+            pix_receiver_name="OLD BURGUER 87",
+        )
+    )
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="checkout_cart",
+            success=True,
+            payload_json={
+                "arguments": {},
+                "result": {
+                    "ok": True,
+                    "data": {
+                        "display_id": "000990",
+                        "payment_method": "MIXED",
+                        "total": 65.00,
+                        "payments": [
+                            {
+                                "method": "PIX",
+                                "payment_type": "PREPAID",
+                                "amount": 30.00,
+                                "position": 1,
+                            },
+                            {
+                                "method": "CASH",
+                                "payment_type": "PENDING",
+                                "amount": 35.00,
+                                "position": 2,
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+    )
+    db.commit()
+
+    service = WhatsAppGatewayService()
+
+    result = service._pix_after_recent_checkout(
+        db,
+        store_id=store.id,
+        conversation_id=conversation.id,
+        since=datetime.now(timezone.utc) - timedelta(minutes=5),
+    )
+
+    assert result is not None
+    assert result["display_id"] == "000990"
+    assert result["total"] == "30,00"
+
+    # Tag EMV 54 = valor da cobrança PIX.
+    assert "540530.00" in result["code"]
+    assert "540565.00" not in result["code"]
+
+
+def test_mixed_pix_checkout_enables_receipt_candidate():
+    db, store, _ = setup_db()
+
+    sender = "5597999999999"
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id=sender,
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.flush()
+
+    order = Order(
+        store_id=store.id,
+        customer_id=uuid4(),
+        cart_id=uuid4(),
+        display_id="000991",
+        status="READY_FOR_INTEGRATION",
+        service_mode="TAKEOUT",
+        payment_method="MIXED",
+        payment_type="PENDING",
+        subtotal=Decimal("65.00"),
+        delivery_fee=Decimal("0.00"),
+        discount=Decimal("0.00"),
+        total=Decimal("65.00"),
+        customer_name="Cliente Misto",
+        customer_phone=sender,
+    )
+    db.add(order)
+    db.flush()
+
+    db.add_all([
+        OrderPayment(
+            order_id=order.id,
+            method="PIX",
+            payment_type="PREPAID",
+            amount=Decimal("30.00"),
+            position=1,
+        ),
+        OrderPayment(
+            order_id=order.id,
+            method="CASH",
+            payment_type="PENDING",
+            amount=Decimal("35.00"),
+            position=2,
+        ),
+    ])
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="checkout_cart",
+            success=True,
+            payload_json={
+                "result": {
+                    "ok": True,
+                    "data": {
+                        "id": str(order.id),
+                        "display_id": order.display_id,
+                        "payment_method": "MIXED",
+                        "total": 65.00,
+                        "payments": [
+                            {"method": "PIX", "amount": 30.00},
+                            {"method": "CASH", "amount": 35.00},
+                        ],
+                    },
+                },
+            },
+        )
+    )
+
+    db.commit()
+
+    candidates = PixReceiptService()._recent_pix_orders(
+        db,
+        store_id=store.id,
+        customer_phone=sender,
+        conversation_id=conversation.id,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].id == order.id
+    assert candidates[0].payment_method == "MIXED"

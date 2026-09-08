@@ -6,16 +6,17 @@ from decimal import Decimal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.catalog import Store
 from app.models.channel import OutboundChannelMessage
 from app.models.commercial import StoreBusinessHours
-from app.models.order import Order
+from app.models.order import Order, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.models.staff import StoreStaffMember
 from app.repositories.channel import ChannelRepository
+from app.services.order_payments import payment_amount
 
 
 CONFIRMED_RECEIPT_STATUSES = {
@@ -205,8 +206,17 @@ class PixShiftClosingService:
                 Order.created_at >= start_utc,
                 Order.created_at <= end_utc,
                 PaymentReceipt.created_at <= receipt_cutoff_utc,
-                Order.payment_method == "PIX",
+                or_(
+                    Order.payment_method == "PIX",
+                    select(OrderPayment.id)
+                    .where(
+                        OrderPayment.order_id == Order.id,
+                        OrderPayment.method == "PIX",
+                    )
+                    .exists(),
+                ),
             )
+            .options(selectinload(Order.payments))
             .order_by(
                 PaymentReceipt.created_at,
                 PaymentReceipt.id,
@@ -244,7 +254,11 @@ class PixShiftClosingService:
             if receipt.extracted_amount is not None:
                 amount = Decimal(receipt.extracted_amount)
             else:
-                amount = Decimal(order.total)
+                amount = payment_amount(order, "PIX")
+
+                if amount is None:
+                    continue
+
                 fallback_values += 1
 
             total += amount

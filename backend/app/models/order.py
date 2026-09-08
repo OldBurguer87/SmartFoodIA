@@ -68,6 +68,57 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="order",
         cascade="all, delete-orphan",
     )
+    payments: Mapped[list["OrderPayment"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        order_by="OrderPayment.position",
+    )
+
+
+class OrderPayment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "order_payments"
+    __table_args__ = (
+        UniqueConstraint(
+            "order_id",
+            "method",
+            name="uq_order_payment_method",
+        ),
+        UniqueConstraint(
+            "order_id",
+            "position",
+            name="uq_order_payment_position",
+        ),
+    )
+
+    order_id: Mapped[UUID] = mapped_column(
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    method: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+    payment_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+    change_for: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+    )
+    position: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    order: Mapped["Order"] = relationship(
+        back_populates="payments",
+    )
 
 
 class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):

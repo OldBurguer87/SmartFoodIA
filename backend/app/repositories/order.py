@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.order import Order, OrderEvent, OrderItem
+from app.models.order import Order, OrderEvent, OrderItem, OrderPayment
 from app.models.payment import PaymentReceipt
 
 
@@ -15,6 +15,7 @@ class OrderRepository:
             .options(
                 selectinload(Order.items).selectinload(OrderItem.modifiers),
                 selectinload(Order.events),
+                selectinload(Order.payments),
             )
         )
         return db.scalar(statement)
@@ -32,6 +33,7 @@ class OrderRepository:
             .options(
                 selectinload(Order.items).selectinload(OrderItem.modifiers),
                 selectinload(Order.events),
+                selectinload(Order.payments),
             )
         )
         return db.scalar(statement)
@@ -43,6 +45,7 @@ class OrderRepository:
             .options(
                 selectinload(Order.items).selectinload(OrderItem.modifiers),
                 selectinload(Order.events),
+                selectinload(Order.payments),
             )
         )
         return db.scalar(statement)
@@ -90,7 +93,15 @@ class OrderRepository:
                     Order.release_at <= func.now(),
                 ),
                 or_(
-                    Order.payment_method != "PIX",
+                    ~or_(
+                        Order.payment_method == "PIX",
+                        select(OrderPayment.id)
+                        .where(
+                            OrderPayment.order_id == Order.id,
+                            OrderPayment.method == "PIX",
+                        )
+                        .exists(),
+                    ),
                     ~Order.service_mode.in_(["DELIVERY", "TAKEOUT"]),
                     select(PaymentReceipt.id)
                     .where(

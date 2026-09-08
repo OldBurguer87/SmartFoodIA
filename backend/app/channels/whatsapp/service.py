@@ -1326,13 +1326,26 @@ class WhatsAppGatewayService:
 
         data = result.get("data") or {}
 
-        if str(data.get("payment_method") or "").upper() != "PIX":
-            return None
+        payment_method = str(
+            data.get("payment_method") or ""
+        ).upper()
 
-        total = data.get("total")
+        pix_amount = None
+
+        for payment in data.get("payments") or []:
+            if str(payment.get("method") or "").upper() == "PIX":
+                pix_amount = payment.get("amount")
+                break
+
+        # Compatibilidade com eventos antigos de PIX simples.
+        if pix_amount is None:
+            if payment_method != "PIX":
+                return None
+            pix_amount = data.get("total")
+
         display_id = str(data.get("display_id") or "").strip()
 
-        if total is None or not display_id:
+        if pix_amount is None or not display_id:
             return None
 
         rules = db.scalar(
@@ -1361,7 +1374,7 @@ class WhatsAppGatewayService:
                     or store.name
                 ),
                 merchant_city=store.city,
-                amount=total,
+                amount=pix_amount,
                 txid=f"PED{display_id}",
             )
         except (TypeError, ValueError):
@@ -1370,7 +1383,7 @@ class WhatsAppGatewayService:
         return {
             "code": code,
             "display_id": display_id,
-            "total": f"{float(total):.2f}".replace(".", ","),
+            "total": f"{float(pix_amount):.2f}".replace(".", ","),
         }
 
     def process_event(

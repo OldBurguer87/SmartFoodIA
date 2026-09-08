@@ -967,7 +967,14 @@ class OliviaOrchestrator:
                             call.name == "checkout_cart"
                             and result.ok
                             and isinstance(result.data, dict)
-                            and result.data.get("payment_method") == "PIX"
+                            and (
+                                result.data.get("payment_method") == "PIX"
+                                or any(
+                                    str(payment.get("method") or "").upper()
+                                    == "PIX"
+                                    for payment in result.data.get("payments") or []
+                                )
+                            )
                         ):
                             (
                                 pix_checkout_instructions,

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.integrations.contracts.orders import IntegrationEvent
 from app.integrations.consumer.mapper import map_order
 from app.integrations.consumer.status import INTERNAL_EVENT, STATUS_TO_INTERNAL
-from app.models.order import OrderEvent
+from app.models.order import OrderEvent, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.repositories.order import OrderRepository
 
@@ -55,12 +55,29 @@ class ConsumerPartnerAdapter:
             )
 
     @staticmethod
-    def _requires_pix_confirmation(order) -> bool:
-        return (
-            str(order.payment_method or "").upper() == "PIX"
-            and str(order.service_mode or "").upper()
-            in {"DELIVERY", "TAKEOUT"}
+    def _requires_pix_confirmation(
+        db: Session,
+        order,
+    ) -> bool:
+        if (
+            str(order.service_mode or "").upper()
+            not in {"DELIVERY", "TAKEOUT"}
+        ):
+            return False
+
+        if str(order.payment_method or "").upper() == "PIX":
+            return True
+
+        pix_payment_id = db.scalar(
+            select(OrderPayment.id)
+            .where(
+                OrderPayment.order_id == order.id,
+                OrderPayment.method == "PIX",
+            )
+            .limit(1)
         )
+
+        return pix_payment_id is not None
 
     @classmethod
     def _ensure_payment_released(
@@ -68,7 +85,7 @@ class ConsumerPartnerAdapter:
         db: Session,
         order,
     ) -> None:
-        if not cls._requires_pix_confirmation(order):
+        if not cls._requires_pix_confirmation(db, order):
             return
 
         confirmed_receipt_id = db.scalar(

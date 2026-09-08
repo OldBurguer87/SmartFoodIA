@@ -558,8 +558,8 @@ def test_human_pix_confirmation_uses_real_customer_media(
         display_id="000901",
         status="READY_FOR_INTEGRATION",
         service_mode="DELIVERY",
-        payment_method="PIX",
-        payment_type="PREPAID",
+        payment_method="MIXED",
+        payment_type="PENDING",
         subtotal=Decimal("30.00"),
         delivery_fee=Decimal("5.00"),
         discount=Decimal("0.00"),
@@ -568,6 +568,28 @@ def test_human_pix_confirmation_uses_real_customer_media(
         customer_phone=customer.phone,
     )
     db.add(order)
+    db.flush()
+
+    from app.models.order import OrderPayment
+
+    db.add_all(
+        [
+            OrderPayment(
+                order_id=order.id,
+                method="PIX",
+                payment_type="PREPAID",
+                amount=Decimal("20.00"),
+                position=1,
+            ),
+            OrderPayment(
+                order_id=order.id,
+                method="CASH",
+                payment_type="PENDING",
+                amount=Decimal("15.00"),
+                position=2,
+            ),
+        ]
+    )
     db.flush()
 
     media_root = tmp_path / "conversation-media"

@@ -11,7 +11,7 @@ from app.api.deps import (
 from app.database.session import get_db
 from app.models.conversation import HumanTicket
 from app.models.customer import Customer
-from app.models.order import Order
+from app.models.order import Order, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.schemas.conversation import (
     ConversationCreate,
@@ -275,11 +275,26 @@ def get_customer(
     )
 
     confirmed_pix_order_ids = set()
-    pix_order_ids = [
+    order_ids = {
         order.id
         for order in orders
-        if order.payment_method == "PIX"
-    ]
+    }
+
+    pix_order_ids = {
+        order.id
+        for order in orders
+        if str(order.payment_method or "").upper() == "PIX"
+    }
+
+    if order_ids:
+        pix_order_ids.update(
+            db.scalars(
+                select(OrderPayment.order_id).where(
+                    OrderPayment.order_id.in_(order_ids),
+                    OrderPayment.method == "PIX",
+                )
+            ).all()
+        )
 
     if pix_order_ids:
         confirmed_pix_order_ids = set(
@@ -310,7 +325,7 @@ def get_customer(
                 "service_mode": order.service_mode,
                 "payment_method": order.payment_method,
                 "pix_confirmed": (
-                    order.payment_method == "PIX"
+                    order.id in pix_order_ids
                     and order.id in confirmed_pix_order_ids
                 ),
                 "total": order.total,

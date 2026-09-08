@@ -13,6 +13,7 @@ from app.models.order import (
     Order,
     OrderItem,
     OrderItemModifier,
+    OrderPayment,
 )
 
 
@@ -121,6 +122,16 @@ class StoreAnalyticsService:
             ).all()
         ]
 
+        payment_method_expr = func.coalesce(
+            OrderPayment.method,
+            Order.payment_method,
+        )
+
+        payment_amount_expr = func.coalesce(
+            OrderPayment.amount,
+            Order.total,
+        )
+
         payment_methods = [
             {
                 "payment_method": str(payment_method),
@@ -131,21 +142,29 @@ class StoreAnalyticsService:
             }
             for payment_method, count, amount in db.execute(
                 select(
-                    Order.payment_method,
-                    func.count(Order.id),
+                    payment_method_expr,
+                    func.count(
+                        func.distinct(Order.id)
+                    ),
                     func.coalesce(
-                        func.sum(Order.total),
+                        func.sum(payment_amount_expr),
                         0,
                     ),
+                )
+                .outerjoin(
+                    OrderPayment,
+                    OrderPayment.order_id == Order.id,
                 )
                 .where(
                     *valid_filter,
                 )
                 .group_by(
-                    Order.payment_method,
+                    payment_method_expr,
                 )
                 .order_by(
-                    func.count(Order.id).desc(),
+                    func.count(
+                        func.distinct(Order.id)
+                    ).desc(),
                 )
             ).all()
         ]
