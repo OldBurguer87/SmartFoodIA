@@ -397,6 +397,7 @@ def _assistant_was_asking_order_confirmation(history) -> bool:
         "pode confirmar assim",
         "pode finalizar o pedido",
         "posso finalizar o pedido",
+        "posso finalizar assim",
     )
 
     return any(
