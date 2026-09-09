@@ -3377,3 +3377,88 @@ h1 {
     justify-content: flex-start;
   }
 }
+
+/* CENTRAL - AJUSTE FINAL DOS BOTOES 2026-09-09 */
+
+.conversationsConsoleV2 .consoleTitleRow {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.conversationsConsoleV2 .operationModeControl {
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.conversationsConsoleV2 .humanModeBadge,
+.conversationsConsoleV2 .operationModeButton {
+  white-space: nowrap;
+}
+
+.conversationsConsoleV2 .chatHeaderAction {
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.conversationsConsoleV2 .chatHeaderAction > button {
+  width: auto;
+  min-width: 150px;
+  max-width: none;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.conversationsConsoleV2 .conversationOwnedActions {
+  width: auto;
+  max-width: 100%;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.conversationsConsoleV2 .conversationOwnedActions > * {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+}
+
+@media (max-width: 1100px) {
+  .conversationsConsoleV2 .chatHeaderAction {
+    flex: 0 1 auto;
+    margin-left: auto;
+  }
+
+  .conversationsConsoleV2 .conversationOwnedActions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 760px) {
+  .conversationsConsoleV2 .operationModeControl {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .conversationsConsoleV2 .chatHeaderAction {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .conversationsConsoleV2 .chatHeaderAction > button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .conversationsConsoleV2 .conversationOwnedActions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .conversationsConsoleV2 .conversationOwnedActions > * {
+    width: 100%;
+  }
+}

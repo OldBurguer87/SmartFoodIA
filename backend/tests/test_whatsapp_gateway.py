@@ -2670,7 +2670,10 @@ def test_order_collection_prep_time_uses_store_rule_zero_gpt():
 
 
 def test_closed_store_contact_is_zero_gpt():
-    db, _, _ = setup_db()
+    db, store, _ = setup_db()
+
+    store.operation_mode = "HUMAN_ONLY"
+    db.commit()
     orchestrator = FakeOrchestrator()
     client = FakeClient()
 

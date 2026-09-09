@@ -1822,21 +1822,6 @@ class WhatsAppGatewayService:
             ),
         )
 
-        # MODO 100% HUMANO: texto, botão e localização não chegam à OpenAI.
-        if (
-            is_store_human_only(db, store_id=account.store_id)
-            and conversation.status != "HUMAN"
-        ):
-            self._route_human_only(
-                db,
-                account=account,
-                event=event,
-                conversation=conversation,
-                sender=sender,
-                content=body,
-            )
-            return
-
         # Localização compartilhada pelo WhatsApp fica exclusivamente
         # com o atendimento humano e nunca é enviada à Olivia/OpenAI.
         if (
@@ -1955,6 +1940,21 @@ class WhatsAppGatewayService:
                 content=body,
             )
         ):
+            return
+
+        # MODO 100% HUMANO: texto, botão e localização não chegam à OpenAI.
+        if (
+            is_store_human_only(db, store_id=account.store_id)
+            and conversation.status != "HUMAN"
+        ):
+            self._route_human_only(
+                db,
+                account=account,
+                event=event,
+                conversation=conversation,
+                sender=sender,
+                content=body,
+            )
             return
 
         olivia_extra_instructions = None
