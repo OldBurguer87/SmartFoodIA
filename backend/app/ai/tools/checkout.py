@@ -49,6 +49,7 @@ def order_to_dict(order) -> dict[str, Any]:
         "total": float(order.total),
         "customer_name": order.customer_name,
         "customer_phone": order.customer_phone,
+        "observations": order.observations,
         "address": (
             {
                 "street": order.address.street,
@@ -152,6 +153,10 @@ class CheckoutCartTool:
                 },
                 "delivery_fee": {"type": "number", "minimum": 0},
                 "discount": {"type": "number", "minimum": 0},
+                "observations": {
+                    "type": ["string", "null"],
+                    "maxLength": 1000,
+                },
                 "scheduled_for": {
                     "type": ["string", "null"],
                     "format": "date-time",
@@ -366,6 +371,83 @@ class CheckoutCartTool:
             for value in previous
         )
 
+    def _receipt_requested(
+        self,
+        db,
+    ) -> bool:
+        conversation_id = self.context.conversation_id
+
+        if conversation_id is None:
+            return False
+
+        event = db.scalar(
+            select(AIEvent)
+            .where(
+                AIEvent.store_id == self.context.store_id,
+                AIEvent.conversation_id == conversation_id,
+                AIEvent.event_type == "ORDER_RECEIPT_STATE",
+            )
+            .order_by(AIEvent.created_at.desc())
+            .limit(1)
+        )
+
+        if event is None:
+            return False
+
+        return bool(
+            (event.payload_json or {}).get("requested")
+        )
+
+    @staticmethod
+    def _merge_order_observations(
+        observations: str | None,
+        *,
+        receipt_requested: bool,
+    ) -> str | None:
+        current = " ".join(
+            str(observations or "").split()
+        ).strip()
+
+        receipt_note = "ENVIAR RECIBO PARA O CLIENTE"
+
+        if not receipt_requested:
+            return current or None
+
+        if receipt_note.casefold() in current.casefold():
+            return current
+
+        if current:
+            return f"{current} | {receipt_note}"
+
+        return receipt_note
+
+    def _consume_receipt_request(
+        self,
+        db,
+        *,
+        order_id: UUID,
+    ) -> None:
+        conversation_id = self.context.conversation_id
+
+        if conversation_id is None:
+            return
+
+        db.add(
+            AIEvent(
+                store_id=self.context.store_id,
+                conversation_id=conversation_id,
+                event_type="ORDER_RECEIPT_STATE",
+                success=True,
+                payload_json={
+                    "requested": False,
+                    "reason": "receipt_consumed_after_checkout",
+                    "order_id": str(order_id),
+                    "openai_used": False,
+                },
+            )
+        )
+        db.commit()
+
     def _find_recent_duplicate_order(
         self,
         db,
@@ -536,6 +618,7 @@ class CheckoutCartTool:
         payments: list[dict] | None = None,
         delivery_fee: float = 0,
         discount: float = 0,
+        observations: str | None = None,
         scheduled_for: str | None = None,
         **_: Any,
     ) -> ToolResult:
@@ -551,6 +634,15 @@ class CheckoutCartTool:
             "PREPAID"
             if payment_method == "PIX"
             else "PENDING"
+        )
+
+        receipt_requested = self._receipt_requested(
+            self.context.db,
+        )
+
+        observations = self._merge_order_observations(
+            observations,
+            receipt_requested=receipt_requested,
         )
 
         duplicate_order = self._find_recent_duplicate_order(
@@ -593,10 +685,17 @@ class CheckoutCartTool:
                     payments=payments,
                     delivery_fee=delivery_fee,
                     discount=discount,
+                    observations=observations,
                     scheduled_for=scheduled_for,
                 ),
             )
         except CheckoutValidationError as error:
             return ToolResult(ok=False, error=str(error))
+
+        if receipt_requested:
+            self._consume_receipt_request(
+                self.context.db,
+                order_id=order.id,
+            )
 
         return ToolResult(ok=True, data=order_to_dict(order))

@@ -1306,3 +1306,223 @@ def test_checkout_mixed_changed_split_is_not_duplicate() -> None:
     )
 
     assert len(orders) == 2
+
+
+def test_checkout_automatically_adds_receipt_observation_from_conversation():
+    db, store, _ = setup_registry()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999001122",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.flush()
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="ORDER_RECEIPT_STATE",
+            success=True,
+            payload_json={
+                "requested": True,
+                "reason": "customer_requested_receipt",
+                "openai_used": False,
+            },
+        )
+    )
+    db.commit()
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999001122",
+        )
+    )
+
+    customer = registry.execute(
+        "find_or_create_customer",
+        {
+            "name": "Cliente Recibo",
+            "phone": "5597999001122",
+        },
+    )
+
+    cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+        },
+    )
+
+    result = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": cart.data["id"],
+            "payment_method": "CASH",
+            "customer_confirmed": True,
+        },
+    )
+
+    assert result.ok is True
+    assert (
+        result.data["observations"]
+        == "ENVIAR RECIBO PARA O CLIENTE"
+    )
+
+    order = db.scalar(
+        select(Order).where(
+            Order.id == UUID(result.data["id"])
+        )
+    )
+
+    assert (
+        order.observations
+        == "ENVIAR RECIBO PARA O CLIENTE"
+    )
+
+    db.close()
+
+
+def test_receipt_request_is_consumed_after_successful_checkout():
+    db, store, _ = setup_registry()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999002233",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.flush()
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="ORDER_RECEIPT_STATE",
+            success=True,
+            payload_json={
+                "requested": True,
+                "reason": "customer_requested_receipt",
+                "openai_used": False,
+            },
+        )
+    )
+    db.commit()
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999002233",
+        )
+    )
+
+    customer = registry.execute(
+        "find_or_create_customer",
+        {
+            "name": "Cliente Recibo Ciclo",
+            "phone": "5597999002233",
+        },
+    )
+
+    first_cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": first_cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+        },
+    )
+
+    first = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": first_cart.data["id"],
+            "payment_method": "CASH",
+            "customer_confirmed": True,
+        },
+    )
+
+    assert first.ok is True
+    assert (
+        first.data["observations"]
+        == "ENVIAR RECIBO PARA O CLIENTE"
+    )
+
+    latest_receipt_state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_RECEIPT_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert latest_receipt_state is not None
+    assert latest_receipt_state.payload_json["requested"] is False
+    assert (
+        latest_receipt_state.payload_json["reason"]
+        == "receipt_consumed_after_checkout"
+    )
+    assert (
+        latest_receipt_state.payload_json["order_id"]
+        == first.data["id"]
+    )
+
+    second_cart = registry.execute(
+        "get_or_create_cart",
+        {
+            "customer_id": customer.data["id"],
+            "service_mode": "TAKEOUT",
+        },
+    )
+
+    registry.execute(
+        "add_cart_item",
+        {
+            "cart_id": second_cart.data["id"],
+            "product_external_code": "235",
+            "quantity": 1,
+        },
+    )
+
+    second = registry.execute(
+        "checkout_cart",
+        {
+            "cart_id": second_cart.data["id"],
+            "payment_method": "CASH",
+            "customer_confirmed": True,
+        },
+    )
+
+    assert second.ok is True
+    assert second.data["observations"] is None
+    assert second.data["id"] != first.data["id"]
+
+    db.close()

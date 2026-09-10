@@ -347,3 +347,28 @@ def test_checkout_returns_mixed_payment_parts_in_dto():
     assert order.payments[0].amount == Decimal("50.00")
     assert order.payments[1].method == "CASH"
     assert order.payments[1].amount == Decimal("70.00")
+
+
+def test_checkout_persists_general_order_observations() -> None:
+    db, cart, address = setup_order_context()
+
+    order = CheckoutService().checkout(
+        db,
+        cart_id=cart.id,
+        payload=CheckoutRequest(
+            address_id=address.id,
+            payment_method="CASH",
+            observations="ENVIAR RECIBO PARA O CLIENTE",
+        ),
+    )
+
+    assert order.observations == "ENVIAR RECIBO PARA O CLIENTE"
+
+    persisted = OrderRepository().get(
+        db,
+        order.id,
+    )
+
+    assert persisted.observations == "ENVIAR RECIBO PARA O CLIENTE"
+
+    db.close()

@@ -186,6 +186,22 @@ class ConversationService:
                 "A Olívia está retomando esta conversa neste momento."
             )
         conversation.status = "HUMAN"
+
+        # Qualquer coleta deterministica anterior deixa de ser valida
+        # quando um atendente humano assume a conversa.
+        db.add(
+            AIEvent(
+                store_id=conversation.store_id,
+                conversation_id=conversation.id,
+                event_type="ORDER_COLLECTION_STATE",
+                success=True,
+                payload_json={
+                    "state": "NORMAL",
+                    "reason": "human_takeover",
+                },
+            )
+        )
+
         db.add(
             AIEvent(
                 store_id=conversation.store_id,

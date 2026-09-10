@@ -259,7 +259,7 @@ def map_order(order: Order, integration: StoreIntegration) -> dict:
                 'complement': order.address_complement,
                 'reference': order.address_reference,
             },
-            'observations': None,
+            'observations': order.observations,
         }
     else:
         takeout={'mode':'DEFAULT','takeoutDateTime':_iso(order.created_at+timedelta(minutes=30))}

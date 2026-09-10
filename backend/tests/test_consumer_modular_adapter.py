@@ -466,3 +466,35 @@ def test_mixed_pix_cash_maps_two_consumer_payments():
     assert methods["CASH"]["value"] == 35.0
     assert methods["CASH"]["type"] == "OFFLINE"
     assert methods["CASH"]["prepaid"] is False
+
+
+def test_consumer_delivery_receives_general_order_observation():
+    db, store, integration, order = setup(
+        payment_method="CASH",
+        receipt_status=None,
+        service_mode="DELIVERY",
+    )
+
+    adapter = ConsumerPartnerAdapter()
+
+    persisted = adapter.orders.get(
+        db,
+        order.id,
+    )
+
+    persisted.observations = "ENVIAR RECIBO PARA O CLIENTE"
+    db.commit()
+
+    payload = adapter.serialize_order(
+        db,
+        store_id=store.id,
+        order_id=order.id,
+        integration=integration,
+    )
+
+    assert (
+        payload["item"]["delivery"]["observations"]
+        == "ENVIAR RECIBO PARA O CLIENTE"
+    )
+
+    db.close()

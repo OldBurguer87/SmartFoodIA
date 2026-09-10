@@ -39,6 +39,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     customer_name: Mapped[str] = mapped_column(String(160), nullable=False)
     customer_phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    observations: Mapped[str | None] = mapped_column(Text)
 
     address_street: Mapped[str | None] = mapped_column(String(180))
     address_number: Mapped[str | None] = mapped_column(String(30))

@@ -52,6 +52,10 @@ class CheckoutRequest(BaseModel):
     delivery_fee: Decimal = Field(default=Decimal("0.00"), ge=0)
     discount: Decimal = Field(default=Decimal("0.00"), ge=0)
     scheduled_for: datetime | None = None
+    observations: str | None = Field(
+        default=None,
+        max_length=1000,
+    )
 
     @model_validator(mode="after")
     def normalize_payment(self):
@@ -150,5 +154,6 @@ class OrderRead(BaseModel):
     total: Decimal
     customer_name: str
     customer_phone: str
+    observations: str | None = None
     address: OrderAddressRead | None
     items: list[OrderItemRead]

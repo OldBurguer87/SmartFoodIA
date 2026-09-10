@@ -245,6 +245,7 @@ class CheckoutService:
             total=total,
             customer_name=customer.name,
             customer_phone=customer.phone,
+            observations=payload.observations,
             address_street=address.street if address else None,
             address_number=address.number if address else None,
             address_neighborhood=address.neighborhood if address else None,
@@ -425,6 +426,7 @@ class CheckoutService:
             total=order.total,
             customer_name=order.customer_name,
             customer_phone=order.customer_phone,
+            observations=order.observations,
             address=address,
             items=[
                 {

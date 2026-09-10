@@ -3801,3 +3801,402 @@ def test_mixed_pix_checkout_enables_receipt_candidate():
     assert len(candidates) == 1
     assert candidates[0].id == order.id
     assert candidates[0].payment_method == "MIXED"
+
+
+def test_order_collection_real_world_finish_phrases_from_order_000080():
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: FakeOrchestrator(),
+        client_factory=lambda: FakeClient(),
+    )
+
+    messages = (
+        "Somente",
+        "Sim.pode",
+        "Simm pode",
+        "Pode montarrrrr",
+        "Manda o pix",
+        "Mamda o pix",
+        "Confirmado por favor quero pagar e monta logo",
+    )
+
+    for message in messages:
+        assert service._is_order_collection_finish_trigger(message), message
+
+
+def test_order_collection_order_000080_somente_releases_to_olivia():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.loop-80-1",
+            "Quero um XBurguer",
+        ),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.loop-80-2",
+            "Entregar Rua 03 numero 40",
+        ),
+    )
+
+    assert orchestrator.calls == []
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.loop-80-3",
+            "Somente",
+        ),
+    )
+
+    assert len(orchestrator.calls) == 1
+    assert orchestrator.calls[0]["customer_message"] == "Somente"
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "NORMAL"
+    assert state.payload_json["reason"] == "customer_ready_to_mount"
+
+    db.close()
+
+
+def test_order_collection_ack_loop_fuse_prevents_third_ack():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    for message_id, body in (
+        ("wamid.fuse-1", "Quero um XBurguer"),
+        ("wamid.fuse-2", "Rua 03 numero 40"),
+        ("wamid.fuse-3", "Casa branca de canto"),
+        ("wamid.fuse-4", "Conjunto Naide Lins"),
+    ):
+        service.process_payload(
+            db,
+            _order_collection_payload(message_id, body),
+        )
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    acknowledgements = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id,
+                Message.sender_type == "OLIVIA",
+            )
+        )
+    )
+
+    ack_count = sum(
+        1
+        for message in acknowledgements
+        if (message.metadata_json or {}).get("type")
+        == "ORDER_COLLECTION_ITEM_ACK"
+    )
+
+    assert ack_count == 2
+    assert len(orchestrator.calls) == 1
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "NORMAL"
+    assert state.payload_json["reason"] == "order_collection_ack_loop_fuse"
+
+    db.close()
+
+
+def test_human_takeover_resets_order_collection_state():
+    from app.services.conversation import ConversationService
+
+    db, store, _ = setup_db()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: FakeOrchestrator(),
+        client_factory=lambda: FakeClient(),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.takeover-reset-1",
+            "Quero um XBurguer",
+        ),
+    )
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    ConversationService().take_over(
+        db,
+        conversation_id=conversation.id,
+        assigned_to="Atendente Teste",
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "NORMAL"
+    assert state.payload_json["reason"] == "human_takeover"
+
+    db.close()
+
+
+def test_receipt_question_is_answered_deterministically_and_registered():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+    client = FakeClient()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: client,
+    )
+
+    result = service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.receipt-paloma-1",
+            "Adicionalmente, vcs emitem nota fiscal ou recibo?",
+        ),
+    )
+
+    assert result.failed == 0
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    event = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_RECEIPT_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert event is not None
+    assert event.payload_json["requested"] is True
+
+    reply = db.scalar(
+        select(Message)
+        .where(
+            Message.conversation_id == conversation.id,
+            Message.direction == "OUTBOUND",
+            Message.sender_type == "OLIVIA",
+        )
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+
+    assert "emitimos recibo" in reply.content.lower()
+    assert "emitimos nota fiscal" not in reply.content.lower()
+
+    db.close()
+
+
+def test_receipt_request_during_collection_does_not_trigger_item_ack():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.receipt-collect-1",
+            "Quero um XBurguer",
+        ),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.receipt-collect-2",
+            "Tras um recibo por favor",
+        ),
+    )
+
+    assert orchestrator.calls == []
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "COLLECTING_ORDER"
+
+    receipt = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_RECEIPT_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert receipt.payload_json["requested"] is True
+
+    db.close()
+
+
+def test_order_collection_frustration_releases_to_olivia_without_another_ack():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.frustration-1",
+            "Quero um XBurguer",
+        ),
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.frustration-2",
+            "Rua Teste 123",
+        ),
+    )
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    before = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "OUTBOUND",
+                Message.sender_type == "OLIVIA",
+            )
+        )
+    )
+
+    ack_before = sum(
+        1
+        for message in before
+        if (message.metadata_json or {}).get("type")
+        == "ORDER_COLLECTION_ITEM_ACK"
+    )
+
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.frustration-3",
+            "Ja fizeram essa pergunta umas cinco vezes",
+        ),
+    )
+
+    after = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "OUTBOUND",
+                Message.sender_type == "OLIVIA",
+            )
+        )
+    )
+
+    ack_after = sum(
+        1
+        for message in after
+        if (message.metadata_json or {}).get("type")
+        == "ORDER_COLLECTION_ITEM_ACK"
+    )
+
+    assert ack_after == ack_before
+    assert len(orchestrator.calls) == 1
+
+    state = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state.payload_json["state"] == "NORMAL"
+    assert (
+        state.payload_json["reason"]
+        == "customer_frustrated_release_to_olivia"
+    )
+
+    db.close()

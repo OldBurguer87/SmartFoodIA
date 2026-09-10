@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.models.channel import ChannelAccount, ChannelEvent
 from app.models.catalog import Store
 from app.models.customer import Customer
-from app.models.conversation import AIEvent
+from app.models.conversation import AIEvent, Message
 from app.models.commercial import StoreCommercialRules
 from app.repositories.channel import ChannelRepository
 from app.repositories.order import OrderRepository
@@ -368,6 +368,37 @@ class WhatsAppGatewayService:
             ),
         )
 
+    def _order_collection_ack_streak(
+        self,
+        db: Session,
+        *,
+        conversation_id: Any,
+    ) -> int:
+        messages = list(
+            db.scalars(
+                select(Message)
+                .where(
+                    Message.conversation_id == conversation_id,
+                    Message.direction == "OUTBOUND",
+                    Message.sender_type == "OLIVIA",
+                )
+                .order_by(Message.created_at.desc())
+                .limit(2)
+            )
+        )
+
+        streak = 0
+
+        for message in messages:
+            metadata = message.metadata_json or {}
+
+            if metadata.get("type") != "ORDER_COLLECTION_ITEM_ACK":
+                break
+
+            streak += 1
+
+        return streak
+
     def _send_order_collection_message(
         self,
         db: Session,
@@ -597,6 +628,160 @@ class WhatsAppGatewayService:
 
         return True
 
+    def _order_receipt_request_state(
+        self,
+        value: str,
+    ) -> bool | None:
+        text = self._normalize_order_collection_text(value)
+
+        if "recibo" not in text:
+            return None
+
+        cancellations = (
+            "nao quero recibo",
+            "nao precisa de recibo",
+            "nao precisa mais de recibo",
+            "sem recibo",
+            "dispensa recibo",
+        )
+
+        if any(term in text for term in cancellations):
+            return False
+
+        return True
+
+    def _is_order_receipt_only(
+        self,
+        value: str,
+    ) -> bool:
+        text = self._normalize_order_collection_text(value)
+        compact = re.sub(r"[.,!?;:]+", " ", text)
+        compact = re.sub(r"\s+", " ", compact).strip()
+
+        patterns = (
+            (
+                r"(?:adicionalmente )?"
+                r"(?:(?:vcs|voces|a loja) )?"
+                r"(?:emite|emitem|faz|fazem|tem) "
+                r"(?:nota fiscal ou )?recibo"
+                r"(?: ou nota fiscal)?"
+            ),
+            (
+                r"(?:pode )?"
+                r"(?:manda|mandar|traz|trazer|tras) "
+                r"(?:um )?recibo"
+                r"(?: (?:por favor|pra mim|para mim))?"
+            ),
+            (
+                r"(?:eu )?"
+                r"(?:quero|preciso de|preciso do) "
+                r"(?:um )?recibo"
+                r"(?: (?:por favor|pra mim|para mim))?"
+            ),
+            r"recibo",
+            r"nao quero recibo",
+            r"nao precisa de recibo",
+            r"nao precisa mais de recibo",
+            r"sem recibo",
+        )
+
+        return any(
+            re.fullmatch(pattern, compact)
+            for pattern in patterns
+        )
+
+    def _handle_deterministic_order_receipt(
+        self,
+        db: Session,
+        *,
+        account: ChannelAccount,
+        conversation: Any,
+        event: ChannelEvent,
+        recipient: str,
+        content: str,
+    ) -> bool:
+        requested = self._order_receipt_request_state(content)
+
+        if requested is None:
+            return False
+
+        self.conversations.record_event(
+            db,
+            store_id=account.store_id,
+            payload=AIEventCreate(
+                conversation_id=conversation.id,
+                event_type="ORDER_RECEIPT_STATE",
+                success=True,
+                payload_json={
+                    "requested": requested,
+                    "reason": (
+                        "customer_requested_receipt"
+                        if requested
+                        else "customer_cancelled_receipt"
+                    ),
+                    "openai_used": False,
+                },
+            ),
+        )
+
+        # Se houver também itens/pedido na mesma mensagem,
+        # apenas registra a intenção e deixa o fluxo normal processar.
+        if not self._is_order_receipt_only(content):
+            return False
+
+        self.conversations.add_message(
+            db,
+            conversation_id=conversation.id,
+            payload=MessageCreate(
+                direction="INBOUND",
+                sender_type="CUSTOMER",
+                content=content,
+                external_message_id=event.external_event_id,
+                metadata_json={
+                    "type": "ORDER_RECEIPT_REQUEST",
+                    "deterministic": True,
+                    "openai_used": False,
+                },
+            ),
+        )
+
+        if requested:
+            reply = (
+                "Sim, emitimos recibo 😊 "
+                "Vou deixar anotado no seu pedido para enviarem "
+                "o recibo junto."
+            )
+        else:
+            reply = (
+                "Certo 👍 Retirei a solicitação de recibo "
+                "deste pedido."
+            )
+
+        self.conversations.add_message(
+            db,
+            conversation_id=conversation.id,
+            payload=MessageCreate(
+                direction="OUTBOUND",
+                sender_type="OLIVIA",
+                content=reply,
+                metadata_json={
+                    "type": "ORDER_RECEIPT_REPLY",
+                    "deterministic": True,
+                    "openai_used": False,
+                },
+            ),
+        )
+
+        self.repository.create_outbound(
+            db,
+            account=account,
+            conversation_id=conversation.id,
+            recipient=recipient,
+            content=reply,
+        )
+
+        return True
+
     def _save_order_collection_customer_message(
         self,
         db: Session,
@@ -756,6 +941,7 @@ class WhatsAppGatewayService:
         # como "e sobre a entrega".
         exact = {
             "so isso",
+            "somente",
             "somente isso",
             "e so isso",
             "e so",
@@ -785,6 +971,29 @@ class WhatsAppGatewayService:
                 for trigger in exact
             )
         ):
+            return True
+
+        natural_finish_patterns = (
+            r"si+m+(?:\s+|[.,!?:;]+)pode",
+            r"pode\s+montar+",
+        )
+
+        if any(
+            re.fullmatch(pattern, compact)
+            for pattern in natural_finish_patterns
+        ):
+            return True
+
+        intent_triggers = (
+            "quero pagar",
+            "confirmado",
+            "confirmo",
+            "monta logo",
+            "finaliza logo",
+            "pode cobrar",
+        )
+
+        if any(term in compact for term in intent_triggers):
             return True
 
         value_triggers = (
@@ -830,6 +1039,7 @@ class WhatsAppGatewayService:
             "manda a chave pix",
             "manda a chave",
             "manda o pix",
+            "mamda o pix",
             "me passa a chave pix",
             "me passa a chave",
             "qual a chave pix",
@@ -956,6 +1166,32 @@ class WhatsAppGatewayService:
         )
 
         return text.startswith(starters)
+
+    def _is_order_collection_frustration(
+        self,
+        value: str,
+    ) -> bool:
+        text = self._normalize_order_collection_text(value)
+
+        triggers = (
+            "ja fizeram essa pergunta",
+            "ja fez essa pergunta",
+            "ja perguntou",
+            "perguntando de novo",
+            "pergunta de novo",
+            "ta repetindo",
+            "esta repetindo",
+            "ficou repetindo",
+            "repetiu",
+            "o que ta acontecendo",
+            "o que esta acontecendo",
+            "que atendimento",
+            "cansei",
+            "cinco vezes",
+            "varias vezes",
+        )
+
+        return any(trigger in text for trigger in triggers)
 
     def _is_order_collection_human_request(
         self,
@@ -1960,6 +2196,22 @@ class WhatsAppGatewayService:
         olivia_extra_instructions = None
         olivia_excluded_tools = None
 
+        # RECIBO_ZERO_GPT
+        # Confirma uma politica objetiva da loja e registra a solicitacao
+        # para o checkout, sem depender da memoria do modelo.
+        if (
+            conversation.status == "OPEN"
+            and self._handle_deterministic_order_receipt(
+                db,
+                account=account,
+                conversation=conversation,
+                event=event,
+                recipient=sender,
+                content=body,
+            )
+        ):
+            return
+
         # ORDER_COLLECTION_COST_OPTIMIZATION
         # Camada deterministica anterior a Olivia/OpenAI.
         # Preserva todas as capacidades da Olivia e apenas reduz
@@ -2041,7 +2293,16 @@ class WhatsAppGatewayService:
                 )
                 return
 
-            if self._is_order_collection_wait_time_question(body):
+            if self._is_order_collection_frustration(body):
+                self._set_order_collection_state(
+                    db,
+                    store_id=account.store_id,
+                    conversation_id=conversation.id,
+                    state="NORMAL",
+                    reason="customer_frustrated_release_to_olivia",
+                )
+
+            elif self._is_order_collection_wait_time_question(body):
                 self._save_order_collection_customer_message(
                     db,
                     conversation_id=conversation.id,
@@ -2083,7 +2344,7 @@ class WhatsAppGatewayService:
                 )
                 return
 
-            if self._is_order_collection_general_question(body):
+            elif self._is_order_collection_general_question(body):
                 olivia_extra_instructions = (
                     "CONTEXTO TEMPORARIO DE COLETA DE PEDIDO: "
                     "responda somente a duvida atual do cliente. "
@@ -2115,24 +2376,39 @@ class WhatsAppGatewayService:
                         reason="customer_ready_to_mount",
                     )
                 else:
-                    self._save_order_collection_customer_message(
-                        db,
-                        conversation_id=conversation.id,
-                        event=event,
-                        content=body,
-                    )
-                    self._send_order_collection_message(
-                        db,
-                        account=account,
-                        conversation=conversation,
-                        recipient=sender,
-                        content=(
-                            "Anotei 👍 Mais alguma coisa ou "
-                            "ja posso montar seu pedido?"
-                        ),
-                        prompt_type="ORDER_COLLECTION_ITEM_ACK",
-                    )
-                    return
+                    if (
+                        self._order_collection_ack_streak(
+                            db,
+                            conversation_id=conversation.id,
+                        )
+                        >= 2
+                    ):
+                        self._set_order_collection_state(
+                            db,
+                            store_id=account.store_id,
+                            conversation_id=conversation.id,
+                            state="NORMAL",
+                            reason="order_collection_ack_loop_fuse",
+                        )
+                    else:
+                        self._save_order_collection_customer_message(
+                            db,
+                            conversation_id=conversation.id,
+                            event=event,
+                            content=body,
+                        )
+                        self._send_order_collection_message(
+                            db,
+                            account=account,
+                            conversation=conversation,
+                            recipient=sender,
+                            content=(
+                                "Anotei 👍 Mais alguma coisa ou "
+                                "ja posso montar seu pedido?"
+                            ),
+                            prompt_type="ORDER_COLLECTION_ITEM_ACK",
+                        )
+                        return
 
         if (
             conversation.status == "OPEN"

@@ -102,9 +102,22 @@ def test_takeover_and_release_record_events():
         AIEvent.conversation_id == conversation.id
     )))
     assert {event.event_type for event in events} == {
+        "ORDER_COLLECTION_STATE",
         "HUMAN_TAKEOVER",
         "HUMAN_RELEASE",
     }
+
+    collection_state = next(
+        event
+        for event in events
+        if event.event_type == "ORDER_COLLECTION_STATE"
+    )
+
+    assert collection_state.payload_json["state"] == "NORMAL"
+    assert (
+        collection_state.payload_json["reason"]
+        == "human_takeover"
+    )
 
 
 def test_inbound_message_does_not_call_olivia_during_takeover():
