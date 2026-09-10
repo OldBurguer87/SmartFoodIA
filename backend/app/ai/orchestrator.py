@@ -300,11 +300,23 @@ def _pix_payment_instructions(
             f"Instituição: {rules.pix_receiver_institution}"
         )
 
-    total = order_data.get("total")
+    pix_amount = None
 
-    if total is not None:
+    for payment in order_data.get("payments") or []:
+        if str(payment.get("method") or "").upper() == "PIX":
+            pix_amount = payment.get("amount")
+            break
+
+    # Compatibilidade com PIX simples.
+    if (
+        pix_amount is None
+        and str(order_data.get("payment_method") or "").upper() == "PIX"
+    ):
+        pix_amount = order_data.get("total")
+
+    if pix_amount is not None:
         lines.append(
-            f"Valor: {_format_brl(total)}"
+            f"Valor: {_format_brl(pix_amount)}"
         )
 
     lines.extend(
