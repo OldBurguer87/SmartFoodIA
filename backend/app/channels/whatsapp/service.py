@@ -2058,24 +2058,6 @@ class WhatsAppGatewayService:
             ),
         )
 
-        # Localização compartilhada pelo WhatsApp fica exclusivamente
-        # com o atendimento humano e nunca é enviada à Olivia/OpenAI.
-        if (
-            message_type == "location"
-            and conversation.status == "OPEN"
-        ):
-            self._route_human_only(
-                db,
-                account=account,
-                event=event,
-                conversation=conversation,
-                sender=sender,
-                content=body,
-                content_type="LOCATION",
-                reason="Localização compartilhada pelo cliente",
-            )
-            return
-
         # Pedido já passou pelo checkout e continua ativo:
         # a Olivia não pode mais alterar o pedido enviado à operação/Consumer.
         # Encaminha diretamente ao humano sem executar OpenAI.
@@ -2220,6 +2202,23 @@ class WhatsAppGatewayService:
             db,
             conversation_id=conversation.id,
         )
+
+        # LOCATION deve ser interpretada pela Olivia antes do checkout.
+        # Não pode ser classificada deterministicamente como item,
+        # adicional, resposta de coleta ou confirmação.
+        if (
+            conversation.status == "OPEN"
+            and message_type == "location"
+            and collection_state != "NORMAL"
+        ):
+            self._set_order_collection_state(
+                db,
+                store_id=account.store_id,
+                conversation_id=conversation.id,
+                state="NORMAL",
+                reason="structured_location_release_to_olivia",
+            )
+            collection_state = "NORMAL"
 
         # MENU_OPTIONS_ZERO_GPT
         # A disponibilidade do cardapio online e decidida pela
@@ -2530,12 +2529,52 @@ class WhatsAppGatewayService:
         olivia_started_at = datetime.now(timezone.utc)
 
         try:
+            # LOCATION_PRE_CHECKOUT_OLIVIA
+            # Localização estruturada do WhatsApp pode ser interpretada pela
+            # Olivia antes do checkout. Gravamos como LOCATION para preservar
+            # a semântica e evitamos que o orchestrator a grave novamente
+            # como TEXT.
+            if message_type == "location":
+                self.conversations.add_message(
+                    db,
+                    conversation_id=conversation.id,
+                    payload=MessageCreate(
+                        direction="INBOUND",
+                        sender_type="CUSTOMER",
+                        content=body,
+                        content_type="LOCATION",
+                        external_message_id=event.external_event_id,
+                        metadata_json={
+                            "type": "WHATSAPP_LOCATION",
+                            "structured_location": True,
+                        },
+                    ),
+                )
+
+                location_instructions = (
+                    "LOCALIZACAO ESTRUTURADA DO WHATSAPP: a mensagem atual "
+                    "foi compartilhada pelo recurso de localizacao do WhatsApp. "
+                    "Use Local, Endereco, latitude e longitude presentes nela "
+                    "como dados confiaveis fornecidos pelo cliente. Nao descarte "
+                    "esses dados por causa de uma descricao informal posterior. "
+                    "Se faltar algum dado realmente necessario para a entrega, "
+                    "pergunte somente o dado faltante."
+                )
+
+                if olivia_extra_instructions:
+                    olivia_extra_instructions += (
+                        "\n\n" + location_instructions
+                    )
+                else:
+                    olivia_extra_instructions = location_instructions
+
             reply = self.orchestrator_factory().reply(
                 db,
                 store_id=account.store_id,
                 conversation_id=conversation.id,
                 customer_message=body,
                 customer_phone=sender,
+                record_customer_message=(message_type != "location"),
                 extra_instructions=olivia_extra_instructions,
                 excluded_tools=olivia_excluded_tools,
             )

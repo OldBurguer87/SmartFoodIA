@@ -849,7 +849,8 @@ class OliviaOrchestrator:
         ai_history = [
             message
             for message in history
-            if (message.content_type or "TEXT").upper() == "TEXT"
+            if (message.content_type or "TEXT").upper()
+            in {"TEXT", "LOCATION"}
         ]
 
         checkout_required = _checkout_required_by_customer(

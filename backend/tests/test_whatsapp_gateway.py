@@ -38,15 +38,16 @@ class FakeOrchestrator:
         from app.services.conversation import ConversationService
 
         service = ConversationService()
-        service.add_message(
-            db,
-            conversation_id=kwargs["conversation_id"],
-            payload=MessageCreate(
-                direction="INBOUND",
-                sender_type="CUSTOMER",
-                content=kwargs["customer_message"],
-            ),
-        )
+        if kwargs.get("record_customer_message", True):
+            service.add_message(
+                db,
+                conversation_id=kwargs["conversation_id"],
+                payload=MessageCreate(
+                    direction="INBOUND",
+                    sender_type="CUSTOMER",
+                    content=kwargs["customer_message"],
+                ),
+            )
         service.add_message(
             db,
             conversation_id=kwargs["conversation_id"],
@@ -1134,7 +1135,7 @@ def test_human_media_without_linked_staff_is_saved_for_web_central(tmp_path):
     assert stored_path.read_bytes() == b"imagem-teste-whatsapp"
 
 
-def test_open_location_is_not_sent_to_olivia():
+def test_open_location_is_sent_to_olivia_as_structured_location():
     db, _, _ = setup_db()
     orchestrator = FakeOrchestrator()
     client = FakeClient()
@@ -1167,8 +1168,8 @@ def test_open_location_is_not_sent_to_olivia():
                                     "location": {
                                         "latitude": -4.0944,
                                         "longitude": -63.1411,
-                                        "name": "Local do cliente",
-                                        "address": "Coari - AM",
+                                        "name": "Cp Flat Hotel",
+                                        "address": "R. Padre Vitor, 370-484, Coari - AM",
                                     },
                                 }
                             ],
@@ -1185,17 +1186,19 @@ def test_open_location_is_not_sent_to_olivia():
     assert result.processed == 1
     assert result.failed == 0
 
-    # A localização nunca chega à Olívia/OpenAI.
-    assert orchestrator.calls == []
+    assert len(orchestrator.calls) == 1
+    call = orchestrator.calls[0]
 
-    # Localização não vira comprovante PIX.
-    assert list(db.scalars(select(PaymentReceipt))) == []
+    assert call["record_customer_message"] is False
+    assert "Cp Flat Hotel" in call["customer_message"]
+    assert "-4.0944" in call["customer_message"]
+    assert "-63.1411" in call["customer_message"]
+    assert "LOCALIZACAO ESTRUTURADA" in call["extra_instructions"]
 
     conversation = db.scalar(select(Conversation))
     assert conversation is not None
-    assert conversation.status == "WAITING_HUMAN"
+    assert conversation.status == "OPEN"
 
-    # A localização fica disponível para o atendimento humano.
     messages = list(
         db.scalars(
             select(Message).where(
@@ -1203,35 +1206,22 @@ def test_open_location_is_not_sent_to_olivia():
             )
         )
     )
-    assert len(messages) == 1
-    assert messages[0].sender_type == "CUSTOMER"
-    assert messages[0].content_type == "LOCATION"
-    assert "Localização compartilhada" in messages[0].content
-    assert "-4.0944" in messages[0].content
-    assert "-63.1411" in messages[0].content
-    assert "google.com/maps" in messages[0].content
 
-    tickets = list(
-        db.scalars(
-            select(HumanTicket).where(
-                HumanTicket.conversation_id == conversation.id
-            )
-        )
-    )
-    assert len(tickets) == 1
-    assert tickets[0].priority == "URGENT"
-    assert tickets[0].reason == "Localização compartilhada pelo cliente"
+    inbound = [
+        message
+        for message in messages
+        if message.direction == "INBOUND"
+    ]
 
-    # Cliente recebe apenas o aviso de encaminhamento ao humano.
-    outbound = db.scalar(
-        select(OutboundChannelMessage).where(
-            OutboundChannelMessage.conversation_id == conversation.id
-        )
-    )
-    assert outbound is not None
-    assert "atendente" in outbound.content.lower()
-    assert "Latitude" not in outbound.content
-    assert "google.com/maps" not in outbound.content
+    assert len(inbound) == 1
+    assert inbound[0].sender_type == "CUSTOMER"
+    assert inbound[0].content_type == "LOCATION"
+    assert "Cp Flat Hotel" in inbound[0].content
+    assert "-4.0944" in inbound[0].content
+    assert "-63.1411" in inbound[0].content
+
+    assert list(db.scalars(select(PaymentReceipt))) == []
+    assert list(db.scalars(select(HumanTicket))) == []
 
 
 def test_recent_pix_order_without_conversation_checkout_does_not_treat_image_as_receipt():
@@ -4103,6 +4093,185 @@ def test_receipt_request_during_collection_does_not_trigger_item_ack():
     )
 
     assert receipt.payload_json["requested"] is True
+
+    db.close()
+
+
+
+def test_location_during_order_collection_releases_to_olivia_without_item_ack():
+    db, store, _ = setup_db()
+    orchestrator = FakeOrchestrator()
+
+    service = WhatsAppGatewayService(
+        orchestrator_factory=lambda: orchestrator,
+        client_factory=lambda: FakeClient(),
+    )
+
+    # Inicia a coleta determinística.
+    service.process_payload(
+        db,
+        _order_collection_payload(
+            "wamid.location-collect-1",
+            "Quero um XBurguer",
+        ),
+    )
+
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.store_id == store.id,
+        )
+    )
+
+    assert conversation is not None
+
+    state_before = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state_before is not None
+    assert state_before.payload_json["state"] == "COLLECTING_ORDER"
+    assert orchestrator.calls == []
+
+    ack_before = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "OUTBOUND",
+                Message.sender_type == "OLIVIA",
+            )
+        )
+    )
+
+    ack_before_count = sum(
+        1
+        for message in ack_before
+        if (message.metadata_json or {}).get("type")
+        == "ORDER_COLLECTION_ITEM_ACK"
+    )
+
+    # Cliente compartilha localização estruturada do WhatsApp.
+    location_payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "id": "waba-1",
+                "changes": [
+                    {
+                        "field": "messages",
+                        "value": {
+                            "messaging_product": "whatsapp",
+                            "metadata": {
+                                "display_phone_number": "5597999999999",
+                                "phone_number_id": "phone-number-id-1",
+                            },
+                            "messages": [
+                                {
+                                    "from": "5597999999999",
+                                    "id": "wamid.location-collect-2",
+                                    "timestamp": "1785942000",
+                                    "type": "location",
+                                    "location": {
+                                        "latitude": -4.0944,
+                                        "longitude": -63.1411,
+                                        "name": "Cp Flat Hotel",
+                                        "address": (
+                                            "R. Padre Vitor, 370-484, "
+                                            "Coari - AM"
+                                        ),
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = service.process_payload(db, location_payload)
+
+    assert result.received == 1
+    assert result.processed == 1
+    assert result.failed == 0
+
+    # A LOCATION precisa chegar à Olivia, e somente uma vez.
+    assert len(orchestrator.calls) == 1
+
+    call = orchestrator.calls[0]
+
+    assert call["record_customer_message"] is False
+    assert "Cp Flat Hotel" in call["customer_message"]
+    assert "-4.0944" in call["customer_message"]
+    assert "-63.1411" in call["customer_message"]
+    assert "LOCALIZACAO ESTRUTURADA" in call["extra_instructions"]
+
+    # Não pode gerar outro ACK determinístico "Anotei".
+    ack_after = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "OUTBOUND",
+                Message.sender_type == "OLIVIA",
+            )
+        )
+    )
+
+    ack_after_count = sum(
+        1
+        for message in ack_after
+        if (message.metadata_json or {}).get("type")
+        == "ORDER_COLLECTION_ITEM_ACK"
+    )
+
+    assert ack_after_count == ack_before_count
+
+    # A coleta precisa ter sido liberada para a Olivia.
+    state_after = db.scalar(
+        select(AIEvent)
+        .where(
+            AIEvent.conversation_id == conversation.id,
+            AIEvent.event_type == "ORDER_COLLECTION_STATE",
+        )
+        .order_by(AIEvent.created_at.desc())
+        .limit(1)
+    )
+
+    assert state_after is not None
+    assert state_after.payload_json["state"] == "NORMAL"
+    assert (
+        state_after.payload_json["reason"]
+        == "structured_location_release_to_olivia"
+    )
+
+    # Deve existir exatamente uma mensagem LOCATION.
+    locations = list(
+        db.scalars(
+            select(Message).where(
+                Message.conversation_id == conversation.id,
+                Message.direction == "INBOUND",
+                Message.content_type == "LOCATION",
+            )
+        )
+    )
+
+    assert len(locations) == 1
+    assert locations[0].external_message_id == "wamid.location-collect-2"
+    assert "Cp Flat Hotel" in locations[0].content
+
+    # LOCATION pré-checkout não deve abrir atendimento humano.
+    assert list(
+        db.scalars(
+            select(HumanTicket).where(
+                HumanTicket.conversation_id == conversation.id
+            )
+        )
+    ) == []
 
     db.close()
 
