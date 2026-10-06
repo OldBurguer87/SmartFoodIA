@@ -151,6 +151,48 @@ class LookupDeliveryPlaceTool:
                 },
             )
 
+        # Reutiliza uma pesquisa web já concluída para o mesmo local
+        # dentro da mesma conversa. O TOOL_EXECUTION registrado pelo
+        # orquestrador contém o resultado estruturado completo.
+        conversation_id = self.context.conversation_id
+        if conversation_id is not None:
+            previous_events = list(
+                self.context.db.scalars(
+                    select(AIEvent)
+                    .where(
+                        AIEvent.store_id == self.context.store_id,
+                        AIEvent.conversation_id == conversation_id,
+                        AIEvent.event_type == "TOOL_EXECUTION",
+                        AIEvent.tool_name == "lookup_delivery_place",
+                        AIEvent.success.is_(True),
+                    )
+                    .order_by(AIEvent.created_at.desc())
+                )
+            )
+
+            wanted = self._normalize(name)
+
+            for event in previous_events:
+                payload = event.payload_json or {}
+                arguments = payload.get("arguments") or {}
+
+                if self._normalize(arguments.get("place_name") or "") != wanted:
+                    continue
+
+                result = payload.get("result") or {}
+                previous_data = result.get("data")
+
+                if (
+                    result.get("ok") is True
+                    and isinstance(previous_data, dict)
+                ):
+                    cached_data = dict(previous_data)
+                    cached_data["reused_conversation_lookup"] = True
+                    return ToolResult(
+                        ok=True,
+                        data=cached_data,
+                    )
+
         try:
             from openai import OpenAI
 

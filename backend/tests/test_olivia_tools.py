@@ -969,6 +969,94 @@ def test_lookup_delivery_place_uses_local_hotel_without_web() -> None:
     db.close()
 
 
+
+def test_lookup_delivery_place_reuses_previous_result_in_same_conversation() -> None:
+    db, store, _ = setup_registry()
+
+    conversation = Conversation(
+        store_id=store.id,
+        channel="WHATSAPP",
+        external_conversation_id="5597999887766",
+        status="OPEN",
+    )
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+
+    registry = OliviaToolRegistry(
+        ToolContext(
+            db=db,
+            store_id=store.id,
+            conversation_id=conversation.id,
+            customer_phone="5597999887766",
+        )
+    )
+
+    previous_data = {
+        "found": True,
+        "confidence": "HIGH",
+        "place_name": "Hotel CP2",
+        "canonical_name": "CP Flat Hotel 2",
+        "street": "Rua Cinco de Setembro",
+        "number": "196",
+        "neighborhood": "Centro",
+        "city": "Coari",
+        "state": "AM",
+        "postal_code": "69460-000",
+        "source_urls": ["https://example.test/cp2"],
+        "reference_suggestion": "CP Flat Hotel 2",
+        "confirmation_required": True,
+        "next_step": "Pergunte ao cliente se é esse endereço.",
+    }
+
+    db.add(
+        AIEvent(
+            store_id=store.id,
+            conversation_id=conversation.id,
+            event_type="TOOL_EXECUTION",
+            tool_name="lookup_delivery_place",
+            success=True,
+            payload_json={
+                "arguments": {
+                    "place_name": "Hotel CP2",
+                },
+                "result": {
+                    "ok": True,
+                    "data": previous_data,
+                    "error": None,
+                    "requires_human": False,
+                },
+            },
+        )
+    )
+    db.commit()
+
+    result = registry.execute(
+        "lookup_delivery_place",
+        {"place_name": "hotel cp2"},
+    )
+
+    assert result.ok is True
+    assert result.data["found"] is True
+    assert result.data["street"] == "Rua Cinco de Setembro"
+    assert result.data["number"] == "196"
+    assert result.data["neighborhood"] == "Centro"
+    assert result.data["reused_conversation_lookup"] is True
+
+    ai_responses = list(
+        db.scalars(
+            select(AIEvent).where(
+                AIEvent.conversation_id == conversation.id,
+                AIEvent.event_type == "AI_RESPONSE",
+                AIEvent.tool_name == "lookup_delivery_place",
+            )
+        )
+    )
+    assert ai_responses == []
+
+    db.close()
+
+
 def test_registry_exposes_lookup_delivery_place() -> None:
     _, _, registry = setup_registry()
 
