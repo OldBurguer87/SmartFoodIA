@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -18,6 +19,7 @@ from app.services.platform_analytics import (
 from app.services.store_analytics import (
     StoreAnalyticsService,
 )
+from app.services.shift_closing import ShiftClosingService
 
 
 router = APIRouter(
@@ -33,6 +35,7 @@ platform_router = APIRouter(
 )
 
 store_service = StoreAnalyticsService()
+shift_closing_service = ShiftClosingService()
 platform_service = PlatformAnalyticsService()
 
 
@@ -53,6 +56,22 @@ def store_analytics(
         db,
         store_id=store_id,
         hours=hours,
+    )
+
+
+@store_router.get("/{store_id}/shift-closing")
+def store_shift_closing(
+    store_id: UUID,
+    shift_date: date = Query(...),
+    _access: StoreAccess = Depends(
+        require_store_access,
+    ),
+    db: Session = Depends(get_db),
+) -> dict:
+    return shift_closing_service.build_report(
+        db,
+        store_id=store_id,
+        shift_date=shift_date,
     )
 
 

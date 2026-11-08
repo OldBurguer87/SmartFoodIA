@@ -3462,3 +3462,184 @@ h1 {
     width: 100%;
   }
 }
+
+/* Atendimento - tempo aguardando resposta */
+.conversationsConsoleV2 .customerWaitingTime {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin: 1px 0 6px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.conversationsConsoleV2 .conversationRow.needsReply
+.customerWaitingTime::before {
+  content: "●";
+  margin-right: 5px;
+  font-size: 7px;
+}
+
+/* Nova mensagem */
+.conversationsConsoleV2 .newMessageIndicatorWrap { position: relative; height: 0; z-index: 20; display: flex; justify-content: center; pointer-events: none; }
+.conversationsConsoleV2 .newMessageIndicator { position: absolute; bottom: 12px; display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 14px; border: 1px solid rgba(0,0,0,.08); border-radius: 999px; background: #fff; color: #1f2937; font-size: 12px; font-weight: 800; line-height: 1; cursor: pointer; pointer-events: auto; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.conversationsConsoleV2 .newMessageIndicator:hover { transform: translateY(-1px); }
+.conversationsConsoleV2 .newMessageIndicator span { font-size: 16px; line-height: 1; }
+
+/* Shift Closing */
+
+.analyticsPeriod input[type="date"] {
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.analyticsPeriod input[type="date"]:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(36, 76, 54, 0.09);
+}
+
+.analyticsPeriod input[type="date"]:disabled {
+  opacity: 0.6;
+}
+
+/* FECHAMENTO DE TURNO — layout específico */
+.shiftClosingGrid {
+  align-items: start;
+}
+
+.shiftClosingCard {
+  min-height: 0;
+}
+
+.shiftClosingRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+}
+
+.shiftClosingRow > span:first-child {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.shiftClosingRow > strong:last-child {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.shiftClosingRow > div:first-child {
+  min-width: 0;
+}
+
+.shiftClosingRow > div:first-child > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .shiftClosingRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+}
+
+/* SMARTFOODIA-PIX-QUICK-SEND */
+.composerQuickActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px 0;
+}
+
+.pixQuickSendButton {
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--green-soft);
+  color: var(--green);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pixQuickSendButton:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+
+.pixQuickSendButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .composerQuickActions {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .pixQuickSendButton {
+    width: 100%;
+  }
+}
+/* /SMARTFOODIA-PIX-QUICK-SEND */
+
+/* SMARTFOODIA-PRODUCT-SEARCH-ADD-BUTTON */
+.orderProductSearch {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.orderProductSearch input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  font: inherit;
+}
+
+.orderProductSearch .addOrderItemButton {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 120px;
+  min-height: 44px;
+  margin-top: 0;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .orderProductSearch {
+    gap: 6px;
+  }
+
+  .orderProductSearch .addOrderItemButton {
+    min-width: 108px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+}

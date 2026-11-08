@@ -8,6 +8,7 @@ import { CommercialRulesPanel } from "@/components/commercial-rules-panel";
 import { CatalogPanel } from "@/components/catalog-panel";
 import { CustomerWalletPanel } from "@/components/customer-wallet-panel";
 import { StoreAnalyticsPanel } from "@/components/store-analytics-panel";
+import { ShiftClosingPanel } from "@/components/shift-closing-panel";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -125,6 +126,7 @@ export function Dashboard({
           <a className="navItem" href="#cardapios">Cardápios</a>
           <a className="navItem" href="#visao-geral">Visão geral</a>
           <a className="navItem" href="#analytics">Analytics</a>
+          <a className="navItem" href="#fechamento-turno">Fechamento de turno</a>
           <a className="navItem" href="#clientes">Clientes</a>
           <a className="navItem" href="#conversas">Conversas</a>
           <a className="navItem" href="#pedidos">Pedidos</a>
@@ -256,6 +258,8 @@ export function Dashboard({
             </section>
 
             <StoreAnalyticsPanel storeId={storeId} />
+
+          <ShiftClosingPanel storeId={storeId} />
 
             <section className="dashboardGrid">
               <article className="panel wide" id="visao-conversas">

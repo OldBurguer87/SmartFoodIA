@@ -27,3 +27,22 @@ backups/
 # Backups locais gerados durante manutenção/hotfix
 *.bak-*
 *.bak_*
+
+# ============================================================
+# SmartFoodIA - arquivos locais/operacionais nunca versionados
+# Marco estável 2026-11-08
+# ============================================================
+
+# Mídias reais recebidas/enviadas nas conversas
+data/conversation-media/
+
+# Backups locais de manutenção
+*.pre-*
+*.backup-*
+*.before-*
+*.candidate
+*.proposed
+*.proposed.json
+
+# Arquivos temporários/acidentais de terminal
+pan

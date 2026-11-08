@@ -120,3 +120,37 @@ WhatsApp → Olívia → Core → Consumer → status → WhatsApp
 O Consumer já foi homologado separadamente. A etapa pendente é ativar e homologar o canal WhatsApp em produção.
 
 Consulte `docs/PRODUCTION_RUNTIME.md`.
+
+<!-- SMARTFOODIA-WHATSAPP-2026-10-13:START -->
+## Estado de produção — 2026-10-13
+
+A informação histórica acima referente a 2026-08-11 não representa mais o estado atual do ambiente.
+
+O WhatsApp Cloud foi posteriormente configurado e homologado em produção para a Old Burguer 87.
+
+O fluxo operacional ativo inclui:
+
+`WhatsApp → Olívia → Core → Consumer → status → WhatsApp`
+
+O takeover humano também foi homologado.
+
+### Controle de WhatsApp administrativo por membro da equipe
+
+Membros da equipe possuem a configuração `notify_whatsapp`.
+
+Quando `notify_whatsapp=False`:
+
+- o membro não deve receber notificações administrativas selecionadas pelo sistema;
+- não deve receber encaminhamento de conversa/mídia como atendente;
+- mensagens enviadas por esse número ao gateway continuam sendo reconhecidas como provenientes da equipe;
+- essas mensagens são marcadas como `IGNORED`;
+- elas não são encaminhadas para a Olívia como mensagens de cliente.
+
+Em 13/10/2026 o WhatsApp administrativo da atendente `5597984053985` foi desativado dessa forma.
+
+Essa configuração não desativa o canal dos clientes e não interfere no fechamento de turno disponível no painel web.
+
+Detalhes operacionais e rollback estão documentados em:
+
+`docs/SHIFT_CLOSING_AND_ADMIN_WHATSAPP_2026-10-13.md`
+<!-- SMARTFOODIA-WHATSAPP-2026-10-13:END -->

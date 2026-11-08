@@ -13,7 +13,7 @@ from app.api.auth import current_auth
 from app.api.deps import require_store_access, require_store_write_access
 from app.core.config import settings
 from app.models.catalog import Store
-from app.models.customer import CustomerAddress
+from app.models.customer import Customer, CustomerAddress
 from app.models.order import Order, OrderPayment
 from app.models.payment import PaymentReceipt
 from app.database.session import get_db
@@ -103,7 +103,7 @@ def require_conversation_write_access(
     return access
 
 
-def conversation_to_dict(conversation) -> dict:
+def conversation_to_dict(conversation, customer=None) -> dict:
     last_message = conversation.messages[-1] if conversation.messages else None
     return {
         "id": str(conversation.id),
@@ -111,6 +111,8 @@ def conversation_to_dict(conversation) -> dict:
         "customer_id": str(conversation.customer_id)
         if conversation.customer_id
         else None,
+        "customer_name": customer.name if customer else None,
+        "customer_phone": customer.phone if customer else None,
         "channel": conversation.channel,
         "external_conversation_id": conversation.external_conversation_id,
         "status": conversation.status,
@@ -226,8 +228,30 @@ def list_conversations(
 
     result = []
 
+    customer_ids = {
+        item.customer_id
+        for item in items
+        if item.customer_id is not None
+    }
+
+    customers_by_id = {}
+
+    if customer_ids:
+        customers_by_id = {
+            customer.id: customer
+            for customer in db.scalars(
+                select(Customer).where(
+                    Customer.id.in_(customer_ids),
+                    Customer.store_id == store_id,
+                )
+            ).all()
+        }
+
     for item in items:
-        body = conversation_to_dict(item)
+        body = conversation_to_dict(
+            item,
+            customers_by_id.get(item.customer_id),
+        )
 
         if item.status != "OPEN":
             body["current_shift"] = False
@@ -304,7 +328,20 @@ def get_conversation(
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
     messages = conversation_repository.list_messages(db, conversation_id, limit=200)
-    payload = conversation_to_dict(conversation)
+    customer = None
+
+    if conversation.customer_id is not None:
+        customer = db.scalar(
+            select(Customer).where(
+                Customer.id == conversation.customer_id,
+                Customer.store_id == conversation.store_id,
+            )
+        )
+
+    payload = conversation_to_dict(
+        conversation,
+        customer,
+    )
     payload["messages"] = [
         {
             "id": str(message.id),
@@ -913,7 +950,20 @@ def take_over(
         raise HTTPException(status_code=404, detail="Conversa não encontrada.") from error
     except ConversationStateError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    return conversation_to_dict(conversation)
+    customer = None
+
+    if conversation.customer_id is not None:
+        customer = db.scalar(
+            select(Customer).where(
+                Customer.id == conversation.customer_id,
+                Customer.store_id == conversation.store_id,
+            )
+        )
+
+    return conversation_to_dict(
+        conversation,
+        customer,
+    )
 
 
 @router.post("/conversations/{conversation_id}/release")
@@ -942,7 +992,20 @@ def release_to_olivia(
         raise HTTPException(status_code=404, detail="Conversa não encontrada.") from error
     except ConversationStateError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    return conversation_to_dict(conversation)
+    customer = None
+
+    if conversation.customer_id is not None:
+        customer = db.scalar(
+            select(Customer).where(
+                Customer.id == conversation.customer_id,
+                Customer.store_id == conversation.store_id,
+            )
+        )
+
+    return conversation_to_dict(
+        conversation,
+        customer,
+    )
 
 
 @router.post(
@@ -975,7 +1038,20 @@ def close_human_conversation(
             detail=str(error),
         ) from error
 
-    return conversation_to_dict(conversation)
+    customer = None
+
+    if conversation.customer_id is not None:
+        customer = db.scalar(
+            select(Customer).where(
+                Customer.id == conversation.customer_id,
+                Customer.store_id == conversation.store_id,
+            )
+        )
+
+    return conversation_to_dict(
+        conversation,
+        customer,
+    )
 
 
 

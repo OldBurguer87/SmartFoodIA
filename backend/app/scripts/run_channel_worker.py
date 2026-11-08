@@ -76,10 +76,11 @@ def main() -> None:
     while _running:
         try:
             with SessionLocal() as db:
-                handoff = handoff_monitor.run_once(
-                    db,
-                    limit=settings.channel_worker_batch_size,
-                )
+                # Atendimento humano permanece humano até devolução
+                # manual pelo atendente. O monitor automático de timeout/
+                # reminder fica desativado para evitar retomadas automáticas
+                # da Olívia e chamadas desnecessárias de IA.
+                handoff = None
                 pix_review = pix_review_monitor.run_once(
                     db,
                     limit=settings.channel_worker_batch_size,
@@ -127,8 +128,8 @@ def main() -> None:
                     limit=settings.channel_worker_batch_size,
                 )
 
-            if handoff.reminded or handoff.resumed or handoff.failed:
-                logger.info("Monitor de atendimento humano: %s", handoff)
+            # Monitor automático de handoff desativado.
+            # A devolução para Olívia ocorre somente por ação do atendente.
 
             if (
                 pix_review.notified_receipts

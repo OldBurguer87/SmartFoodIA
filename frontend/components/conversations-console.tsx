@@ -28,6 +28,7 @@ import {
   updateStoreOperationMode,
 } from "@/lib/api";
 import { ConversationOrderPanel } from "@/components/conversation-order-panel";
+import { getCommercialRules } from "@/lib/commercial-api";
 
 type Filter =
   | "ACTIVE"
@@ -271,9 +272,16 @@ export function ConversationsConsole({
     useState<string | null>(null);
 
   const [now, setNow] = useState(() => Date.now());
+  const [hasNewMessagesBelow, setHasNewMessagesBelow] =
+    useState(false);
 
-  const timelineEnd =
+  const timelineRef =
     useRef<HTMLDivElement | null>(null);
+  const shouldFollowTimeline = useRef(true);
+  const previousConversationId = useRef<string | null>(null);
+  const previousLastMessageId = useRef<string | null>(null);
+  const replyInput =
+    useRef<HTMLTextAreaElement | null>(null);
   const attachmentInput =
     useRef<HTMLInputElement | null>(null);
 
@@ -627,6 +635,7 @@ export function ConversationsConsole({
         openConversation(conversationId, true),
         loadList(true),
       ]);
+
     } catch (err) {
       setError(
         err instanceof Error
@@ -754,11 +763,62 @@ export function ConversationsConsole({
         openConversation(selected.id, true),
         loadList(true),
       ]);
+
+        window.requestAnimationFrame(() => {
+          scrollToLatestMessage();
+        });
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : "Erro ao enviar mensagem ou arquivo.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendPixKey() {
+    if (
+      !selected ||
+      selected.status !== "HUMAN" ||
+      busy
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const commercial = await getCommercialRules(storeId);
+      const pixKey = commercial.rules.pix_key?.trim();
+
+      if (!commercial.rules.accepts_pix || !pixKey) {
+        throw new Error(
+          "A loja não possui uma chave PIX ativa cadastrada.",
+        );
+      }
+
+      await sendHumanReply(
+        selected.id,
+        operator.trim() || "Atendente",
+        pixKey,
+      );
+
+      await Promise.all([
+        openConversation(selected.id, true),
+        loadList(true),
+      ]);
+
+      window.requestAnimationFrame(() => {
+        scrollToLatestMessage();
+      });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao enviar a chave PIX.",
       );
     } finally {
       setBusy(false);
@@ -827,6 +887,7 @@ export function ConversationsConsole({
       | ConversationDetail,
   ) {
     return (
+      conversation.customer_name?.trim() ||
       getCustomer(conversation)?.name?.trim() ||
       "Cliente"
     );
@@ -1024,7 +1085,7 @@ export function ConversationsConsole({
 
   useEffect(() => {
     setReply("");
-    setOrderOpen(false);
+    // Manter o painel de pedido aberto durante refresh da conversa
     setAttachment(null);
 
     if (attachmentInput.current) {
@@ -1102,13 +1163,82 @@ export function ConversationsConsole({
     ]?.id ?? null;
 
   useEffect(() => {
-    if (!lastMessageId) return;
+    const timeline = timelineRef.current;
+    if (!timeline || !lastMessageId) return;
 
-    timelineEnd.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    });
+    const conversationChanged =
+      previousConversationId.current !== selected?.id;
+
+    const messageChanged =
+      previousLastMessageId.current !== lastMessageId;
+
+    previousConversationId.current =
+      selected?.id ?? null;
+    previousLastMessageId.current = lastMessageId;
+
+    if (conversationChanged) {
+      shouldFollowTimeline.current = true;
+      setHasNewMessagesBelow(false);
+    } else if (
+      messageChanged &&
+      !shouldFollowTimeline.current
+    ) {
+      setHasNewMessagesBelow(true);
+    }
+
+    if (
+      conversationChanged ||
+      shouldFollowTimeline.current
+    ) {
+      setHasNewMessagesBelow(false);
+
+      window.requestAnimationFrame(() => {
+        const currentTimeline = timelineRef.current;
+        if (!currentTimeline) return;
+
+        currentTimeline.scrollTo({
+          top: currentTimeline.scrollHeight,
+          behavior: conversationChanged
+            ? "auto"
+            : "smooth",
+        });
+      });
+    }
   }, [selected?.id, lastMessageId]);
+
+  function handleTimelineScroll() {
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+
+    const distanceFromBottom =
+      timeline.scrollHeight -
+      timeline.scrollTop -
+      timeline.clientHeight;
+
+    shouldFollowTimeline.current =
+      distanceFromBottom <= 120;
+
+    if (shouldFollowTimeline.current) {
+      setHasNewMessagesBelow(false);
+    }
+  }
+
+  function scrollToLatestMessage() {
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+
+    shouldFollowTimeline.current = true;
+    setHasNewMessagesBelow(false);
+
+    timeline.scrollTo({
+      top: timeline.scrollHeight,
+      behavior: "smooth",
+    });
+
+    window.setTimeout(() => {
+      replyInput.current?.focus();
+    }, 250);
+  }
 
   const counts = useMemo(() => {
     const open = items.filter(
@@ -1202,21 +1332,39 @@ export function ConversationsConsole({
           );
       })
       .sort((a, b) => {
-        const priority =
-          (rank[a.status] ?? 9) -
-          (rank[b.status] ?? 9);
+        const aNeedsReply =
+          a.last_message?.sender_type === "CUSTOMER" &&
+          (
+            a.status === "WAITING_HUMAN" ||
+            a.status === "HUMAN"
+          );
 
-        if (priority !== 0) return priority;
+        const bNeedsReply =
+          b.last_message?.sender_type === "CUSTOMER" &&
+          (
+            b.status === "WAITING_HUMAN" ||
+            b.status === "HUMAN"
+          );
 
-        if (
-          a.status === "WAITING_HUMAN" &&
-          b.status === "WAITING_HUMAN"
-        ) {
+        // Primeiro: clientes que estão aguardando resposta humana.
+        if (aNeedsReply !== bNeedsReply) {
+          return aNeedsReply ? -1 : 1;
+        }
+
+        // Entre clientes aguardando resposta, quem espera há mais
+        // tempo fica primeiro.
+        if (aNeedsReply && bNeedsReply) {
           return (
             new Date(a.last_message_at).getTime() -
             new Date(b.last_message_at).getTime()
           );
         }
+
+        const priority =
+          (rank[a.status] ?? 9) -
+          (rank[b.status] ?? 9);
+
+        if (priority !== 0) return priority;
 
         return (
           new Date(b.last_message_at).getTime() -
@@ -1234,6 +1382,9 @@ export function ConversationsConsole({
   const selectedCustomer = selected
     ? getCustomer(selected)
     : null;
+
+  const selectedCustomerId =
+    selected?.customer_id ?? selectedCustomer?.id ?? null;
 
   return (
     <section
@@ -1542,12 +1693,14 @@ export function ConversationsConsole({
                       <button
                         type="button"
                         className="launchOrderButton"
-                        onClick={() => setOrderOpen(true)}
+                        onClick={() => {
+                          setOrderOpen(true);
+                        }}
                         disabled={
-                          busy || !selectedCustomer?.id
+                          busy || !selectedCustomerId
                         }
                         title={
-                          selectedCustomer?.id
+                          selectedCustomerId
                             ? "Lançar pedido para este cliente"
                             : "Cliente não localizado no cadastro"
                         }
@@ -1604,7 +1757,7 @@ export function ConversationsConsole({
                 </div>
               </header>
 
-              {orderOpen && selectedCustomer?.id && (
+              {orderOpen && selectedCustomerId && (
                 <div className="conversationOrderOverlay conversationOrderSplit">
                   <section className="conversationOrderHistory">
                     <header>
@@ -1658,7 +1811,7 @@ export function ConversationsConsole({
                       conversationId={selected.id}
                       messages={selected.messages}
                       assignedTo={operator.trim()}
-                      customerId={selectedCustomer.id}
+                      customerId={selectedCustomerId}
                       customerName={displayName(selected)}
                       onClose={() => setOrderOpen(false)}
                     />
@@ -1666,7 +1819,11 @@ export function ConversationsConsole({
                 </div>
               )}
 
-              <div className="messageTimeline">
+              <div
+                ref={timelineRef}
+                className="messageTimeline"
+                onScroll={handleTimelineScroll}
+              >
                 {selected.messages.map((message) => (
                   <div
                     key={message.id}
@@ -1692,8 +1849,22 @@ export function ConversationsConsole({
                   </div>
                 ))}
 
-                <div ref={timelineEnd} />
+
               </div>
+
+              {hasNewMessagesBelow && (
+                <div className="newMessageIndicatorWrap">
+                  <button
+                    type="button"
+                    className="newMessageIndicator"
+                    onClick={scrollToLatestMessage}
+                    aria-label="Ir para a mensagem mais recente"
+                  >
+                    <span>↓</span>
+                    Nova mensagem
+                  </button>
+                </div>
+              )}
 
               <div className="replyComposerWrap">
                 {selected.status !== "HUMAN" && (
@@ -1747,6 +1918,20 @@ export function ConversationsConsole({
                   </div>
                 )}
 
+                {selected.status === "HUMAN" && (
+                  <div className="composerQuickActions">
+                    <button
+                      type="button"
+                      className="pixQuickSendButton"
+                      onClick={() => void sendPixKey()}
+                      disabled={busy}
+                      title="Enviar a chave PIX cadastrada da loja"
+                    >
+                      💠 Enviar chave PIX
+                    </button>
+                  </div>
+                )}
+
                 <div className="replyComposer">
                   <input
                     ref={attachmentInput}
@@ -1782,6 +1967,7 @@ export function ConversationsConsole({
                   </button>
 
                   <textarea
+                    ref={replyInput}
                     value={reply}
                     onChange={(event) =>
                       setReply(event.target.value)

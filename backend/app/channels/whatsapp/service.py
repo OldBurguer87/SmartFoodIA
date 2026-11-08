@@ -1782,6 +1782,17 @@ class WhatsAppGatewayService:
             phone=sender,
         )
 
+        # O número continua identificado como membro da equipe para não cair
+        # acidentalmente no fluxo de cliente/Olívia. Quando o WhatsApp
+        # administrativo estiver desativado, nenhuma mensagem desse membro
+        # executa comandos ou gera respostas pelo canal.
+        if staff is not None and not staff.notify_whatsapp:
+            event.status = "IGNORED"
+            event.error_message = (
+                "WhatsApp administrativo desativado para este membro da equipe."
+            )
+            return
+
         if message_type in {"image", "document"}:
             if staff is not None:
                 event.status = "IGNORED"

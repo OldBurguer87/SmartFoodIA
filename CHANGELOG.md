@@ -1,3 +1,18 @@
+<!-- SMARTFOODIA-CHANGELOG-2026-10-13:START -->
+## Produção — Fechamento de turno e WhatsApp administrativo — 2026-10-13
+- Adicionado fechamento de turno histórico no painel web, com faturamento, ticket médio, pedidos, formas de pagamento e conferência PIX.
+- Adicionado endpoint protegido `GET /api/v1/operations/stores/{store_id}/shift-closing`.
+- Relatório utiliza horário comercial e timezone da loja, incluindo turnos que atravessam a meia-noite.
+- Pedidos `CANCELLED` são excluídos do faturamento.
+- Desativado o WhatsApp administrativo da atendente `5597984053985` através de `notify_whatsapp=False`.
+- Envios administrativos que selecionam staff deixam de direcionar mensagens para membros com `notify_whatsapp=False`.
+- Gateway mantém o número reconhecido como staff e ignora mensagens administrativas recebidas quando o WhatsApp desse membro está desativado, evitando queda acidental no fluxo de cliente/Olívia.
+- Fluxos de clientes, Olívia, pedidos, Consumer e painel web permanecem ativos.
+- Fila final auditada para a atendente: `PENDING=0` e `RETRY=0`.
+- Worker de canais reiniciado isoladamente para carregar a alteração; demais serviços permaneceram ativos.
+- Documentação detalhada: `docs/SHIFT_CLOSING_AND_ADMIN_WHATSAPP_2026-10-13.md`.
+<!-- SMARTFOODIA-CHANGELOG-2026-10-13:END -->
+
 # Changelog
 
 <!-- SMARTFOODIA-CHANGELOG-2026-09-07:START -->

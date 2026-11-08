@@ -270,6 +270,8 @@ export type ConversationSummary = {
   id: string;
   store_id: string;
   customer_id: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
   channel: string;
   external_conversation_id: string | null;
   status: "OPEN" | "WAITING_HUMAN" | "HUMAN" | "CLOSED";
@@ -1210,4 +1212,71 @@ export async function cancelHumanPendingOrder(
   }
 
   return response.json();
+}
+
+
+export type ShiftClosingReport = {
+  store_id: string;
+  store_name: string;
+  shift_date: string;
+  configured: boolean;
+  started_at: string | null;
+  ends_at: string | null;
+  orders: {
+    total: number;
+    valid: number;
+    cancelled: number;
+    by_status: Record<string, number>;
+  };
+  financial: {
+    revenue: number;
+    average_ticket: number;
+    valid_orders: number;
+    payment_total: number;
+    difference: number;
+    payment_methods: Array<{
+      method: string;
+      orders: number;
+      amount: number;
+    }>;
+  };
+  pix: {
+    orders: number;
+    amount: number;
+    confirmed_orders: number;
+    confirmed_amount: number;
+    auto_confirmed: number;
+    human_confirmed: number;
+    pending_review: number;
+    without_receipt: number;
+    fallback_values: number;
+  };
+};
+
+
+export async function getShiftClosing(
+  storeId: string,
+  shiftDate: string,
+): Promise<ShiftClosingReport> {
+  const params = new URLSearchParams({
+    shift_date: shiftDate,
+  });
+
+  const response = await apiFetch(
+    `${API_URL}/api/v1/operations/stores/${storeId}/shift-closing?${params}`,
+    {
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await authError(
+        response,
+        "Não foi possível carregar o fechamento do turno.",
+      ),
+    );
+  }
+
+  return response.json() as Promise<ShiftClosingReport>;
 }

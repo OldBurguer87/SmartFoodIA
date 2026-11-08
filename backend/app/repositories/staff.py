@@ -148,5 +148,6 @@ class StaffRepository:
             select(StoreStaffMember).where(
                 StoreStaffMember.current_conversation_id == conversation_id,
                 StoreStaffMember.active.is_(True),
+                StoreStaffMember.notify_whatsapp.is_(True),
             )
         )

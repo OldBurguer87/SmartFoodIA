@@ -1101,7 +1101,17 @@ export function ConversationOrderPanel({
           }
           placeholder="Buscar produto..."
         />
-      </div>
+                {selectedProduct && (
+            <button
+              type="button"
+              className="addOrderItemButton"
+              onClick={() => void addSelectedProduct()}
+              disabled={cartBusy || Boolean(completedOrder)}
+            >
+              {cartBusy ? "Adicionando..." : "Adicionar item"}
+            </button>
+          )}
+</div>
 
       <div className="orderProductList">
         {!catalogLoading &&
@@ -1140,6 +1150,147 @@ export function ConversationOrderPanel({
             <p>Nenhum produto encontrado.</p>
           )}
       </div>
+
+      {selectedProduct && (
+        <div className="orderProductEditor">
+          <div className="orderProductEditorHeader">
+            <div>
+              <small>ADICIONANDO</small>
+              <strong>
+                {selectedProduct.name}
+              </strong>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setSelectedProduct(null)
+              }
+            >
+              Cancelar
+            </button>
+          </div>
+
+          <label>
+            Quantidade
+            <input
+              type="number"
+              min="1"
+              max="99"
+              value={productQuantity}
+              onChange={(event) =>
+                setProductQuantity(
+                  Math.max(
+                    1,
+                    Math.min(
+                      99,
+                      Number(event.target.value) || 1,
+                    ),
+                  ),
+                )
+              }
+            />
+          </label>
+
+          {selectedProduct.modifier_groups.map(
+            (group) => (
+              <div
+                className="orderModifierGroup"
+                key={group.id}
+              >
+                <div>
+                  <strong>{group.name}</strong>
+                  <small>
+                    Mín. {group.min_select}
+                    {" • "}
+                    Máx. {group.max_select}
+                  </small>
+                </div>
+
+                {group.modifiers.map((modifier) => {
+                  const quantity =
+                    modifierQuantities[
+                      modifier.external_code
+                    ] ?? 0;
+
+                  return (
+                    <div
+                      className="orderModifierRow"
+                      key={modifier.id}
+                    >
+                      <div>
+                        <span>{modifier.name}</span>
+                        <small>
+                          {Number(
+                            modifier.price,
+                          ).toLocaleString(
+                            "pt-BR",
+                            {
+                              style: "currency",
+                              currency: "BRL",
+                            },
+                          )}
+                        </small>
+                      </div>
+
+                      <div className="orderModifierQuantity">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            changeModifier(
+                              modifier.external_code,
+                              quantity - 1,
+                              modifier.max_quantity,
+                            )
+                          }
+                          disabled={quantity <= 0}
+                        >
+                          −
+                        </button>
+
+                        <strong>{quantity}</strong>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            changeModifier(
+                              modifier.external_code,
+                              quantity + 1,
+                              modifier.max_quantity,
+                            )
+                          }
+                          disabled={
+                            quantity >=
+                            modifier.max_quantity
+                          }
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ),
+          )}
+
+          <label>
+            Observação
+            <textarea
+              maxLength={500}
+              value={productObservation}
+              onChange={(event) =>
+                setProductObservation(
+                  event.target.value,
+                )
+              }
+              placeholder="Ex.: sem cebola"
+            />
+          </label>
+
+
+        </div>
+      )}
 
       {cart && cart.items.length > 0 && (
         <section className="humanOrderCartSummary">
@@ -1471,158 +1622,6 @@ export function ConversationOrderPanel({
               </small>
             )}
         </section>
-      )}
-
-      {selectedProduct && (
-        <div className="orderProductEditor">
-          <div className="orderProductEditorHeader">
-            <div>
-              <small>ADICIONANDO</small>
-              <strong>
-                {selectedProduct.name}
-              </strong>
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                setSelectedProduct(null)
-              }
-            >
-              Cancelar
-            </button>
-          </div>
-
-          <label>
-            Quantidade
-            <input
-              type="number"
-              min="1"
-              max="99"
-              value={productQuantity}
-              onChange={(event) =>
-                setProductQuantity(
-                  Math.max(
-                    1,
-                    Math.min(
-                      99,
-                      Number(event.target.value) || 1,
-                    ),
-                  ),
-                )
-              }
-            />
-          </label>
-
-          {selectedProduct.modifier_groups.map(
-            (group) => (
-              <div
-                className="orderModifierGroup"
-                key={group.id}
-              >
-                <div>
-                  <strong>{group.name}</strong>
-                  <small>
-                    Mín. {group.min_select}
-                    {" • "}
-                    Máx. {group.max_select}
-                  </small>
-                </div>
-
-                {group.modifiers.map((modifier) => {
-                  const quantity =
-                    modifierQuantities[
-                      modifier.external_code
-                    ] ?? 0;
-
-                  return (
-                    <div
-                      className="orderModifierRow"
-                      key={modifier.id}
-                    >
-                      <div>
-                        <span>{modifier.name}</span>
-                        <small>
-                          {Number(
-                            modifier.price,
-                          ).toLocaleString(
-                            "pt-BR",
-                            {
-                              style: "currency",
-                              currency: "BRL",
-                            },
-                          )}
-                        </small>
-                      </div>
-
-                      <div className="orderModifierQuantity">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            changeModifier(
-                              modifier.external_code,
-                              quantity - 1,
-                              modifier.max_quantity,
-                            )
-                          }
-                          disabled={quantity <= 0}
-                        >
-                          −
-                        </button>
-
-                        <strong>{quantity}</strong>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            changeModifier(
-                              modifier.external_code,
-                              quantity + 1,
-                              modifier.max_quantity,
-                            )
-                          }
-                          disabled={
-                            quantity >=
-                            modifier.max_quantity
-                          }
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ),
-          )}
-
-          <label>
-            Observação
-            <textarea
-              maxLength={500}
-              value={productObservation}
-              onChange={(event) =>
-                setProductObservation(
-                  event.target.value,
-                )
-              }
-              placeholder="Ex.: sem cebola"
-            />
-          </label>
-
-          <button
-            type="button"
-            className="addOrderItemButton"
-            onClick={() =>
-              void addSelectedProduct()
-            }
-            disabled={cartBusy || Boolean(completedOrder)}
-          >
-            {cartBusy
-              ? "Adicionando..."
-              : "Adicionar ao pedido"}
-          </button>
-        </div>
       )}
 
       {customer && (
